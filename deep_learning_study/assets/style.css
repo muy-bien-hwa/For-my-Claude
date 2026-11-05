@@ -226,7 +226,7 @@ svg .s-acf { fill: var(--accent); }
 svg .s-acs { fill: var(--accent-soft); stroke: var(--accent); }
 svg .s-f { fill: var(--surface-2); stroke: var(--border-strong); }
 svg .s-f2 { fill: var(--surface-3); stroke: var(--border-strong); }
-svg .s-bg { fill: var(--surface); }
+svg .s-bg { fill: var(--surface); stroke: var(--border-strong); }
 svg .s-tx { fill: var(--text); font-family: inherit; }
 svg .s-txm { fill: var(--muted); font-family: inherit; }
 svg .s-txa { fill: var(--accent); font-family: inherit; }

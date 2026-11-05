@@ -1,0 +1,310 @@
+<ul class="goals">
+  <li>층별 forward/backward와 파라미터·기울기 인터페이스를 갖춘 MLP를 NumPy로 구현할 수 있다.</li>
+  <li>전체 파라미터에 대한 기울기 검증을 수행하고 상대 오차를 해석할 수 있다.</li>
+  <li>미니배치 학습 루프를 작성하고 학습·검증 지표를 기록할 수 있다.</li>
+  <li>학습 곡선으로 과적합, 과소적합, 학습률 문제를 진단할 수 있다.</li>
+  <li>검증 세트로 하이퍼파라미터를 비교하고 결과의 잡음을 고려해 결론을 내릴 수 있다.</li>
+</ul>
+
+<h2 data-min="8" data-kind="concept">구현 계획</h2>
+<p>18일차에 층별 역전파 공식을, 19일차에 자동 미분의 원리를 배웠다. 오늘은 행렬 연산 기반의 MLP를 처음부터 끝까지 구현해 손글씨 숫자를 학습시킨다. 구성 요소는 다섯 가지다.</p>
+<div class="flow"><div>층<br>forward / backward</div><div>손실<br>소프트맥스 + CE</div><div>미니배치<br>공급</div><div class="hl">학습 루프<br>순전파 → 역전파 → 갱신</div><div>평가와 기록<br>학습 곡선</div></div>
+<p>각 부품을 따로 검증한 뒤 조립한다. 특히 역전파는 학습 전에 반드시 기울기 검증을 통과해야 한다. 역전파에 버그가 있어도 손실은 대개 조금씩 줄어들어서, 학습 결과만 보고는 버그를 알아채기 어렵기 때문이다.</p>
+
+<h2 data-min="15" data-kind="concept">층의 공통 인터페이스</h2>
+<p>모든 층이 같은 세 가지 메서드를 가지면, 학습 루프와 옵티마이저는 층의 종류를 몰라도 된다.</p>
+<table>
+  <thead><tr><th>메서드</th><th>하는 일</th><th>선형층</th><th>ReLU</th></tr></thead>
+  <tbody>
+    <tr><td><code>forward(X)</code></td><td>출력 계산, 역전파용 값 저장</td><td>$XW + \mathbf b$, $X$ 저장</td><td>$\max(0, X)$, 마스크 저장</td></tr>
+    <tr><td><code>backward(G)</code></td><td>파라미터 기울기 저장, 입력 기울기 반환</td><td>$dW = X^\top G$, $d\mathbf b = \sum G$, 반환 $GW^\top$</td><td>반환 $G\odot\text{마스크}$</td></tr>
+    <tr><td><code>params()</code></td><td>(파라미터, 기울기) 쌍의 목록</td><td>$[(W, dW), (\mathbf b, d\mathbf b)]$</td><td>$[\,]$</td></tr>
+  </tbody>
+</table>
+<p>갱신은 모든 층의 <code>params()</code>를 돌며 <code>p -= lr * g</code>를 하면 된다. NumPy의 <code>-=</code>는 배열을 제자리에서 바꾸므로 층 안의 가중치가 실제로 갱신된다(<code>p = p - lr * g</code>로 쓰면 새 배열이 만들어져 층의 가중치는 그대로다. 흔한 버그다).</p>
+
+<h2 data-min="20" data-kind="concept">기울기 검증</h2>
+<p>역전파로 구한 기울기를 수치 미분과 비교해 구현 오류를 찾는 절차를 <dfn data-t="gradient-check">기울기 검증</dfn>이라 한다. 두 값의 차이는 크기에 상관없이 비교할 수 있도록 상대 오차로 잰다.</p>
+$$\text{상대 오차} = \frac{|g_{\text{역전파}} - g_{\text{수치}}|}{\max(|g_{\text{역전파}}|, |g_{\text{수치}}|, \varepsilon)}$$
+<table>
+  <thead><tr><th>최대 상대 오차</th><th>판단</th></tr></thead>
+  <tbody>
+    <tr><td>$10^{-6}$ 이하</td><td>정상 (꺾인 점이 없는 매끄러운 함수면 $10^{-8}$ 이하까지 내려간다)</td></tr>
+    <tr><td>$10^{-4}$ 근처</td><td>의심. ReLU의 꺾인 점($z = 0$) 바로 옆의 원소라면 괜찮을 수 있다.</td></tr>
+    <tr><td>$10^{-2}$ 이상</td><td>거의 확실히 버그</td></tr>
+  </tbody>
+</table>
+<div class="box key" data-title="기울기 검증 요령"><ul>
+<li>float64로 한다. float32는 수치 미분 자체가 부정확하다.</li>
+<li>작은 신경망, 작은 배치(표본 몇 개)로 한다. 파라미터마다 순전파 2번이 필요하다.</li>
+<li>드롭아웃(26일차)처럼 무작위성이 있는 부분은 끄고 한다.</li>
+<li>손실에 규제 항이 있으면 그것까지 포함해 검증한다.</li>
+<li>모든 파라미터 종류(가중치, 편향, 층마다)를 검사한다. 편향 기울기만 틀리는 버그도 흔하다.</li>
+</ul></div>
+
+<h2 data-min="17" data-kind="concept">학습 루프</h2>
+<ol class="steps">
+<li>에폭마다 학습 데이터의 순서를 섞는다(9일차).</li>
+<li>미니배치마다: 순전파 → 손실 → 손실의 <code>backward</code> → 층들을 역순으로 <code>backward</code> → 모든 파라미터를 <code>p -= lr * g</code>로 갱신.</li>
+<li>에폭이 끝나면 학습 세트와 검증 세트 전체에서 손실과 정확도를 계산해 기록한다.</li>
+<li>정해진 에폭 수를 채우면 멈춘다. 검증 성능이 가장 좋았던 시점의 가중치를 따로 저장해 두기도 한다(조기 종료, 26일차).</li>
+</ol>
+<p>평가할 때는 기울기 계산이 필요 없다. 이 강의의 NumPy 코드에서는 상관없지만, PyTorch에서는 평가 때 <code>torch.no_grad()</code>로 그래프 기록을 끈다(29일차).</p>
+
+<h2 data-min="15" data-kind="concept">학습 곡선 해석</h2>
+<p>에폭(또는 스텝)에 따른 학습·검증 손실과 정확도의 그래프를 <dfn data-t="learning-curve">학습 곡선</dfn>이라 한다. 9일차에는 학습 손실만으로 학습률을 진단했다. 검증 곡선을 함께 그리면 일반화 상태까지 보인다.</p>
+<figure class="fig">
+<svg viewBox="0 0 660 200" width="660" role="img" aria-label="학습 곡선의 세 가지 전형">
+  <g font-size="12">
+  <g transform="translate(20,20)">
+    <rect x="0" y="0" width="180" height="130" class="s-bg" stroke-width="1"/>
+    <path d="M5 15 C 40 80, 80 105, 175 112" class="s-grn" stroke-width="2.4" fill="none"/>
+    <path d="M5 18 C 40 82, 80 98, 175 102" class="s-red" stroke-width="2.4" fill="none"/>
+    <text x="90" y="152" text-anchor="middle" class="s-tx" font-weight="700">양호</text>
+    <text x="90" y="170" text-anchor="middle" class="s-txm">둘 다 낮고 간격이 작다</text>
+  </g>
+  <g transform="translate(240,20)">
+    <rect x="0" y="0" width="180" height="130" class="s-bg" stroke-width="1"/>
+    <path d="M5 15 C 40 80, 80 110, 175 122" class="s-grn" stroke-width="2.4" fill="none"/>
+    <path d="M5 18 C 40 80, 60 92, 90 90 C 120 88, 150 70, 175 55" class="s-red" stroke-width="2.4" fill="none"/>
+    <line x1="88" y1="0" x2="88" y2="130" class="s-mu" stroke-width="1.2" stroke-dasharray="4 4"/>
+    <text x="90" y="152" text-anchor="middle" class="s-tx" font-weight="700">과적합</text>
+    <text x="90" y="170" text-anchor="middle" class="s-txm">검증 손실이 다시 오른다</text>
+  </g>
+  <g transform="translate(460,20)">
+    <rect x="0" y="0" width="180" height="130" class="s-bg" stroke-width="1"/>
+    <path d="M5 15 C 30 45, 60 55, 175 60" class="s-grn" stroke-width="2.4" fill="none"/>
+    <path d="M5 18 C 30 46, 60 52, 175 55" class="s-red" stroke-width="2.4" fill="none"/>
+    <text x="90" y="152" text-anchor="middle" class="s-tx" font-weight="700">과소적합</text>
+    <text x="90" y="170" text-anchor="middle" class="s-txm">둘 다 높은 곳에서 멈춘다</text>
+  </g>
+  <g transform="translate(250,192)"><line x1="0" y1="-4" x2="22" y2="-4" class="s-grn" stroke-width="2.4"/><text x="28" y="0" class="s-tx">학습 손실</text><line x1="100" y1="-4" x2="122" y2="-4" class="s-red" stroke-width="2.4"/><text x="128" y="0" class="s-tx">검증 손실</text></g>
+  </g>
+</svg>
+<figcaption>세 가지 전형적인 학습 곡선(가로축 에폭, 세로축 손실). 과적합에서는 점선 지점 이후 학습을 계속할수록 일반화가 나빠진다.</figcaption>
+</figure>
+<table>
+  <thead><tr><th>증상</th><th>진단</th><th>처방</th></tr></thead>
+  <tbody>
+    <tr><td>학습 손실이 줄지 않거나 요동</td><td>학습률 과대, 버그</td><td>학습률 ↓, 기울기 검증</td></tr>
+    <tr><td>학습 손실이 아주 천천히 줄어듦</td><td>학습률 과소, 초기화 문제</td><td>학습률 ↑, 초기화 확인(24일차)</td></tr>
+    <tr><td>둘 다 높은 곳에서 평평</td><td>과소적합</td><td>모델 키우기, 더 오래</td></tr>
+    <tr><td>학습은 계속 ↓, 검증은 ↑</td><td>과적합</td><td>규제, 조기 종료, 데이터(26일차)</td></tr>
+  </tbody>
+</table>
+
+<h2 data-min="30" data-kind="practice">코드 실습: 손글씨 숫자 MLP</h2>
+<p>층과 손실을 정의한다. 18일차 프로젝트의 클래스에 <code>params()</code>를 더했다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+class Linear:
+    def __init__(self, d_in, d_out, rng, scale=None):
+        # 기본: He 초기화
+        std = scale if scale is not None else np.sqrt(2 / d_in)
+        self.W = rng.normal(0, std, (d_in, d_out)); self.b = np.zeros(d_out)
+        self.dW = np.zeros_like(self.W); self.db = np.zeros_like(self.b)
+    def forward(self, X):
+        self.X = X; return X @ self.W + self.b
+    def backward(self, G):
+        # 제자리에 저장
+        self.dW[...] = self.X.T @ G; self.db[...] = G.sum(axis=0)
+        return G @ self.W.T
+    def params(self): return [(self.W, self.dW), (self.b, self.db)]
+class ReLU:
+    def forward(self, X):
+        self.mask = X &gt; 0; return X * self.mask
+    def backward(self, G): return G * self.mask
+    def params(self): return []
+class SoftmaxCE:
+    def forward(self, Z, y):
+        Z = Z - Z.max(1, keepdims=True)
+        self.P = np.exp(Z) / np.exp(Z).sum(1, keepdims=True)
+        self.y = y
+        return -np.log(self.P[np.arange(len(y)), y]).mean()
+    def backward(self):
+        G = self.P.copy(); G[np.arange(len(self.y)), self.y] -= 1
+        return G / len(self.y)
+def build(sizes, seed=0, scale=None):
+    rng = np.random.default_rng(seed); layers = []
+    for i, (a, b) in enumerate(zip(sizes[:-1], sizes[1:])):
+        layers.append(Linear(a, b, rng, scale))
+        if i &lt; len(sizes) - 2: layers.append(ReLU())
+    return layers
+def forward(layers, X):
+    for l in layers: X = l.forward(X)
+    return X
+def backward(layers, G):
+    for l in reversed(layers): G = l.backward(G)
+print("준비 완료")
+</code></pre>
+<p>학습 전에 기울기를 검증한다. 작은 신경망(64 → 16 → 10)과 표본 8개로 모든 파라미터를 검사한다.</p>
+<pre class="run"><code>d = load_data("digits"); X, y = d["X"].astype(float) / 16, d["y"]
+def grad_check(layers, crit, Xb, yb, h=1e-5):
+    crit.forward(forward(layers, Xb), yb); backward(layers, crit.backward())
+    worst = 0.0
+    for l in layers:
+        for p, g in l.params():
+            g_bp = g.copy()
+            for idx in np.ndindex(p.shape):
+                old = p[idx]
+                p[idx] = old + h; Lp = crit.forward(forward(layers, Xb), yb)
+                p[idx] = old - h; Lm = crit.forward(forward(layers, Xb), yb)
+                p[idx] = old
+                num = (Lp - Lm) / (2 * h)
+                worst = max(worst, abs(num - g_bp[idx]) / max(abs(num), abs(g_bp[idx]), 1e-12))
+    return worst
+small = build([64, 16, 10], seed=3)
+n_params = sum(p.size for l in small for p, _ in l.params())
+print(f"파라미터 {n_params}개, 최대 상대 오차 {grad_check(small, SoftmaxCE(), X[:8], y[:8]):.2e}")
+</code></pre>
+<p>최대 상대 오차가 $10^{-6}$ 이하이므로 통과다. 0이 아닌 것은 수치 미분 자체의 오차와 ReLU의 꺾인 점 때문이다. 검증을 통과했으니 학습한다. 7일차와 같은 층화 분할(테스트 364개)에서 64 → 64 → 10 신경망을 학습률 0.1, 배치 32로 30에폭 학습한다.</p>
+<pre class="run"><code>rng = np.random.default_rng(0); tr, te = [], []
+for k in range(10):
+    idx = rng.permutation(np.where(y == k)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+
+def train(sizes, Xtr, ytr, Xv, yv, lr=0.1, B=32, epochs=30, seed=0, scale=None):
+    layers = build(sizes, seed, scale)
+    crit = SoftmaxCE()
+    r = np.random.default_rng(seed + 100)
+    hist = []
+    for ep in range(epochs):
+        order = r.permutation(len(Xtr))
+        for s in range(0, len(order), B):
+            i = order[s:s + B]
+            crit.forward(forward(layers, Xtr[i]), ytr[i])
+            backward(layers, crit.backward())
+            for l in layers:
+                for p, g in l.params():
+                    # TODO 확인: 제자리 갱신
+                    p -= lr * g
+        tl = crit.forward(forward(layers, Xtr), ytr)
+        ta = (crit.P.argmax(1) == ytr).mean()
+        vl = crit.forward(forward(layers, Xv), yv)
+        va = (crit.P.argmax(1) == yv).mean()
+        hist.append((tl, vl, ta, va))
+    return layers, np.array(hist)
+
+net, hist = train([64, 64, 10], X[tr], y[tr], X[te], y[te])
+fig, axs = plt.subplots(1, 2, figsize=(9.5, 3.3))
+axs[0].plot(hist[:, 0], label="학습")
+axs[0].plot(hist[:, 1], label="테스트")
+axs[0].set_ylabel("손실")
+axs[1].plot(hist[:, 2], label="학습")
+axs[1].plot(hist[:, 3], label="테스트")
+axs[1].set_ylabel("정확도")
+for ax in axs: ax.set_xlabel("에폭"); ax.legend(); ax.grid(alpha=.3)
+plt.tight_layout(); plt.show()
+print(f"30에폭 후 학습 정확도 {hist[-1, 2]:.3f}, 테스트 정확도 {hist[-1, 3]:.3f}")
+</code></pre>
+<p>여기서는 학습 곡선을 보여 주기 위해 테스트 세트를 매 에폭 평가했다. 실제 하이퍼파라미터 선택에는 검증 세트를 쓴다(미니 프로젝트).</p>
+
+<h2 data-min="12" data-kind="practice">이전 모델과 비교</h2>
+<p>같은 분할에서 지금까지 만든 분류기들의 테스트 정확도를 모은다.</p>
+<table>
+  <thead><tr><th>모델</th><th>강의</th><th>테스트 정확도</th><th>파라미터</th></tr></thead>
+  <tbody>
+    <tr><td>최근접 중심</td><td>7일차</td><td>91.5%</td><td>640 (평균 이미지 10장)</td></tr>
+    <tr><td>소프트맥스 회귀</td><td>11일차</td><td>97.0%</td><td>650</td></tr>
+    <tr><td>MLP 64 → 64 → 10</td><td>오늘</td><td>약 97.5%</td><td>4,810</td></tr>
+    <tr><td>kNN (k = 1~5)</td><td>7일차 확장</td><td>99% 이상</td><td>학습 데이터 전체 저장</td></tr>
+  </tbody>
+</table>
+<p>8×8 숫자는 작고 쉬운 데이터라 MLP의 이점이 작다. 픽셀이 784개이고 6만 장인 MNIST에서는 차이가 커진다(28일차 목표 98%). 또한 모든 픽셀을 독립된 입력으로 보는 MLP는 이미지의 공간 구조(가까운 픽셀끼리의 관계)를 활용하지 못한다. 5주차의 합성곱 신경망이 이 문제를 푼다.</p>
+<pre class="run"><code>P = SoftmaxCE(); P.forward(forward(net, X[te]), y[te]); pred = P.P.argmax(1)
+C = np.zeros((10, 10), int)
+for a, b in zip(y[te], pred): C[a, b] += 1
+pairs = sorted([(C[i, j], i, j) for i in range(10) for j in range(10) if i != j],
+               reverse=True)[:3]
+print("가장 많이 헷갈린 쌍:", [(f"{i}→{j}", int(n)) for n, i, j in pairs])
+print("숫자별 정확도:", (C.diagonal() / C.sum(1)).round(3))
+</code></pre>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>층 인터페이스: forward(저장) / backward(파라미터 기울기 저장, 입력 기울기 반환) / params(쌍 목록).</li>
+  <li>기울기 검증: float64, 작은 망, 상대 오차 $10^{-7}$ 이하면 정상. 학습 전에 반드시.</li>
+  <li>학습 루프: 섞기 → 미니배치마다 순전파·역전파·제자리 갱신 → 에폭마다 학습·검증 기록.</li>
+  <li>학습 곡선: 간격이 벌어지면 과적합, 둘 다 높으면 과소적합, 요동·정체는 학습률.</li>
+  <li>손글씨 숫자에서 MLP 약 97.5%. 이미지 구조를 쓰지 않는 한계가 있다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"NumPy에서 p = p − lr * g로 갱신했더니 학습이 전혀 되지 않았다. 원인은?","o":["학습률이 작아서","새 배열이 만들어져 층 안의 가중치는 바뀌지 않아서","기울기가 0이라서","float64라서"],"a":1,"e":"제자리 연산 p −= lr * g를 써야 층이 가진 배열이 바뀐다."},
+ {"q":"기울기 검증의 최대 상대 오차가 0.02였다. 판단은?","o":["정상","ReLU 꺾인 점 때문이니 무시","역전파에 버그가 있을 가능성이 높다","학습률을 바꾼다"],"a":2,"e":"10⁻² 이상이면 거의 확실히 버그다."},
+ {"q":"기울기 검증을 float32가 아니라 float64로 하는 이유는?","o":["메모리를 아끼려고","float32에서는 수치 미분의 반올림 오차가 커서 비교가 부정확해서","GPU 때문에","속도 때문에"],"a":1,"e":"(f(x+h) − f(x−h))/2h의 뺄셈에서 유효숫자가 크게 줄어든다."},
+ {"q":"학습 손실은 계속 줄고 검증 손실은 10에폭 이후 늘어난다. 진단은?","o":["과소적합","과적합","학습률 과소","버그"],"a":1,"e":"학습 데이터에만 맞춰지고 있다. 규제나 조기 종료가 처방이다."},
+ {"q":"학습·검증 손실이 모두 높은 값에서 평평하다. 우선 해 볼 것은?","o":["규제를 강하게","모델을 키우거나 더 오래 학습","데이터를 줄인다","드롭아웃 추가"],"a":1,"e":"과소적합이므로 표현력을 늘린다."},
+ {"q":"하이퍼파라미터를 고를 때 테스트 세트를 쓰면 안 되는 이유는?","o":["계산이 느려서","테스트 성능이 낙관적으로 부풀려져 실제 일반화 성능을 알 수 없게 되어서","테스트 세트가 작아서","규칙이라서"],"a":1,"e":"12일차: 선택에 쓴 세트의 점수는 선택 편향을 가진다."},
+ {"q":"검증 세트가 290개일 때 정확도 95.5%와 96.2%의 차이는 표본 몇 개인가?","o":["약 0.2개","약 2개","약 20개","약 200개"],"a":1,"e":"0.7% × 290 ≈ 2개. 잡음 수준일 수 있다."},
+ {"q":"MLP가 이미지 분류에서 갖는 구조적 한계는?","o":["비선형성이 없다","픽셀을 독립된 입력으로 보아 공간 구조와 위치 이동을 활용하지 못한다","학습이 불가능하다","출력이 하나뿐이다"],"a":1,"e":"5주차 합성곱 신경망의 동기다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>기울기 검증 함수로, 선형층의 <code>backward</code>에서 <code>db</code>를 <code>G.mean(axis=0)</code>으로 잘못 구현했을 때의 상대 오차를 구하라. 어떤 파라미터에서 오차가 나타나는가?
+    <details class="sol"><summary>풀이</summary><p>편향 기울기가 배치 크기(8)로 한 번 더 나뉘어 상대 오차가 약 0.875(= 1 − 1/8)가 된다. 가중치 기울기는 정상이므로, 모든 파라미터 종류를 검사해야 이런 버그를 잡는다.</p></details></li>
+  <li>학습률 1.0으로 학습했더니 학습 손실이 30에폭 후 0.003까지 떨어졌다. 이것이 좋은 신호인가? 무엇을 함께 봐야 하는가?
+    <details class="sol"><summary>풀이</summary><p>학습 손실만으로는 알 수 없다. 검증 손실·정확도를 함께 봐야 한다. 학습 손실이 거의 0이면 학습 데이터를 외웠을 가능성이 높고, 검증 손실이 오르고 있다면 과적합이다.</p></details></li>
+  <li>배치 크기 8과 128로 같은 30에폭을 학습하면 스텝 수는 각각 몇 번인가(학습 표본 1143개)? 같은 에폭에서 작은 배치가 더 좋은 결과를 낸다면 이유는 무엇인가?
+    <details class="sol"><summary>풀이</summary><p>$\lceil1143/8\rceil = 143$, $\lceil1143/128\rceil = 9$이므로 4,290스텝 대 270스텝. 같은 학습률이면 작은 배치가 16배 많이 갱신하므로 같은 에폭에서 더 멀리 간다. 큰 배치는 학습률을 키우거나(23일차) 더 오래 학습해야 비슷해진다.</p></details></li>
+</ol>
+
+<h2 data-min="44" data-kind="project">미니 프로젝트: 하이퍼파라미터 실험</h2>
+<section class="project" data-title="손글씨 숫자 MLP의 학습률·크기·깊이·배치·초기화를 검증 세트로 비교하고 최종 모델 고르기" data-min="44">
+<p class="lead">학습 세트를 다시 학습용과 검증용으로 나누고, 하이퍼파라미터를 하나씩 바꿔 가며 검증 성능과 학습 곡선을 비교한다. 결과의 잡음을 고려해 최종 설정을 고르고, 학습 세트 전체로 다시 학습해 테스트 세트로 한 번 평가한다. 셀마다 몇 초씩 걸린다.</p>
+<ol class="steps">
+<li><b>검증 세트 떼기.</b> 학습 세트(1433개)를 층화 80:20으로 다시 나눈다.
+<pre class="run"><code>r2 = np.random.default_rng(1); trn, val = [], []
+for k in range(10):
+    idx = r2.permutation(tr[y[tr] == k]); cut = int(0.8 * len(idx))
+    trn += list(idx[:cut]); val += list(idx[cut:])
+trn, val = np.array(trn), np.array(val)
+Xa, ya, Xv, yv = X[trn], y[trn], X[val], y[val]
+print("학습", len(trn), " 검증", len(val), " 테스트", len(te),
+      " (검증 1개 = %.2f%%)" % (100 / len(val)))
+</code></pre></li>
+<li><b>학습률.</b> 0.01, 0.1, 0.5, 1.0으로 20에폭씩 학습해 검증 정확도와 학습 손실의 곡선을 비교한다.
+<pre class="run"><code>fig, axs = plt.subplots(1, 2, figsize=(9.5, 3.2))
+for lr in [0.01, 0.1, 0.5, 1.0]:
+    _, h = train([64, 64, 10], Xa, ya, Xv, yv, lr=lr, epochs=20)
+    axs[0].semilogy(h[:, 0], label=f"lr {lr}"); axs[1].plot(h[:, 3], label=f"lr {lr}")
+    print(f"lr {lr:&lt;5} 학습 손실 {h[-1, 0]:.4f}  검증 정확도 {h[-1, 3]:.3f}  (최고 {h[:, 3].max():.3f})")
+axs[0].set_ylabel("학습 손실 (로그)")
+axs[1].set_ylabel("검증 정확도")
+axs[1].set_ylim(.85, 1)
+for ax in axs: ax.set_xlabel("에폭"); ax.legend(); ax.grid(alpha=.3)
+plt.tight_layout(); plt.show()
+</code></pre></li>
+<li><b>크기와 깊이.</b> 은닉 크기 16, 64, 256과 은닉층 1~3개를 비교한다. 파라미터 수도 함께 적는다.
+<pre class="run"><code>for sizes in [[64, 16, 10], [64, 64, 10], [64, 256, 10], [64, 64, 64, 10], [64, 64, 64, 64, 10]]:
+    layers, h = train(sizes, Xa, ya, Xv, yv, lr=0.1, epochs=20)
+    n_p = sum(p.size for l in layers for p, _ in l.params())
+    print(f"{str(sizes):22s} 파라미터 {n_p:6,}  학습 정확도 {h[-1, 2]:.3f}  검증 정확도 {h[-1, 3]:.3f}")
+</code></pre></li>
+<li><b>배치 크기와 초기화.</b> 배치 8, 32, 128(같은 20에폭)과, 가중치 표준편차 0.001, 0.01, He($\sqrt{2/d}$), 1.0을 비교한다. 초기화는 첫 에폭 뒤의 학습 손실도 본다.
+<pre class="run"><code>import time
+for B in [8, 32, 128]:
+    t0 = time.perf_counter()
+    _, h = train([64, 64, 10], Xa, ya, Xv, yv, lr=0.1, B=B, epochs=20)
+    print(f"배치 {B:3d}: 검증 정확도 {h[-1, 3]:.3f}, 시간 {time.perf_counter() - t0:.2f}초")
+for sc in [0.001, 0.01, None, 1.0]:
+    _, h = train([64, 64, 10], Xa, ya, Xv, yv, lr=0.1, epochs=20, scale=sc)
+    print(f"초기화 {('He' if sc is None else sc)!s:6s}: 1에폭 뒤 학습 손실 {h[0, 0]:.3f}, 검증 정확도 {h[-1, 3]:.3f}")
+</code></pre></li>
+<li><b>최종 모델.</b> 위 결과로 설정을 하나 고르고(예: 64 → 64 → 10, 학습률 0.5, 배치 32, He 초기화), 학습 세트 전체(학습 + 검증)로 다시 학습한 뒤 테스트 세트로 한 번 평가한다.
+<pre class="run"><code>final, h = train([64, 64, 10], X[tr], y[tr], X[te], y[te], lr=0.5, B=32, epochs=20)
+print(f"최종 테스트 정확도 {h[-1, 3]:.3f}")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>1단계: 검증 세트는 290개 안팎이라 표본 1개가 약 0.34%다. 정확도 차이 1% 이하(3개 이하)는 잡음일 수 있다. 시드를 바꿔 여러 번 실행하거나 교차검증(12일차)으로 확인해야 확실하다.</li>
+<li>2단계: 학습률 0.01은 20에폭으로는 크게 부족하다(학습 손실 약 0.74, 검증 약 89%). 0.1~1.0은 모두 96% 근처이며, 학습률이 클수록 학습 손실이 빨리 0에 가까워진다. 이 데이터에서는 1.0도 발산하지 않지만, 더 큰 모델이나 데이터에서는 안정 범위가 좁아진다.</li>
+<li>3단계: 크기와 깊이를 바꿔도 검증 정확도는 95.5~96% 범위에서 거의 같다. 큰 모델은 학습 정확도가 100%에 더 가깝지만 검증은 그만큼 오르지 않는다. 8×8 숫자에는 작은 모델로 충분하다.</li>
+<li>4단계: 같은 에폭에서 배치 8이 가장 좋고 가장 느리다(스텝이 많다). 초기화 0.001은 첫 에폭 뒤에도 손실이 ln 10 ≈ 2.30에 머문다. 신호가 층을 지나며 거의 사라져 기울기도 작기 때문이다(24일차). 표준편차 1.0은 첫 출력이 너무 커서 불안정하게 시작한다. He 초기화가 가장 빨리 출발한다.</li>
+<li>5단계: 테스트 정확도는 97% 근처다. 최종 숫자보다, 테스트를 마지막에 한 번만 열었다는 절차가 중요하다.</li>
+</ul></details>
+</section>

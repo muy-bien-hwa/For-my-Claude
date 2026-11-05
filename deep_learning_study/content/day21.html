@@ -1,0 +1,323 @@
+<ul class="goals">
+  <li>층, 손실, 옵티마이저, 데이터 공급기, 학습기를 갖춘 작은 딥러닝 프레임워크를 설계하고 구현한다.</li>
+  <li>모든 부품을 기울기 검증과 "작은 배치 외우기" 시험으로 검증한다.</li>
+  <li>같은 프레임워크로 회귀, 이진 분류, 다중 분류 세 과제를 풀고 2주차의 고전 모델과 비교한다.</li>
+  <li>모델의 가중치를 저장하고 다시 불러온다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="review">프로젝트 개요</h2>
+<p>3주차에서 퍼셉트론부터 시작해 순전파, 역전파, 자동 미분, 학습 루프를 차례로 만들었다. 이번 주간 프로젝트에서는 이것들을 하나의 재사용 가능한 패키지 <code>minidl</code>로 정리한다. 설계는 PyTorch의 이름과 구조를 따르므로, 5주차에 PyTorch로 넘어가면 같은 개념을 그대로 알아볼 수 있다.</p>
+<div class="flow"><div>설계</div><div>Module과 층</div><div>손실 함수</div><div>옵티마이저와<br>DataLoader</div><div class="hl">fit 학습기</div><div>시험</div><div>세 과제 적용</div><div>저장·불러오기</div></div>
+<h3>완료 기준</h3>
+<ul class="checklist" data-id="w3-project">
+  <li>Module 기반 Linear, ReLU, Tanh, Sigmoid, Sequential을 구현했다.</li>
+  <li>SoftmaxCrossEntropy, BCEWithLogits, MSE 손실을 수치적으로 안정하게 구현했다.</li>
+  <li>SGD(가중치 감쇠 포함)와 DataLoader, fit 함수를 구현했다.</li>
+  <li>세 손실 각각에 대해 신경망 전체의 기울기 검증을 통과했다(상대 오차 $10^{-6}$ 이하).</li>
+  <li>표본 16개를 거의 완벽히 외우는 시험을 통과했다.</li>
+  <li>회귀(와인), 이진 분류(유방암), 다중 분류(손글씨)를 학습시키고 2주차 결과와 비교했다.</li>
+  <li>가중치를 저장하고 새 모델에 불러와 같은 예측이 나오는 것을 확인했다.</li>
+  <li>결과를 다섯 문장 이내의 보고서로 정리했다.</li>
+</ul>
+
+<h2 data-min="12" data-kind="project">1단계: 설계</h2>
+<p>부품 사이의 약속(인터페이스)을 먼저 정한다. 각 부품은 이 약속만 지키면 다른 부품의 내부를 몰라도 된다.</p>
+<table>
+  <thead><tr><th>부품</th><th>메서드</th><th>PyTorch 대응</th></tr></thead>
+  <tbody>
+    <tr><td>Module (층, 모델)</td><td><code>forward(X)</code>, <code>backward(G)</code>, <code>params()</code>, <code>train()</code>, <code>eval()</code></td><td><code>nn.Module</code> (backward는 autograd가 자동으로)</td></tr>
+    <tr><td>손실</td><td><code>forward(Z, y)</code> → 스칼라, <code>backward()</code> → $\partial L/\partial Z$</td><td><code>nn.CrossEntropyLoss</code> 등</td></tr>
+    <tr><td>옵티마이저</td><td><code>zero_grad()</code>, <code>step()</code></td><td><code>torch.optim.SGD</code></td></tr>
+    <tr><td>DataLoader</td><td>반복하면 <code>(X_batch, y_batch)</code>를 냄</td><td><code>torch.utils.data.DataLoader</code></td></tr>
+    <tr><td>fit</td><td>에폭 반복, 기록 반환</td><td>직접 작성하는 학습 루프</td></tr>
+  </tbody>
+</table>
+<p><code>train()</code>과 <code>eval()</code>은 지금은 하는 일이 없지만, 26일차의 드롭아웃과 25일차의 배치 정규화처럼 학습과 평가에서 다르게 동작하는 층을 위해 미리 둔다.</p>
+
+<h2 data-min="30" data-kind="project">2단계: Module과 층</h2>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+import io
+
+class Module:
+    training = True
+    def forward(self, X): raise NotImplementedError
+    def backward(self, G): raise NotImplementedError
+    def params(self): return []                      # [(파라미터, 기울기), ...]
+    def train(self): self.training = True; return self
+    def eval(self): self.training = False; return self
+    def __call__(self, X): return self.forward(X)    # model(X)로 호출
+
+class Linear(Module):
+    def __init__(self, d_in, d_out, rng=None, init="he"):
+        rng = rng or np.random.default_rng(0)
+        std = np.sqrt(2 / d_in) if init == "he" else np.sqrt(1 / d_in)
+        self.W = rng.normal(0, std, (d_in, d_out)); self.b = np.zeros(d_out)
+        self.dW = np.zeros_like(self.W); self.db = np.zeros_like(self.b)
+    def forward(self, X):
+        self.X = X; return X @ self.W + self.b
+    def backward(self, G):
+        self.dW[...] = self.X.T @ G; self.db[...] = G.sum(0)
+        return G @ self.W.T
+    def params(self): return [(self.W, self.dW), (self.b, self.db)]
+
+class ReLU(Module):
+    def forward(self, X):
+        self.mask = X &gt; 0; return X * self.mask
+    def backward(self, G): return G * self.mask
+
+class Tanh(Module):
+    def forward(self, X):
+        self.out = np.tanh(X); return self.out
+    def backward(self, G): return G * (1 - self.out ** 2)
+
+class Sigmoid(Module):
+    def forward(self, X):
+        self.out = 0.5 * (1 + np.tanh(0.5 * X)); return self.out
+    def backward(self, G): return G * self.out * (1 - self.out)
+
+class Sequential(Module):
+    def __init__(self, *layers): self.layers = list(layers)
+    def forward(self, X):
+        for l in self.layers: X = l.forward(X)
+        return X
+    def backward(self, G):
+        for l in reversed(self.layers): G = l.backward(G)
+        return G
+    def params(self): return [pg for l in self.layers for pg in l.params()]
+    def train(self):
+        for l in self.layers: l.train()
+        return self
+    def eval(self):
+        for l in self.layers: l.eval()
+        return self
+    def state_dict(self):
+        return {f"p{i}": p.copy() for i, (p, _) in enumerate(self.params())}
+    def load_state_dict(self, sd):
+        for i, (p, _) in enumerate(self.params()): p[...] = sd[f"p{i}"]
+print("층 준비 완료")
+</code></pre>
+
+<h2 data-min="20" data-kind="project">3단계: 손실 함수</h2>
+<p>세 손실 모두 마지막 층의 출력(로짓 또는 예측값) $Z$를 받는다. 확률로 바꾸는 과정을 손실 안에 넣어야 로그-합-지수(11일차)와 로짓 형태의 BCE(10일차)로 안정하게 계산할 수 있다.</p>
+<pre class="run"><code>class SoftmaxCrossEntropy:                           # 다중 분류, y: 정수 (N,)
+    def forward(self, Z, y):
+        Z = Z - Z.max(1, keepdims=True)
+        self.P = np.exp(Z) / np.exp(Z).sum(1, keepdims=True)
+        self.y = y
+        return -np.log(self.P[np.arange(len(y)), y]).mean()
+    def backward(self):
+        G = self.P.copy(); G[np.arange(len(self.y)), self.y] -= 1
+        return G / len(self.y)
+
+# 이진 분류, Z: (N, 1), y: 0/1 (N,)
+class BCEWithLogits:
+    def forward(self, Z, y):
+        self.z = Z[:, 0]; self.y = y.astype(float)
+        # ln(1 + e^z) − yz
+        return np.mean(np.logaddexp(0, self.z) - self.y * self.z)
+    def backward(self):
+        p = 0.5 * (1 + np.tanh(0.5 * self.z))
+        return ((p - self.y) / len(self.y))[:, None]
+
+class MSE:                                           # 회귀, Z: (N, 1), y: (N,)
+    def forward(self, Z, y):
+        self.d = Z[:, 0] - y; return np.mean(self.d ** 2)
+    def backward(self): return (2 * self.d / len(self.d))[:, None]
+print("손실 준비 완료")
+</code></pre>
+<div class="box warn"><p>BCE와 MSE에서 <code>Z[:, 0]</code>으로 $(N, 1)$을 $(N,)$로 바꾼 뒤 <code>y</code>와 계산하고, 역전파에서는 다시 <code>[:, None]</code>으로 $(N, 1)$로 되돌린다. 17일차의 $(N,)$ 대 $(N, 1)$ 함정을 피하기 위해서다.</p></div>
+
+<h2 data-min="20" data-kind="project">4단계: 옵티마이저와 DataLoader</h2>
+<p>옵티마이저는 (파라미터, 기울기) 쌍의 목록을 받아 기울기를 비우고(<code>zero_grad</code>) 갱신한다(<code>step</code>). 가중치 감쇠(12일차의 L2 규제)는 갱신식에 $\lambda\mathbf w$를 더하는 것으로 구현한다. 편의상 편향에도 적용한다.</p>
+<pre class="run"><code>class SGD:
+    def __init__(self, params, lr=0.1, weight_decay=0.0):
+        self.params, self.lr, self.wd = params, lr, weight_decay
+    def zero_grad(self):
+        for _, g in self.params: g[...] = 0
+    def step(self):
+        for p, g in self.params:
+            p -= self.lr * (g + self.wd * p)        # TODO 확인: 제자리 갱신 + 감쇠
+
+class DataLoader:
+    def __init__(self, X, y, batch_size=32, shuffle=True, seed=0):
+        self.X, self.y, self.B, self.shuffle = X, y, batch_size, shuffle
+        self.rng = np.random.default_rng(seed)
+    def __iter__(self):
+        idx = self.rng.permutation(len(self.X)) if self.shuffle else np.arange(len(self.X))
+        for s in range(0, len(idx), self.B):
+            i = idx[s:s + self.B]; yield self.X[i], self.y[i]
+    def __len__(self): return -(-len(self.X) // self.B)    # 올림 나눗셈
+print("옵티마이저와 DataLoader 준비 완료")
+</code></pre>
+
+<h2 data-min="20" data-kind="project">5단계: 학습기</h2>
+<pre class="run"><code>def evaluate(model, loss_fn, X, y, metric):
+    model.eval(); Z = model(X); L = loss_fn.forward(Z, y); model.train()
+    return L, metric(Z, y)
+
+def fit(model, loss_fn, opt, loader, val=None, epochs=10, metric=None):
+    hist = {"train_loss": [], "val_loss": [], "val_metric": []}
+    for ep in range(epochs):
+        model.train(); total, n = 0.0, 0
+        for Xb, yb in loader:
+            L = loss_fn.forward(model(Xb), yb)
+            opt.zero_grad()
+            model.backward(loss_fn.backward())
+            opt.step()
+            total += L * len(Xb); n += len(Xb)
+        hist["train_loss"].append(total / n)          # 에폭 평균 학습 손실
+        if val is not None:
+            vl, vm = evaluate(model, loss_fn, *val, metric)
+            hist["val_loss"].append(vl); hist["val_metric"].append(vm)
+    return hist
+
+def grad_check(model, loss_fn, X, y, h=1e-5):
+    loss_fn.forward(model(X), y); model.backward(loss_fn.backward()); worst = 0.0
+    for p, g in model.params():
+        g_bp = g.copy()
+        for idx in np.ndindex(p.shape):
+            old = p[idx]
+            p[idx] = old + h; Lp = loss_fn.forward(model(X), y)
+            p[idx] = old - h; Lm = loss_fn.forward(model(X), y)
+            p[idx] = old
+            num = (Lp - Lm) / (2 * h)
+            worst = max(worst,
+                        abs(num - g_bp[idx]) / max(abs(num), abs(g_bp[idx]), 1e-12))
+    return worst
+print("학습기 준비 완료")
+</code></pre>
+
+<h2 data-min="20" data-kind="project">6단계: 시험</h2>
+<p>프레임워크를 실제 문제에 쓰기 전에 두 가지 시험을 통과해야 한다. 첫째, 세 손실 각각에 대해 작은 신경망 전체의 기울기 검증. 둘째, 작은 배치(표본 16개)를 거의 완벽히 외우는지 확인한다. 둘째 시험에 실패하면 모델이나 학습 루프 어딘가가 잘못된 것이다. 27일차의 디버깅 절차에서도 첫 번째로 하는 시험이다.</p>
+<pre class="run"><code>r = np.random.default_rng(0)
+Xg = r.normal(size=(6, 5))
+tests = [("소프트맥스 CE", Sequential(Linear(5, 4, r), Tanh(), Linear(4, 3, r)),
+          SoftmaxCrossEntropy(), r.integers(0, 3, 6)),
+         ("BCE (로짓)", Sequential(Linear(5, 4, r), Sigmoid(), Linear(4, 1, r)),
+          BCEWithLogits(), r.integers(0, 2, 6)),
+         ("MSE", Sequential(Linear(5, 4, r), ReLU(), Linear(4, 1, r)), MSE(),
+          r.normal(size=6))]
+for name, net, lf, yy in tests:
+    print(f"{name:12s} 최대 상대 오차 {grad_check(net, lf, Xg, yy):.1e}")
+
+d = load_data("digits"); Xd, yd = d["X"].astype(float) / 16, d["y"]
+net = Sequential(Linear(64, 64, r), ReLU(), Linear(64, 10, r))
+lf = SoftmaxCrossEntropy()
+opt = SGD(net.params(), lr=0.5)
+for it in range(200):
+    L = lf.forward(net(Xd[:16]), yd[:16])
+    opt.zero_grad()
+    net.backward(lf.backward())
+    opt.step()
+print(f"표본 16개 외우기: 200스텝 뒤 손실 {L:.4f} (0에 가까워야 통과)")
+</code></pre>
+
+<h2 data-min="25" data-kind="project">7단계: 세 과제에 적용</h2>
+<p>같은 프레임워크로 2주차의 세 과제를 다시 푼다. 분할은 그때와 같다.</p>
+<h3>다중 분류: 손글씨 숫자</h3>
+<pre class="run"><code>acc = lambda Z, y: (Z.argmax(1) == y).mean()
+rng = np.random.default_rng(0); tr, te = [], []
+for k in range(10):
+    idx = rng.permutation(np.where(yd == k)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+net = Sequential(Linear(64, 64, np.random.default_rng(1)), ReLU(),
+                 Linear(64, 10, np.random.default_rng(2)))
+h = fit(net, SoftmaxCrossEntropy(), SGD(net.params(), lr=0.5),
+        DataLoader(Xd[tr], yd[tr], 32), val=(Xd[te], yd[te]), epochs=20, metric=acc)
+print(f"손글씨: 테스트 정확도 {h['val_metric'][-1]:.3f} (11일차 소프트맥스 회귀 0.970)")
+</code></pre>
+<h3>이진 분류: 유방암</h3>
+<pre class="run"><code>d = load_data("breast_cancer"); Xc, yc = d["X"].astype(float), d["y"]
+rng = np.random.default_rng(0); tr, te = [], []
+for c in [0, 1]:
+    idx = rng.permutation(np.where(yc == c)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+mu, sd = Xc[tr].mean(0), Xc[tr].std(0); Zc = (Xc - mu) / sd
+bacc = lambda Z, y: ((Z[:, 0] &gt; 0) == y).mean()
+net_c = Sequential(Linear(30, 16, np.random.default_rng(1)), ReLU(),
+                   Linear(16, 1, np.random.default_rng(2)))
+h = fit(net_c, BCEWithLogits(), SGD(net_c.params(), lr=0.1, weight_decay=1e-3),
+        DataLoader(Zc[tr], yc[tr], 32),
+        val=(Zc[te], yc[te]), epochs=100, metric=bacc)
+print(f"유방암: 테스트 정확도 {h['val_metric'][-1]:.3f}, 테스트 BCE {h['val_loss'][-1]:.4f} (14일차 로지스틱 회귀 BCE 0.106)")
+</code></pre>
+<h3>회귀: 와인 플라보노이드</h3>
+<pre class="run"><code>d = load_data("wine")
+A = d["X"].astype(float)
+t = d["feature_names_ko"].index("플라보노이드")
+yw = A[:, t]; Xw = np.delete(A, t, axis=1)
+rng = np.random.default_rng(0)
+idx = rng.permutation(len(yw))
+cut = int(0.8 * len(yw))
+tr, te = idx[:cut], idx[cut:]
+mu, sd = Xw[tr].mean(0), Xw[tr].std(0); Zw = (Xw - mu) / sd
+r2 = lambda Z, y: 1 - ((y - Z[:, 0]) ** 2).sum() / ((y - y.mean()) ** 2).sum()
+def make_linear(rr): return Sequential(Linear(12, 1, rr))
+def make_mlp(rr): return Sequential(Linear(12, 16, rr), Tanh(), Linear(16, 1, rr))
+configs = [("선형 (은닉층 없음)", make_linear, 0.0),
+           ("MLP 16 tanh", make_mlp, 0.0),
+           ("MLP 16 tanh + 감쇠", make_mlp, 1e-2)]
+results = {}
+for name, make, wd in configs:
+    net_w = make(np.random.default_rng(1))
+    opt = SGD(net_w.params(), lr=0.05, weight_decay=wd)
+    h = fit(net_w, MSE(), opt, DataLoader(Zw[tr], yw[tr], 16),
+            val=(Zw[te], yw[te]), epochs=200, metric=r2)
+    results[name] = net_w
+    print(f"{name:18s} 학습 MSE {h['train_loss'][-1]:.4f},  테스트 R² {h['val_metric'][-1]:.3f}")
+print("(8일차 정규방정식 선형회귀의 테스트 R² 0.644)")
+</code></pre>
+
+<h2 data-min="10" data-kind="project">8단계: 저장과 불러오기</h2>
+<p>학습한 가중치를 파일로 저장해 두면 다시 학습하지 않고 쓸 수 있다. <code>state_dict</code>로 파라미터를 사전으로 모으고 NumPy의 <code>savez</code>로 저장한다. 여기서는 메모리 안의 파일(<code>BytesIO</code>)에 저장한다.</p>
+<pre class="run"><code>best = results["MLP 16 tanh + 감쇠"]
+buf = io.BytesIO(); np.savez(buf, **best.state_dict()); size = buf.tell(); buf.seek(0)
+loaded = dict(np.load(buf))
+fresh = Sequential(Linear(12, 16, np.random.default_rng(99)), Tanh(),
+                   Linear(16, 1, np.random.default_rng(99)))
+print("불러오기 전 예측 일치:", np.allclose(fresh(Zw[te]), best(Zw[te])))
+fresh.load_state_dict(loaded)
+print("불러온 뒤 예측 일치:", np.allclose(fresh(Zw[te]), best(Zw[te])),
+      f"(파일 크기 {size} 바이트)")
+</code></pre>
+<p>PyTorch에서는 <code>torch.save(model.state_dict(), "model.pt")</code>와 <code>model.load_state_dict(torch.load("model.pt"))</code>로 같은 일을 한다. 모델 구조(코드)와 가중치(파일)를 따로 저장하는 방식이다.</p>
+
+<h2 data-min="5" data-kind="project">보고서 정리</h2>
+<p>아래 질문에 답하는 다섯 문장 이내의 보고서를 학습 노트에 쓴다.</p>
+<ol class="steps">
+  <li>프레임워크는 어떤 부품으로 이루어져 있고, 부품 사이의 약속은 무엇인가?</li>
+  <li>어떤 시험으로 정확성을 확인했으며 결과는 어떠했는가?</li>
+  <li>세 과제의 결과는 2주차의 고전 모델과 비교해 어떠했는가?</li>
+  <li>은닉층이 가장 큰 차이를 만든 과제와 거의 차이가 없던 과제는 무엇이며, 왜 그렇다고 보는가?</li>
+  <li>다음에 추가할 기능은 무엇인가?</li>
+</ol>
+<details class="sol"><summary>참고 보고서</summary>
+<p>minidl은 Module(forward/backward/params), 손실(forward/backward), SGD(zero_grad/step), DataLoader, fit으로 이루어지며, 부품은 "(파라미터, 기울기) 쌍"과 "상류 기울기 G"만 주고받는다. 세 손실 모두 신경망 전체의 기울기 검증에서 상대 오차 $10^{-8}$ 이하였고, 표본 16개를 200스텝 만에 손실 0.006까지 외웠다. 손글씨는 테스트 97.3%로 소프트맥스 회귀(97.0%)와 비슷했고, 유방암은 테스트 115개를 모두 맞혀 로지스틱 회귀(99.1%)와 비슷했으나 테스트 BCE는 더 낮았다. 와인 회귀에서는 은닉층 16개와 가중치 감쇠로 테스트 $R^2$가 선형 모델의 0.64에서 0.74로 가장 크게 올랐다. 특징 사이의 비선형 관계가 있는 회귀에서는 은닉층이 도움이 되었고, 이미 거의 선형 분리 가능한 분류 문제에서는 차이가 작았다. 다음 단계로 모멘텀·Adam 옵티마이저(22일차), 학습률 스케줄(23일차), 드롭아웃(26일차)을 추가한다.</p></details>
+
+<h2 data-min="10" data-kind="project">확장 과제</h2>
+<ol class="exercises">
+  <li><b>모멘텀 SGD.</b> 이전 갱신 방향을 기억하는 속도 $\mathbf v \leftarrow \beta\mathbf v + \mathbf g$, $\mathbf w \leftarrow \mathbf w - \eta\mathbf v$($\beta = 0.9$)를 <code>SGD</code>에 추가하고, 손글씨 과제에서 학습률 0.05로 학습 곡선을 비교하라(22일차 미리 보기).
+    <details class="sol"><summary>풀이</summary><pre><code>class MomentumSGD(SGD):
+    def __init__(self, params, lr=0.1, momentum=0.9, weight_decay=0.0):
+        super().__init__(params, lr, weight_decay); self.m = momentum
+        self.v = [np.zeros_like(p) for p, _ in params]
+    def step(self):
+        for (p, g), v in zip(self.params, self.v):
+            v *= self.m; v += g + self.wd * p
+            p -= self.lr * v
+</code></pre><p>같은 학습률에서 모멘텀이 있으면 처음 몇 에폭의 손실이 훨씬 빨리 떨어진다. 22일차에서 이유를 다룬다.</p></details></li>
+  <li><b>새 층 추가.</b> Leaky ReLU 층을 추가하고 기울기 검증을 통과시켜라.
+    <details class="sol"><summary>풀이</summary><pre><code>class LeakyReLU(Module):
+    def __init__(self, a=0.01): self.a = a
+    def forward(self, X):
+        self.mask = X &gt; 0; return np.where(self.mask, X, self.a * X)
+    def backward(self, G): return np.where(self.mask, G, self.a * G)
+net = Sequential(Linear(5, 4, r), LeakyReLU(0.1), Linear(4, 3, r))
+print(grad_check(net, SoftmaxCrossEntropy(), Xg, r.integers(0, 3, 6)))
+</code></pre></details></li>
+  <li><b>평가 모드의 의미.</b> <code>eval()</code>을 호출해도 지금 프레임워크의 예측은 변하지 않는다. 학습과 평가에서 다르게 동작해야 하는 층을 하나 들고, 그 층의 <code>forward</code>가 <code>self.training</code>을 어떻게 쓸지 설명하라.
+    <details class="sol"><summary>풀이</summary><p>드롭아웃: 학습 중에는 무작위로 뉴런을 0으로 만들고 남은 값을 $1/(1 - p)$배 하며, 평가 중에는 아무것도 하지 않는다(<code>if not self.training: return X</code>). 배치 정규화: 학습 중에는 배치 통계를, 평가 중에는 저장해 둔 이동 평균 통계를 쓴다(25일차).</p></details></li>
+</ol>
