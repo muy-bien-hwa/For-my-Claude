@@ -1,187 +1,366 @@
 <ul class="goals">
-  <li>스칼라·벡터·행렬·텐서를 구분하고 각 텐서의 <b>형상(shape)</b>을 읽을 수 있다.</li>
-  <li>NumPy 배열을 만들고, 인덱싱·슬라이싱·reshape를 자유롭게 한다.</li>
-  <li><b>벡터화(vectorization)</b>가 왜 for 문보다 수십~수백 배 빠른지 이해한다.</li>
-  <li><b>브로드캐스팅 규칙</b>을 정확히 적용하고, 축(axis) 단위 집계를 할 수 있다.</li>
+  <li>스칼라·벡터·행렬·텐서를 구분하고, 텐서의 형상을 보고 데이터의 구조를 읽을 수 있다.</li>
+  <li>NumPy 배열을 만들고 인덱싱·슬라이싱·형상 변환을 자유롭게 할 수 있다.</li>
+  <li>벡터화가 반복문보다 빠른 이유를 설명하고 반복문 없이 계산을 표현할 수 있다.</li>
+  <li>브로드캐스팅 규칙을 정확히 적용하고, 그로 인한 조용한 버그를 피할 수 있다.</li>
+  <li>축(axis)을 따라 합·평균·최댓값을 구할 수 있다.</li>
 </ul>
 
-<div class="callout prof"><span class="ct">👨‍🏫 왜 NumPy부터인가</span>
-PyTorch의 <code>torch.Tensor</code>는 사실상 "GPU에서 돌아가고 미분이 되는 NumPy 배열"입니다. 문법도 거의 같습니다. 오늘 배열을 다루는 감각을 확실히 익혀 두면 3주차에 PyTorch로 넘어가는 데 하루면 충분합니다. 반대로 오늘을 대충 넘기면, 앞으로 만날 버그의 80%를 차지하는 <b>형상(shape) 오류</b>에 계속 시달리게 됩니다.</div>
-
-<h2>1. 텐서: 딥러닝의 기본 자료형</h2>
+<h2 data-min="18" data-kind="concept">텐서와 형상</h2>
+<p>딥러닝의 모든 데이터와 파라미터는 숫자 배열로 표현된다. 축의 개수에 따라 이름이 다르며, 이들을 통틀어 <dfn data-t="tensor">텐서</dfn>라 한다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 200" width="640" role="img" aria-label="0차원부터 3차원 텐서">
+  <g transform="translate(30,60)"><rect width="34" height="34" class="s-acs" stroke-width="1.5"/><text x="17" y="22" text-anchor="middle" class="s-tx" font-size="13">7</text>
+    <text x="17" y="70" text-anchor="middle" class="s-tx" font-weight="700">스칼라</text><text x="17" y="88" text-anchor="middle" class="s-txm" font-size="12">형상 ()</text></g>
+  <g transform="translate(110,60)"><g class="s-acs" stroke-width="1.5"><rect width="30" height="34"/><rect x="30" width="30" height="34"/><rect x="60" width="30" height="34"/><rect x="90" width="30" height="34"/></g>
+    <text x="60" y="70" text-anchor="middle" class="s-tx" font-weight="700">벡터</text><text x="60" y="88" text-anchor="middle" class="s-txm" font-size="12">형상 (4,)</text></g>
+  <g transform="translate(270,26)"><g class="s-acs" stroke-width="1.5">
+    <rect width="30" height="30"/><rect x="30" width="30" height="30"/><rect x="60" width="30" height="30"/><rect x="90" width="30" height="30"/>
+    <rect y="30" width="30" height="30"/><rect x="30" y="30" width="30" height="30"/><rect x="60" y="30" width="30" height="30"/><rect x="90" y="30" width="30" height="30"/>
+    <rect y="60" width="30" height="30"/><rect x="30" y="60" width="30" height="30"/><rect x="60" y="60" width="30" height="30"/><rect x="90" y="60" width="30" height="30"/></g>
+    <text x="60" y="114" text-anchor="middle" class="s-tx" font-weight="700">행렬</text><text x="60" y="132" text-anchor="middle" class="s-txm" font-size="12">형상 (3, 4)</text>
+    <text x="-8" y="50" text-anchor="end" class="s-txm" font-size="11">축 0</text><text x="60" y="-6" text-anchor="middle" class="s-txm" font-size="11">축 1</text></g>
+  <g transform="translate(460,14)"><g stroke-width="1.5">
+    <g transform="translate(36,0)" class="s-f"><rect width="96" height="72"/></g>
+    <g transform="translate(18,12)" class="s-f2"><rect width="96" height="72"/></g>
+    <g transform="translate(0,24)" class="s-acs"><rect width="96" height="72"/><line x1="32" y1="0" x2="32" y2="72"/><line x1="64" y1="0" x2="64" y2="72"/><line x1="0" y1="24" x2="96" y2="24"/><line x1="0" y1="48" x2="96" y2="48"/></g></g>
+    <text x="66" y="126" text-anchor="middle" class="s-tx" font-weight="700">3차원 텐서</text><text x="66" y="144" text-anchor="middle" class="s-txm" font-size="12">형상 (3, 3, 3)</text></g>
+</svg>
+<figcaption>축이 0개면 <dfn data-t="scalar">스칼라</dfn>, 1개면 <dfn data-t="vector">벡터</dfn>, 2개면 <dfn data-t="matrix">행렬</dfn>, 3개 이상이면 고차원 텐서다.</figcaption>
+</figure>
+<p>텐서의 각 축 길이를 나열한 튜플이 <dfn data-t="shape">형상</dfn>이다. 각 방향을 <dfn data-t="axis">축</dfn>이라 하며 0번부터 센다. 형상을 보면 데이터의 구조가 보인다.</p>
 <table>
-<tr><th>차원(ndim)</th><th>이름</th><th>예시</th><th>shape 예</th></tr>
-<tr><td>0</td><td>스칼라</td><td>손실값 하나</td><td><code>()</code></td></tr>
-<tr><td>1</td><td>벡터</td><td>단어 하나의 임베딩</td><td><code>(512,)</code></td></tr>
-<tr><td>2</td><td>행렬</td><td>표 데이터 배치, 가중치 행렬</td><td><code>(batch, features)</code></td></tr>
-<tr><td>3</td><td>3D 텐서</td><td>문장 배치 (토큰 시퀀스)</td><td><code>(batch, seq_len, d_model)</code></td></tr>
-<tr><td>4</td><td>4D 텐서</td><td>컬러 이미지 배치</td><td><code>(batch, channels, H, W)</code></td></tr>
+  <thead><tr><th>데이터</th><th>형상</th><th>읽는 법</th></tr></thead>
+  <tbody>
+    <tr><td>손실 값 하나</td><td><code>()</code></td><td>스칼라</td></tr>
+    <tr><td>단어 하나의 임베딩</td><td><code>(512,)</code></td><td>512차원 벡터</td></tr>
+    <tr><td>표 데이터</td><td><code>(569, 30)</code></td><td>샘플 569개, 특징 30개</td></tr>
+    <tr><td>흑백 이미지 묶음</td><td><code>(64, 28, 28)</code></td><td>28×28 이미지 64장</td></tr>
+    <tr><td>컬러 이미지 묶음 (PyTorch)</td><td><code>(32, 3, 224, 224)</code></td><td>배치 32, 채널 3(RGB), 높이·너비 224</td></tr>
+    <tr><td>문장 묶음</td><td><code>(16, 128, 768)</code></td><td>문장 16개, 토큰 128개, 토큰당 768차원</td></tr>
+  </tbody>
 </table>
-<div class="callout key"><span class="ct">🔑 형상을 소리 내어 읽는 습관</span>
-<code>(32, 3, 224, 224)</code>를 보면 "224×224 크기의 RGB 이미지 32장"이라고 바로 읽혀야 합니다. 딥러닝 코드를 읽을 때 각 줄 옆에 형상을 주석으로 적는 습관을 들이세요. 실력 있는 연구자들도 모두 그렇게 합니다.</div>
-
-<h2>2. 배열 만들기와 기본 속성</h2>
+<div class="box key"><p>딥러닝 버그의 상당수는 형상 오류다. 코드의 각 줄 옆에 형상을 주석으로 적는 습관이 가장 효과적인 예방책이다.</p></div>
 <pre class="run"><code>import numpy as np
-
-a = np.array([1, 2, 3])                 # 리스트에서 생성
+a = np.array([1.0, 2.0, 3.0])
 B = np.array([[1, 2, 3], [4, 5, 6]])
-print("a:", a, "| shape", a.shape, "| ndim", a.ndim, "| dtype", a.dtype)
-print("B shape:", B.shape)             # (2, 3): 2행 3열
-
-print(np.zeros((2, 3)))                  # 0으로 채운 2x3
-print(np.ones(4))
-print(np.arange(0, 10, 2))               # [0 2 4 6 8]
-print(np.linspace(0, 1, 5))              # 0~1을 5등분
-
-rng = np.random.default_rng(0)           # 재현 가능한 난수 생성기
-X = rng.normal(0, 1, size=(3, 4))        # 표준정규분포 3x4
-print(X.round(2))
-print("float32로:", X.astype(np.float32).dtype)
+print("a:", a, "형상", a.shape, "축 수", a.ndim, "자료형", a.dtype)
+print("B 형상", B.shape, "원소 수", B.size, "자료형", B.dtype)
+s = np.array(3.14)
+print("스칼라 형상", s.shape, "축 수", s.ndim)
 </code></pre>
-<p><code>dtype</code>도 중요합니다. 딥러닝은 보통 <code>float32</code>를 씁니다(NumPy 기본값은 <code>float64</code>). 메모리가 절반이고 GPU에서 훨씬 빠릅니다.</p>
 
-<h2>3. 인덱싱, 슬라이싱, reshape</h2>
+<h2 data-min="12" data-kind="practice">배열 만들기와 자료형</h2>
+<pre class="run"><code>print(np.zeros((2, 3)))                 # 0으로 채운 2×3
+print(np.ones(4))
+print(np.full((2, 2), 7.0))
+print(np.arange(0, 10, 2))              # 0부터 10 전까지 2 간격
+print(np.linspace(0, 1, 5))             # 0~1을 5개 점으로
+print(np.eye(3))                        # 단위행렬
+
+rng = np.random.default_rng(42)         # 재현 가능한 난수 생성기
+print(rng.normal(0, 1, size=(2, 3)).round(3))   # 표준정규분포
+print(rng.uniform(-1, 1, size=4).round(3))      # 균등분포
+print(rng.integers(0, 10, size=5))              # 정수
+</code></pre>
+<p>원소의 수치 형식을 <dfn data-t="dtype">자료형</dfn>(dtype)이라 한다. NumPy의 기본 실수형은 <code>float64</code>지만 딥러닝은 보통 <code>float32</code>를 쓴다. 메모리가 절반이고 GPU에서 훨씬 빠르며, 학습에 필요한 정밀도는 충분하다.</p>
+<pre class="run"><code>x = np.ones((1000, 1000))
+print(x.dtype, x.nbytes / 1e6, "MB")
+x32 = x.astype(np.float32)
+print(x32.dtype, x32.nbytes / 1e6, "MB")
+print("정수 나눗셈 주의:", np.array([1, 2, 3]) / 2, np.array([1, 2, 3]) // 2)
+</code></pre>
+
+<h2 data-min="22" data-kind="concept">인덱싱, 슬라이싱, 형상 바꾸기</h2>
+<figure class="fig">
+<svg viewBox="0 0 640 200" width="640" role="img" aria-label="인덱싱과 슬라이싱 예">
+  <g font-size="12" class="mono">
+  <g transform="translate(20,40)">
+    <g class="s-f" stroke-width="1"><rect width="36" height="30"/><rect x="36" width="36" height="30"/><rect x="72" width="36" height="30"/><rect x="108" width="36" height="30"/><rect y="30" width="36" height="30"/><rect x="36" y="30" width="36" height="30"/><rect x="72" y="30" width="36" height="30"/><rect x="108" y="30" width="36" height="30"/><rect y="60" width="36" height="30"/><rect x="36" y="60" width="36" height="30"/><rect x="72" y="60" width="36" height="30"/><rect x="108" y="60" width="36" height="30"/></g>
+    <g class="s-acs" stroke-width="1.5"><rect y="30" width="36" height="30"/><rect x="36" y="30" width="36" height="30"/><rect x="72" y="30" width="36" height="30"/><rect x="108" y="30" width="36" height="30"/></g>
+    <text x="72" y="-10" text-anchor="middle" class="s-tx" font-weight="700">M[1]  또는 M[1, :]</text><text x="72" y="114" text-anchor="middle" class="s-txm">1행 전체, 형상 (4,)</text></g>
+  <g transform="translate(240,40)">
+    <g class="s-f" stroke-width="1"><rect width="36" height="30"/><rect x="36" width="36" height="30"/><rect x="72" width="36" height="30"/><rect x="108" width="36" height="30"/><rect y="30" width="36" height="30"/><rect x="36" y="30" width="36" height="30"/><rect x="72" y="30" width="36" height="30"/><rect x="108" y="30" width="36" height="30"/><rect y="60" width="36" height="30"/><rect x="36" y="60" width="36" height="30"/><rect x="72" y="60" width="36" height="30"/><rect x="108" y="60" width="36" height="30"/></g>
+    <g class="s-acs" stroke-width="1.5"><rect x="72" width="36" height="30"/><rect x="72" y="30" width="36" height="30"/><rect x="72" y="60" width="36" height="30"/></g>
+    <text x="72" y="-10" text-anchor="middle" class="s-tx" font-weight="700">M[:, 2]</text><text x="72" y="114" text-anchor="middle" class="s-txm">2열 전체, 형상 (3,)</text></g>
+  <g transform="translate(460,40)">
+    <g class="s-f" stroke-width="1"><rect width="36" height="30"/><rect x="36" width="36" height="30"/><rect x="72" width="36" height="30"/><rect x="108" width="36" height="30"/><rect y="30" width="36" height="30"/><rect x="36" y="30" width="36" height="30"/><rect x="72" y="30" width="36" height="30"/><rect x="108" y="30" width="36" height="30"/><rect y="60" width="36" height="30"/><rect x="36" y="60" width="36" height="30"/><rect x="72" y="60" width="36" height="30"/><rect x="108" y="60" width="36" height="30"/></g>
+    <g class="s-acs" stroke-width="1.5"><rect x="36" width="36" height="30"/><rect x="72" width="36" height="30"/><rect x="36" y="30" width="36" height="30"/><rect x="72" y="30" width="36" height="30"/></g>
+    <text x="72" y="-10" text-anchor="middle" class="s-tx" font-weight="700">M[0:2, 1:3]</text><text x="72" y="114" text-anchor="middle" class="s-txm">0~1행 × 1~2열, 형상 (2, 2)</text></g>
+  </g>
+</svg>
+<figcaption>슬라이스 <code>a:b</code>는 a부터 b 직전까지다. 콜론만 쓰면 그 축 전체를 뜻한다.</figcaption>
+</figure>
 <pre class="run"><code>M = np.arange(12).reshape(3, 4)
 print(M)
-print("M[1, 2] =", M[1, 2])        # 1행 2열 (0부터 셈)
-print("1행 전체:", M[1])            # = M[1, :]
-print("2열 전체:", M[:, 2])
-print("부분 행렬:\n", M[0:2, 1:3])  # 0~1행, 1~2열
-
-# 불리언 마스킹: 조건을 만족하는 원소만
-print("짝수만:", M[M % 2 == 0])
-
-# reshape: 원소 수만 같으면 모양을 바꿀 수 있다. -1은 '알아서 계산'
-print(M.reshape(4, 3).shape, M.reshape(-1).shape, M.reshape(2, -1).shape)
-
-# 전치 (transpose)
-print("M.T shape:", M.T.shape)
-
-# 축 추가: None 또는 np.newaxis
-v = np.array([1, 2, 3])
-print(v[:, None].shape, v[None, :].shape)   # (3,1) 열벡터, (1,3) 행벡터
+print("M[1, 2] =", M[1, 2])
+print("M[1]    =", M[1])
+print("M[:, 2] =", M[:, 2])
+print("M[0:2, 1:3] =\n", M[0:2, 1:3])
+print("M[-1]   =", M[-1], "  (음수는 뒤에서부터)")
+print("M[::2]  =\n", M[::2], "  (2칸 간격)")
 </code></pre>
-<div class="callout warn"><span class="ct">⚠️ 뷰(view)와 복사(copy)</span>
-슬라이싱 결과는 원본의 <b>뷰</b>입니다. <code>s = M[0]; s[0] = 999</code>를 하면 원본 <code>M</code>도 바뀝니다. 독립적인 사본이 필요하면 <code>M[0].copy()</code>를 쓰세요. PyTorch에서도 같은 함정이 있습니다.</div>
+<h3>불리언 마스크와 정수 배열 인덱싱</h3>
+<p>조건식은 같은 형상의 불리언 배열을 만들고, 이 배열로 인덱싱하면 조건을 만족하는 원소만 뽑힌다. 정수 배열로 인덱싱하면 원하는 위치들을 한 번에 고를 수 있다.</p>
+<pre class="run"><code>mask = M % 2 == 0
+print(mask)
+print("짝수만:", M[mask])
+print("5보다 큰 원소 개수:", (M > 5).sum())
+rows = np.array([2, 0])
+print("2행과 0행:\n", M[rows])
+y = np.array([2, 0, 1])
+print("원-핫 인코딩:\n", np.eye(3)[y])     # 단위행렬의 y번째 행들
+</code></pre>
+<h3>형상 바꾸기</h3>
+<p><code>reshape</code>는 원소 순서를 유지한 채 형상만 바꾼다. 원소는 마지막 축이 가장 빨리 변하는 순서(행 우선)로 읽힌다. <code>-1</code>은 나머지로부터 자동 계산하라는 뜻이다.</p>
+<div class="flow"><div>(3, 4)<small>0 1 2 3 / 4 5 6 7 / 8 9 10 11</small></div><div>(12,)<small>펼치기</small></div><div>(4, 3)<small>0 1 2 / 3 4 5 / ...</small></div></div>
+<pre class="run"><code>print(M.reshape(4, 3))
+print(M.reshape(-1).shape, M.reshape(2, -1).shape, M.reshape(-1, 1).shape)
+print("전치 M.T 형상:", M.T.shape)
+v = np.array([1, 2, 3])
+print("열벡터", v[:, None].shape, " 행벡터", v[None, :].shape)   # None = np.newaxis: 크기 1인 축 추가
+</code></pre>
+<div class="box warn" data-title="뷰와 복사">
+<p>슬라이싱 결과는 원본과 메모리를 공유하는 <dfn data-t="view">뷰</dfn>다. 뷰를 수정하면 원본도 바뀐다. 독립된 배열이 필요하면 <code>.copy()</code>를 쓴다. 불리언·정수 배열 인덱싱의 결과는 복사본이다.</p>
+</div>
+<pre class="run"><code>A = np.arange(6)
+s = A[1:4]          # 뷰
+s[0] = 100
+print("원본도 바뀜:", A)
+c = A[1:4].copy()   # 복사
+c[0] = -1
+print("원본 그대로:", A)
+</code></pre>
 
-<h2>4. 벡터화: for 문을 버려라</h2>
-<p>신경망은 수백만 개의 숫자를 다룹니다. 파이썬 for 문은 원소 하나마다 인터프리터를 거치기 때문에 느립니다. NumPy 연산은 C로 구현된 루프를 한 번에 실행합니다(SIMD, 캐시 최적화까지).</p>
+<h2 data-min="12" data-kind="concept">벡터화</h2>
+<p>반복문 대신 배열 전체에 대한 연산으로 계산을 표현하는 것을 <dfn data-t="vectorization">벡터화</dfn>라 한다. Python 반복문은 원소마다 인터프리터를 거치지만, NumPy 연산은 컴파일된 C 코드가 연속된 메모리를 한 번에 처리하므로 수십~수백 배 빠르다.</p>
 <pre class="run"><code>import time
-x = np.random.rand(1_000_000)
-y = np.random.rand(1_000_000)
+x = np.random.default_rng(0).random(500_000)
+y = np.random.default_rng(1).random(500_000)
 
 t = time.perf_counter()
-s = 0.0
+total = 0.0
 for i in range(len(x)):
-    s += x[i] * y[i]
+    total += x[i] * y[i]
 t_loop = time.perf_counter() - t
 
 t = time.perf_counter()
-s2 = np.dot(x, y)            # 또는 (x * y).sum(), x @ y
+total2 = x @ y            # 내적: (x * y).sum()과 같음
 t_vec = time.perf_counter() - t
-
-print(f"for 문:   {t_loop*1000:8.1f} ms  결과 {s:.4f}")
-print(f"벡터화:   {t_vec*1000:8.2f} ms  결과 {s2:.4f}")
-print(f"속도 차이: 약 {t_loop/t_vec:.0f}배")
+print(f"반복문 {t_loop * 1000:7.1f} ms   벡터화 {t_vec * 1000:6.2f} ms   약 {t_loop / t_vec:.0f}배")
+print("결과 같음:", np.isclose(total, total2))
 </code></pre>
-<p>원소별(element-wise) 연산은 그냥 산술 연산자를 쓰면 됩니다: <code>x + y</code>, <code>x * y</code>, <code>np.exp(x)</code>, <code>np.maximum(x, 0)</code>(= ReLU!).</p>
+<p>원소별 연산은 산술 연산자와 수학 함수를 그대로 쓴다. <code>x + y</code>, <code>x * y</code>, <code>np.exp(x)</code>, <code>np.maximum(x, 0)</code>은 모두 원소마다 적용된다. 마지막 식은 3주차의 ReLU 활성화 함수다.</p>
+<pre class="run"><code>z = np.array([-2.0, -0.5, 0.0, 1.5, 3.0])
+print("ReLU   :", np.maximum(z, 0))
+print("시그모이드:", (1 / (1 + np.exp(-z))).round(3))
+print("제곱   :", z ** 2)
+print("클리핑 :", np.clip(z, -1, 1))
+</code></pre>
 
-<h2>5. 브로드캐스팅 — 가장 강력하고 가장 위험한 규칙</h2>
-<p>형상이 다른 두 배열을 연산하면 NumPy는 다음 규칙으로 맞춥니다.</p>
-<ol>
-  <li>두 형상을 <b>오른쪽 끝부터</b> 나란히 맞춘다. 차원 수가 적은 쪽은 왼쪽에 1을 채운다.</li>
-  <li>각 축에서 크기가 <b>같거나</b>, 둘 중 하나가 <b>1</b>이면 호환된다. 1인 쪽이 늘어난다.</li>
-  <li>그 외에는 에러.</li>
+<h2 data-min="22" data-kind="concept">브로드캐스팅</h2>
+<p>형상이 다른 배열끼리 연산하면 NumPy는 <dfn data-t="broadcasting">브로드캐스팅</dfn> 규칙으로 형상을 맞춘다.</p>
+<ol class="steps">
+  <li>두 형상을 <b>오른쪽 끝부터</b> 나란히 놓는다. 축이 적은 쪽은 왼쪽에 크기 1인 축이 있다고 본다.</li>
+  <li>각 축에서 길이가 <b>같거나</b>, 둘 중 하나가 <b>1</b>이면 호환된다. 1인 쪽을 늘려 맞춘다.</li>
+  <li>그 밖의 경우는 오류다.</li>
 </ol>
+<div class="viz-mount" data-viz="broadcast"></div>
 <table>
-<tr><th>A</th><th>B</th><th>결과</th><th>설명</th></tr>
-<tr><td>(32, 10)</td><td>(10,)</td><td>(32, 10)</td><td>모든 행에 같은 편향 벡터를 더함 ← 신경망 층의 <code>XW + b</code></td></tr>
-<tr><td>(3, 1)</td><td>(1, 4)</td><td>(3, 4)</td><td>외적(outer)처럼 펼쳐짐</td></tr>
-<tr><td>(32, 10)</td><td>(32,)</td><td>❌ 에러</td><td>오른쪽 끝 10 vs 32</td></tr>
-<tr><td>(32, 10)</td><td>(32, 1)</td><td>(32, 10)</td><td>각 행마다 다른 값을 더함</td></tr>
+  <thead><tr><th>A</th><th>B</th><th>결과</th><th>쓰임</th></tr></thead>
+  <tbody>
+    <tr><td>(32, 10)</td><td>(10,)</td><td>(32, 10)</td><td>모든 샘플에 같은 편향 벡터를 더함: 신경망 층의 $XW + b$</td></tr>
+    <tr><td>(32, 10)</td><td>(32, 1)</td><td>(32, 10)</td><td>샘플마다 다른 값을 빼거나 나눔: 행별 정규화</td></tr>
+    <tr><td>(3, 1)</td><td>(1, 4)</td><td>(3, 4)</td><td>모든 쌍의 연산: 외적, 거리 행렬</td></tr>
+    <tr><td>(32, 10)</td><td>(32,)</td><td>오류</td><td>오른쪽 끝이 10과 32로 다름</td></tr>
+  </tbody>
 </table>
-<pre class="run"><code>X = np.arange(6).reshape(2, 3).astype(float)   # (2,3)
-b = np.array([10., 20., 30.])                     # (3,)
+<pre class="run"><code>X = np.arange(6, dtype=float).reshape(2, 3)     # (2, 3)
+b = np.array([10.0, 20.0, 30.0])                  # (3,)
 print("X + b =\n", X + b)
-
-# 각 행을 그 행의 평균으로 빼기: keepdims로 (2,1) 유지가 핵심
-row_mean = X.mean(axis=1, keepdims=True)          # (2,1)
-print("행 평균:", row_mean.ravel())
-print("행 중심화:\n", X - row_mean)
-
-# 실수하기 쉬운 예: keepdims 없이
+row_mean = X.mean(axis=1, keepdims=True)          # (2, 1): keepdims로 축을 남긴다
+print("행 평균", row_mean.ravel(), "\n행 중심화 =\n", X - row_mean)
 try:
-    print(X - X.mean(axis=1))                     # (2,3) - (2,) → 오른쪽 맞춤 3 vs 2
+    X - X.mean(axis=1)                            # (2, 3) - (2,) → 오른쪽 끝 3 대 2
 except ValueError as e:
-    print("에러!", e)
-
-# 외적 만들기
-a = np.array([1, 2, 3])[:, None]   # (3,1)
-c = np.array([1, 10, 100, 1000])[None, :]   # (1,4)
-print(a * c)
+    print("오류:", e)
 </code></pre>
-<div class="callout warn"><span class="ct">⚠️ 조용한 버그</span>
-브로드캐스팅의 진짜 위험은 에러가 <b>나지 않는</b> 경우입니다. 예측값 <code>y_hat</code>의 shape이 <code>(N, 1)</code>이고 정답 <code>y</code>가 <code>(N,)</code>이면, <code>y_hat - y</code>는 <code>(N, N)</code> 행렬이 됩니다! 손실이 이상한 값이 나오는데 에러는 없습니다. 손실 계산 직전에 항상 두 shape이 같은지 확인하세요.</div>
-<pre class="run"><code>N = 4
-y_hat = np.array([[1.], [2.], [3.], [4.]])  # (4,1)
-y = np.array([1., 2., 3., 4.])              # (4,)
-print("잘못된 MSE:", ((y_hat - y) ** 2).mean(), " shape:", (y_hat - y).shape)
+<div class="box warn" data-title="오류 없이 틀리는 경우">
+<p>브로드캐스팅의 진짜 위험은 오류가 나지 않는 경우다. 예측 <code>y_hat</code>이 (N, 1)이고 정답 <code>y</code>가 (N,)이면 <code>y_hat - y</code>는 (N, N) 행렬이 되고, 손실은 틀린 값이 조용히 계산된다. 손실을 계산하기 직전에 두 형상이 같은지 확인한다.</p>
+</div>
+<pre class="run"><code>y_hat = np.array([[1.0], [2.0], [3.0], [4.0]])    # (4, 1)
+y = np.array([1.0, 2.0, 3.0, 4.0])                # (4,)
+print("잘못된 MSE:", ((y_hat - y) ** 2).mean(), " 차의 형상", (y_hat - y).shape)
 print("올바른 MSE:", ((y_hat.ravel() - y) ** 2).mean())
 </code></pre>
 
-<h2>6. 축(axis)을 따라 집계하기</h2>
-<p><code>axis=k</code>는 "k번 축을 <b>없애면서</b> 집계한다"고 기억하세요.</p>
+<h2 data-min="14" data-kind="concept">축을 따라 집계하기</h2>
+<p><code>sum</code>, <code>mean</code>, <code>max</code>, <code>argmax</code> 같은 집계 함수에 <code>axis=k</code>를 주면 <b>k번 축을 없애면서</b> 집계한다.</p>
+<figure class="fig">
+<svg viewBox="0 0 600 190" width="600" role="img" aria-label="axis=0과 axis=1 집계 방향">
+  <g transform="translate(40,30)">
+    <g class="s-f"><rect width="40" height="30"/><rect x="40" width="40" height="30"/><rect x="80" width="40" height="30"/><rect y="30" width="40" height="30"/><rect x="40" y="30" width="40" height="30"/><rect x="80" y="30" width="40" height="30"/></g>
+    <g class="s-tx mono" font-size="13" text-anchor="middle"><text x="20" y="20">90</text><text x="60" y="20">80</text><text x="100" y="20">70</text><text x="20" y="50">60</text><text x="60" y="50">85</text><text x="100" y="50">95</text></g>
+    <g class="s-ac" stroke-width="2"><path d="M20 66 V84"/><path d="M60 66 V84"/><path d="M100 66 V84"/></g>
+    <g class="s-acs"><rect y="90" width="40" height="30"/><rect x="40" y="90" width="40" height="30"/><rect x="80" y="90" width="40" height="30"/></g>
+    <g class="s-tx mono" font-size="13" text-anchor="middle"><text x="20" y="110">75</text><text x="60" y="110">82.5</text><text x="100" y="110">82.5</text></g>
+    <text x="60" y="-10" text-anchor="middle" class="s-tx" font-weight="700">mean(axis=0)</text><text x="60" y="140" text-anchor="middle" class="s-txm" font-size="12">0번 축(행 방향)이 사라짐 → (3,)</text></g>
+  <g transform="translate(340,30)">
+    <g class="s-f"><rect width="40" height="30"/><rect x="40" width="40" height="30"/><rect x="80" width="40" height="30"/><rect y="30" width="40" height="30"/><rect x="40" y="30" width="40" height="30"/><rect x="80" y="30" width="40" height="30"/></g>
+    <g class="s-tx mono" font-size="13" text-anchor="middle"><text x="20" y="20">90</text><text x="60" y="20">80</text><text x="100" y="20">70</text><text x="20" y="50">60</text><text x="60" y="50">85</text><text x="100" y="50">95</text></g>
+    <g class="s-ac" stroke-width="2"><path d="M126 15 H144"/><path d="M126 45 H144"/></g>
+    <g class="s-acs"><rect x="150" width="44" height="30"/><rect x="150" y="30" width="44" height="30"/></g>
+    <g class="s-tx mono" font-size="13" text-anchor="middle"><text x="172" y="20">80</text><text x="172" y="50">80</text></g>
+    <text x="90" y="-10" text-anchor="middle" class="s-tx" font-weight="700">mean(axis=1)</text><text x="90" y="88" text-anchor="middle" class="s-txm" font-size="12">1번 축(열 방향)이 사라짐 → (2,)</text></g>
+</svg>
+<figcaption>학생 2명(행) × 과목 3개(열) 점수표. axis=0은 과목별 평균, axis=1은 학생별 평균이다.</figcaption>
+</figure>
 <pre class="run"><code>scores = np.array([[90, 80, 70],
-                   [60, 85, 95]])   # (학생 2명, 과목 3개)
+                   [60, 85, 95]])        # (학생, 과목)
 print("전체 평균:", scores.mean())
-print("과목별 평균 (axis=0, 학생 축 제거):", scores.mean(axis=0))
-print("학생별 평균 (axis=1, 과목 축 제거):", scores.mean(axis=1))
-print("학생별 최고 과목 인덱스:", scores.argmax(axis=1))
-
-# 이미지 배치 예: (N, C, H, W)에서 채널별 평균 → 정규화에 사용
-imgs = np.random.rand(8, 3, 32, 32)
-ch_mean = imgs.mean(axis=(0, 2, 3))
-print("채널별 평균 shape:", ch_mean.shape)
+print("과목별 평균 (axis=0):", scores.mean(axis=0))
+print("학생별 평균 (axis=1):", scores.mean(axis=1))
+print("학생별 최고 과목 번호:", scores.argmax(axis=1))
+imgs = np.random.default_rng(0).random((8, 3, 32, 32))   # (배치, 채널, 높이, 너비)
+print("채널별 평균 형상:", imgs.mean(axis=(0, 2, 3)).shape)  # 여러 축을 한 번에
 </code></pre>
 
-<h2>7. 행렬곱 미리 보기</h2>
-<p>원소별 곱 <code>*</code>와 행렬곱 <code>@</code>는 완전히 다릅니다. 행렬곱은 내일 깊이 다루지만, 신경망 한 층이 결국 아래 한 줄이라는 것만 기억해 두세요.</p>
-<pre class="run"><code>X = np.random.randn(32, 784)    # 배치 32개, 입력 특성 784개 (28x28 이미지)
-W = np.random.randn(784, 128)   # 가중치
-b = np.zeros(128)               # 편향
-H = np.maximum(0, X @ W + b)    # 선형변환 + 브로드캐스팅 + ReLU = 신경망 한 층!
-print("H shape:", H.shape)      # (32, 128)
+<h2 data-min="15" data-kind="practice">실제 데이터: 손글씨 숫자</h2>
+<p><code>digits</code> 데이터는 8×8 흑백 손글씨 숫자 1797장이다. 각 이미지는 64개 픽셀 값(0~16)을 펼친 벡터로 저장되어 있다.</p>
+<pre class="run"><code>import matplotlib.pyplot as plt
+d = load_data("digits")
+X, y = d["X"], d["y"]
+print("X", X.shape, X.dtype, "값 범위", X.min(), "~", X.max(), "  y", y.shape)
+imgs = X.reshape(-1, 8, 8)                 # (1797, 64) → (1797, 8, 8)
+fig, axs = plt.subplots(2, 10, figsize=(10, 2.4))
+for ax, im, lab in zip(axs.ravel(), imgs, y):
+    ax.imshow(im, cmap="gray_r"); ax.set_title(int(lab), fontsize=9); ax.axis("off")
+plt.tight_layout(); plt.show()
 </code></pre>
+<p>불리언 마스크와 축 집계를 함께 쓰면 반복문 없이 숫자별 평균 이미지를 만들 수 있다.</p>
+<pre class="run"><code>means = np.stack([imgs[y == k].mean(axis=0) for k in range(10)])   # (10, 8, 8)
+print("평균 이미지 묶음 형상:", means.shape)
+fig, axs = plt.subplots(1, 10, figsize=(10, 1.4))
+for k, ax in enumerate(axs):
+    ax.imshow(means[k], cmap="gray_r"); ax.set_title(k, fontsize=9); ax.axis("off")
+plt.show()
+print("숫자별 샘플 수:", np.bincount(y))
+</code></pre>
+<p>평균 이미지가 이미 각 숫자의 모양을 잘 보여 준다. 7일차 주간 프로젝트에서 이 평균 이미지만으로 분류기를 만든다.</p>
 
-<h2>8. 확인 퀴즈</h2>
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key">
+<ul>
+  <li>텐서 = 축이 여러 개인 숫자 배열. 형상은 데이터의 구조를 나타낸다.</li>
+  <li>슬라이싱은 뷰를 만든다. 독립된 배열이 필요하면 복사한다.</li>
+  <li>반복문 대신 배열 연산(벡터화)을 쓴다.</li>
+  <li>브로드캐스팅: 오른쪽부터 비교, 같거나 1이면 호환. 오류 없는 형상 불일치를 경계한다.</li>
+  <li><code>axis=k</code> 집계는 k번 축을 없앤다. <code>keepdims=True</code>는 크기 1로 남긴다.</li>
+</ul>
+</div>
+
+<h2 data-min="10" data-kind="review">확인 문제</h2>
 <script type="application/json" class="quiz">[
- {"q":"shape (64, 3, 28, 28)인 텐서가 의미하는 것은?","o":["28장의 64×3 이미지","64장의 28×28 RGB(3채널) 이미지","3장의 64×28 이미지","64개의 3차원 벡터"],"a":1,"e":"PyTorch 관례는 (N, C, H, W)입니다. 배치 64, 채널 3, 높이·너비 28."},
- {"q":"A.shape=(5, 1, 4), B.shape=(3, 1)일 때 A + B의 shape은?","o":["에러","(5, 3, 4)","(5, 1, 4)","(3, 4)"],"a":1,"e":"B를 (1, 3, 1)로 보고 오른쪽부터 비교합니다. 4 vs 1 → 4, 1 vs 3 → 3, 5 vs 1 → 5. 결과는 (5, 3, 4)."},
- {"q":"X.shape=(100, 20)에서 각 특성(열)의 평균을 구하는 코드는?","o":["X.mean(axis=1)","X.mean(axis=0)","X.mean()","X.mean(axis=(0,1))"],"a":1,"e":"axis=0(샘플 축)을 없애면서 평균내야 특성별 평균 (20,)이 나옵니다."},
- {"q":"y_hat.shape=(N,1), y.shape=(N,)일 때 ((y_hat - y)**2).mean()의 문제는?","o":["에러가 난다","(N,N) 행렬이 만들어져 잘못된 손실이 조용히 계산된다","정상 동작한다","dtype 에러"],"a":1,"e":"브로드캐스팅으로 (N,N)이 되어 에러 없이 틀린 값을 냅니다. 가장 흔한 조용한 버그입니다."},
- {"q":"np.maximum(0, x)는 신경망에서 무엇에 해당하는가?","o":["소프트맥스","ReLU 활성화 함수","정규화","드롭아웃"],"a":1,"e":"ReLU(x) = max(0, x)입니다."}
+ {"q":"형상 (64, 3, 28, 28)인 텐서가 나타내는 것은?","o":["28장의 64×3 이미지","28×28 RGB 이미지 64장","3장의 64×28 이미지","64개의 3차원 벡터"],"a":1,"e":"PyTorch 이미지 형식은 (배치, 채널, 높이, 너비)다."},
+ {"q":"A.shape = (5, 1, 4), B.shape = (3, 1)일 때 A + B의 형상은?","o":["오류","(5, 3, 4)","(5, 1, 4)","(3, 4)"],"a":1,"e":"B를 (1, 3, 1)로 보고 오른쪽부터 비교한다. 4와 1 → 4, 1과 3 → 3, 5와 1 → 5."},
+ {"q":"X.shape = (100, 20)에서 특징(열)별 평균을 구하는 코드는?","o":["X.mean(axis=1)","X.mean(axis=0)","X.mean()","X.mean(axis=(0, 1))"],"a":1,"e":"샘플 축(0번)을 없애며 평균을 내야 특징별 평균 (20,)이 된다."},
+ {"q":"s = A[1:3]; s[0] = 99 를 실행한 뒤 A는?","o":["바뀌지 않는다","A[1]이 99가 된다","A[0]이 99가 된다","오류가 난다"],"a":1,"e":"슬라이싱 결과는 뷰이므로 s[0]은 A[1]과 같은 메모리다."},
+ {"q":"y_hat.shape = (N, 1), y.shape = (N,)일 때 ((y_hat - y) ** 2).mean()의 문제는?","o":["오류가 난다","(N, N) 배열이 만들어져 틀린 손실이 조용히 계산된다","정상 동작한다","자료형 오류가 난다"],"a":1,"e":"브로드캐스팅으로 (N, N)이 된다. 손실 계산 전에 형상을 맞춘다."},
+ {"q":"np.maximum(x, 0)과 같은 활성화 함수는?","o":["시그모이드","ReLU","tanh","소프트맥스"],"a":1,"e":"ReLU(x) = max(0, x)."}
 ]</script>
 
-<h2>9. 연습 문제</h2>
-<ol>
-<li><b>표준화</b>: <code>X = np.random.rand(100, 5) * [1, 10, 100, 1000, 10000]</code>의 각 열을 평균 0, 표준편차 1로 만드세요(for 문 금지).</li>
-<li><b>원-핫 인코딩</b>: 레이블 <code>y = np.array([2, 0, 1, 2])</code>를 shape <code>(4, 3)</code>의 원-핫 행렬로 바꾸세요. 힌트: <code>np.eye(3)[y]</code>.</li>
-<li><b>거리 행렬</b>: 점 10개 <code>P</code> (shape (10,2))의 모든 쌍 사이 유클리드 거리 행렬 (10,10)을 브로드캐스팅으로 구하세요.</li>
-</ol>
-<pre class="run"><code># 여기서 직접 풀어 보세요
-X = np.random.rand(100, 5) * [1, 10, 100, 1000, 10000]
-# 1)
-Z = None
-# 2)
-y = np.array([2, 0, 1, 2])
-# 3)
-P = np.random.rand(10, 2)
-</code></pre>
-<details class="answer"><summary>정답 보기</summary>
-<pre><code>Z = (X - X.mean(axis=0)) / X.std(axis=0)
+<h2 data-min="10" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>붓꽃 데이터 <code>X</code>(150×4)의 각 열을 평균 0, 표준편차 1로 바꾸어라(반복문 없이). 결과의 열별 평균과 표준편차를 출력해 확인하라.
+    <details class="sol"><summary>풀이</summary><pre><code>X = load_data("iris")["X"]
+Z = (X - X.mean(axis=0)) / X.std(axis=0)      # (150,4) - (4,) 브로드캐스팅
 print(Z.mean(axis=0).round(6), Z.std(axis=0))
+</code></pre></details></li>
+  <li>점 10개 <code>P</code>(10×2)의 모든 쌍 사이 유클리드 거리 행렬(10×10)을 반복문 없이 구하라.
+    <details class="sol"><summary>풀이</summary><pre><code>P = np.random.default_rng(0).random((10, 2))
+D = np.sqrt(((P[:, None, :] - P[None, :, :]) ** 2).sum(axis=-1))   # (10,1,2) - (1,10,2) → (10,10,2) → (10,10)
+print(D.shape, np.allclose(D, D.T), np.allclose(np.diag(D), 0))
+</code></pre></details></li>
+  <li><code>digits</code>에서 픽셀 값의 합이 가장 큰 이미지(가장 "진한" 숫자)를 찾아 그 레이블을 출력하라.
+    <details class="sol"><summary>풀이</summary><pre><code>i = X.sum(axis=1).argmax()
+print(i, y[i])
+</code></pre></details></li>
+  <li>형상 (8, 3, 32, 32) 배열에서 채널별 평균과 표준편차로 각 채널을 정규화하라. 평균과 표준편차의 형상을 어떻게 맞춰야 하는가?
+    <details class="sol"><summary>풀이</summary><p>통계를 <code>axis=(0, 2, 3)</code>, <code>keepdims=True</code>로 구하면 형상이 (1, 3, 1, 1)이 되어 그대로 브로드캐스팅된다.</p><pre><code>a = np.random.default_rng(0).random((8, 3, 32, 32))
+m = a.mean(axis=(0, 2, 3), keepdims=True); s = a.std(axis=(0, 2, 3), keepdims=True)
+z = (a - m) / s
+print(m.shape, z.mean(axis=(0, 2, 3)).round(6))
+</code></pre></details></li>
+</ol>
 
-onehot = np.eye(3)[y]          # 정수 배열 인덱싱: 단위행렬의 y번째 행들
-
-D = np.sqrt(((P[:, None, :] - P[None, :, :]) ** 2).sum(axis=-1))   # (10,1,2)-(1,10,2) → (10,10,2) → (10,10)
-</code></pre></details>
+<h2 data-min="40" data-kind="project">미니 프로젝트: NumPy 이미지 처리기</h2>
+<section class="project" data-title="반복문 없이 이미지 필터 만들기" data-min="40">
+<p class="lead">이미지는 숫자 행렬이다. 밝기 조절, 뒤집기, 자르기, 흐리게 하기, 경계 검출을 모두 NumPy 배열 연산만으로 구현한다. 마지막에는 손글씨 이미지 1797장에 같은 처리를 한 번에 적용한다.</p>
+<ol class="steps">
+<li><b>테스트 이미지 만들기.</b> 좌표 격자로 원, 사각형, 그라데이션이 있는 64×64 이미지를 만든다. 값은 0(검정)~1(흰색)이다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+H = W = 64
+yy, xx = np.mgrid[0:H, 0:W]                          # 각 픽셀의 (행, 열) 좌표, 형상 (64, 64)
+img = 0.2 + 0.4 * xx / W                             # 가로 그라데이션
+img[(xx - 22) ** 2 + (yy - 24) ** 2 &lt; 12 ** 2] = 1.0  # 원 (불리언 마스크)
+img[38:56, 36:58] = 0.0                              # 사각형 (슬라이싱)
+def show(*ims, titles=None):
+    fig, axs = plt.subplots(1, len(ims), figsize=(2.6 * len(ims), 2.6))
+    for i, (ax, im) in enumerate(zip(np.atleast_1d(axs), ims)):
+        ax.imshow(im, cmap="gray", vmin=0, vmax=1); ax.axis("off")
+        if titles: ax.set_title(titles[i], fontsize=10)
+    plt.show()
+show(img, titles=["원본"])
+</code></pre></li>
+<li><b>밝기와 대비.</b> 밝기는 더하기, 대비는 0.5를 중심으로 곱하기다. 결과를 <code>np.clip</code>으로 0~1에 가둔다.
+<pre class="run"><code>bright = np.clip(img + 0.3, 0, 1)
+contrast = np.clip((img - 0.5) * 2.0 + 0.5, 0, 1)
+inverted = 1 - img
+show(img, bright, contrast, inverted, titles=["원본", "밝게", "대비 2배", "반전"])
+</code></pre></li>
+<li><b>뒤집기, 회전, 자르기.</b> 모두 인덱싱으로 표현된다. 회전은 전치와 뒤집기의 조합이다.
+<pre class="run"><code>flip_lr = img[:, ::-1]          # 좌우 뒤집기
+flip_ud = img[::-1, :]          # 상하 뒤집기
+rot90 = img.T[::-1, :]          # 반시계 90도 회전 (np.rot90과 같음)
+crop = img[10:42, 6:38]         # 32×32 자르기
+print("자른 이미지 형상:", crop.shape, " 회전 확인:", np.array_equal(rot90, np.rot90(img)))
+show(flip_lr, flip_ud, rot90, crop, titles=["좌우", "상하", "회전", "자르기"])
+</code></pre></li>
+<li><b>흐리게 하기.</b> 각 픽셀을 주변 3×3 픽셀의 평균으로 바꾼다. 반복문 대신, 가장자리를 덧댄 이미지를 9가지 방향으로 밀어 더한다. 빈칸을 채워 완성하라.
+<pre class="run"><code>def box_blur(im):
+    p = np.pad(im, 1, mode="edge")             # (66, 66): 가장자리 한 칸 덧대기
+    out = np.zeros_like(im)
+    for dy in range(3):
+        for dx in range(3):
+            out += p[dy:dy + H, dx:dx + W]      # 9개 위치를 밀어서 더함
+    return out / 9                              # TODO: 평균이 되도록 나누기
+blur = img
+for _ in range(3):
+    blur = box_blur(blur)
+show(img, blur, titles=["원본", "흐리게 ×3"])
+</code></pre></li>
+<li><b>경계 검출.</b> 가로 방향으로 이웃 픽셀과의 차, 세로 방향의 차를 구하고 크기를 합친다. 값이 큰 곳이 경계다. 이 연산은 31일차 합성곱의 원형이다.
+<pre class="run"><code>gx = np.zeros_like(img); gy = np.zeros_like(img)
+gx[:, 1:-1] = img[:, 2:] - img[:, :-2]        # 오른쪽 - 왼쪽
+gy[1:-1, :] = img[2:, :] - img[:-2, :]        # 아래 - 위
+edge = np.sqrt(gx ** 2 + gy ** 2)
+show(np.abs(gx), np.abs(gy), edge / edge.max(), titles=["가로 변화", "세로 변화", "경계 크기"])
+</code></pre></li>
+<li><b>묶음 처리.</b> 손글씨 1797장 전체를 한 번에 처리한다. 각 이미지를 0~1로 정규화하고, 좌우 뒤집은 버전을 만들어 원본과 이어 붙인다(3600장 가까운 데이터 증강). 형상을 주석으로 적으며 진행한다.
+<pre class="run"><code>d = load_data("digits")
+batch = d["X"].reshape(-1, 8, 8) / 16.0                 # (1797, 8, 8), 0~1
+flipped = batch[:, :, ::-1]                              # 모든 이미지를 한 번에 좌우 뒤집기
+both = np.concatenate([batch, flipped], axis=0)          # (3594, 8, 8)
+per_img_mean = both.mean(axis=(1, 2))                    # 이미지별 평균 밝기 (3594,)
+print(both.shape, per_img_mean.shape, per_img_mean[:3].round(3))
+show(batch[0], flipped[0], batch[5], flipped[5], titles=["원본", "뒤집기", "원본", "뒤집기"])
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>흐리게 하기에서 <code>/ 9</code>가 빠지면 값이 9배로 커져 이미지가 하얗게 포화된다. 반복문은 9번(커널 크기)만 돌고 이미지 크기와 무관하다. 픽셀 수만큼 도는 반복문보다 훨씬 빠르다.</li>
+<li>경계 검출 결과에서 원과 사각형의 윤곽만 밝게 남는다. 그라데이션은 변화가 작아 거의 보이지 않는다.</li>
+<li>손글씨 숫자를 좌우로 뒤집으면 2, 3, 7 같은 숫자는 다른 모양이 된다. 증강은 레이블을 바꾸지 않는 변환만 써야 한다(34일차).</li>
+</ul></details>
+</section>
