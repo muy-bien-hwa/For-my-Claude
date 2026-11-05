@@ -25,6 +25,8 @@ VIZ_IDS = set(re.findall(r"\{ id: '([^']+)'", open(f'{ROOT}/assets/viz/core.js',
 
 PRELUDE = f'''
 import json as _json, numpy as _np
+import warnings as _w
+_w.filterwarnings("ignore", message="Glyph")
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt

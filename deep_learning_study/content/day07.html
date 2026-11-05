@@ -29,7 +29,8 @@ X, y = d["X"].astype(float), d["y"]
 print("X:", X.shape, X.dtype, " 값 범위:", X.min(), "~", X.max())
 print("y:", y.shape, " 클래스:", np.unique(y))
 counts = np.bincount(y)
-print("클래스별 개수:", counts, " 최소/최대 비:", (counts.min() / counts.max()).round(3))
+print("클래스별 개수:", counts, " 최소/최대 비:",
+      (counts.min() / counts.max()).round(3))
 plt.figure(figsize=(6, 2.6)); plt.bar(range(10), counts); plt.xticks(range(10))
 plt.xlabel("숫자"); plt.ylabel("개수"); plt.title("클래스 분포"); plt.show()
 </code></pre>
@@ -41,8 +42,12 @@ for k in range(10):
 plt.suptitle("숫자별 표본 10개"); plt.tight_layout(); plt.show()
 pix_mean, pix_std = X.mean(axis=0), X.std(axis=0)
 fig, axs = plt.subplots(1, 2, figsize=(5.5, 2.6))
-axs[0].imshow(pix_mean.reshape(8, 8), cmap="gray_r"); axs[0].set_title("픽셀 평균"); axs[0].axis("off")
-axs[1].imshow(pix_std.reshape(8, 8), cmap="magma"); axs[1].set_title("픽셀 표준편차"); axs[1].axis("off")
+axs[0].imshow(pix_mean.reshape(8, 8), cmap="gray_r")
+axs[0].set_title("픽셀 평균")
+axs[0].axis("off")
+axs[1].imshow(pix_std.reshape(8, 8), cmap="magma")
+axs[1].set_title("픽셀 표준편차")
+axs[1].axis("off")
 plt.show()
 print("항상 0인 픽셀 수:", (pix_std == 0).sum())
 </code></pre>
@@ -93,17 +98,21 @@ def sq_dist(A, B):
 D = sq_dist(Xte, centroids)                    # (364, 10)
 pred = D.argmin(axis=1)
 acc_euc = (pred == yte).mean()
-print("거리 행렬 형상:", D.shape, f"  최근접 중심(유클리드) 테스트 정확도: {acc_euc:.3f}")
+print("거리 행렬 형상:", D.shape,
+      f"  최근접 중심(유클리드) 테스트 정확도: {acc_euc:.3f}")
 fig, axs = plt.subplots(1, 10, figsize=(10, 1.4))
 for k, ax in enumerate(axs):
-    ax.imshow(centroids[k].reshape(8, 8), cmap="gray_r"); ax.set_title(k, fontsize=9); ax.axis("off")
+    ax.imshow(centroids[k].reshape(8, 8), cmap="gray_r")
+    ax.set_title(k, fontsize=9)
+    ax.axis("off")
 plt.show()
 </code></pre>
 <h3>코사인 유사도 버전</h3>
 <p>거리 대신 코사인 유사도가 가장 큰 중심을 고르면 이미지의 전체 밝기(벡터의 길이)에 덜 민감해진다. 빈칸을 채워 비교하라.</p>
 <pre class="run"><code>def normalize_rows(A):
     return A / np.linalg.norm(A, axis=1, keepdims=True)
-S = normalize_rows(Xte) @ normalize_rows(centroids).T       # TODO 확인: (364, 10) 코사인 유사도
+# TODO 확인: (364, 10) 코사인 유사도
+S = normalize_rows(Xte) @ normalize_rows(centroids).T
 pred_cos = S.argmax(axis=1)
 acc_cos = (pred_cos == yte).mean()
 print(f"유클리드 {acc_euc:.3f}   코사인 {acc_cos:.3f}")
@@ -116,20 +125,32 @@ np.add.at(cm, (yte, pred), 1)                  # (정답, 예측) 위치에 1씩
 plt.figure(figsize=(5, 4.3)); plt.imshow(cm, cmap="Blues"); plt.colorbar()
 for i in range(10):
     for j in range(10):
-        if cm[i, j]: plt.text(j, i, cm[i, j], ha="center", va="center", fontsize=8, color="white" if cm[i, j] &gt; cm.max() / 2 else "black")
-plt.xlabel("예측"); plt.ylabel("정답"); plt.xticks(range(10)); plt.yticks(range(10)); plt.title("혼동 행렬"); plt.show()
+        if cm[i, j]:
+            plt.text(j, i, cm[i, j], ha="center", va="center", fontsize=8, color="white" if cm[i, j] &gt; cm.max() / 2 else "black")
+plt.xlabel("예측")
+plt.ylabel("정답")
+plt.xticks(range(10))
+plt.yticks(range(10))
+plt.title("혼동 행렬")
+plt.show()
 per_class = cm.diagonal() / cm.sum(axis=1)
 print("클래스별 정확도:", per_class.round(2))
 off = cm.copy(); np.fill_diagonal(off, 0)
 top = np.dstack(np.unravel_index(np.argsort(-off.ravel())[:3], off.shape))[0]
-print("가장 많이 헷갈린 (정답 → 예측):", [(int(a), int(b), int(off[a, b])) for a, b in top])
+print("가장 많이 헷갈린 (정답 → 예측):",
+      [(int(a), int(b), int(off[a, b])) for a, b in top])
 </code></pre>
 <pre class="run"><code>wrong = np.where(pred != yte)[0][:12]
 fig, axs = plt.subplots(2, 12, figsize=(12, 2.4))
 for c, i in enumerate(wrong):
-    axs[0, c].imshow(Xte[i].reshape(8, 8), cmap="gray_r"); axs[0, c].set_title(f"{yte[i]}→{pred[i]}", fontsize=9); axs[0, c].axis("off")
-    axs[1, c].imshow(centroids[pred[i]].reshape(8, 8), cmap="gray_r"); axs[1, c].axis("off")
-axs[0, 0].set_ylabel("틀린 입력"); plt.suptitle("위: 틀린 테스트 이미지(정답→예측), 아래: 선택된 중심"); plt.show()
+    axs[0, c].imshow(Xte[i].reshape(8, 8), cmap="gray_r")
+    axs[0, c].set_title(f"{yte[i]}→{pred[i]}", fontsize=9)
+    axs[0, c].axis("off")
+    axs[1, c].imshow(centroids[pred[i]].reshape(8, 8), cmap="gray_r")
+    axs[1, c].axis("off")
+axs[0, 0].set_ylabel("틀린 입력")
+plt.suptitle("위: 틀린 테스트 이미지(정답→예측), 아래: 선택된 중심")
+plt.show()
 </code></pre>
 <p>틀린 이미지 대부분은 사람이 봐도 애매하거나, 평균 모양에서 크게 벗어난 필체다. 평균 하나로는 같은 숫자의 다양한 필체를 표현하지 못한다. 13일차의 k-최근접 이웃과 3주차의 신경망이 이 한계를 넘는다.</p>
 
@@ -146,7 +167,11 @@ for k in ks:
     accs.append((sq_dist(Zte, cen).argmin(1) == yte).mean())
 plt.figure(figsize=(5.5, 3.3)); plt.semilogx(ks, accs, "o-")
 plt.axhline(acc_euc, color="gray", ls="--", label="원래 64차원")
-plt.xlabel("PCA 차원 k"); plt.ylabel("테스트 정확도"); plt.legend(); plt.grid(alpha=.3); plt.show()
+plt.xlabel("PCA 차원 k")
+plt.ylabel("테스트 정확도")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
 print({k: round(float(a), 3) for k, a in zip(ks, accs)})
 </code></pre>
 <pre class="run"><code>Ztr = (Xtr - mean) @ Vt[:2].T
@@ -154,13 +179,18 @@ cen2 = np.stack([Ztr[ytr == c].mean(axis=0) for c in range(10)])
 g = np.linspace(Ztr.min() - 2, Ztr.max() + 2, 300)
 GX, GY = np.meshgrid(g, g)
 G = np.c_[GX.ravel(), GY.ravel()]
-region = sq_dist(G, cen2).argmin(1).reshape(GX.shape)          # 격자 각 점의 예측 = 결정 영역
+# 격자 각 점의 예측 = 결정 영역
+region = sq_dist(G, cen2).argmin(1).reshape(GX.shape)
 plt.figure(figsize=(6, 5))
 plt.contourf(GX, GY, region, levels=np.arange(11) - 0.5, cmap="tab10", alpha=.25)
 plt.scatter(Ztr[:, 0], Ztr[:, 1], c=ytr, cmap="tab10", s=6)
 for c in range(10):
-    plt.text(*cen2[c], str(c), fontsize=13, weight="bold", ha="center", va="center", bbox=dict(fc="white", alpha=.7))
-plt.title("2차원 PCA 공간의 결정 영역"); plt.xlabel("제1 주성분"); plt.ylabel("제2 주성분"); plt.show()
+    plt.text(*cen2[c], str(c), fontsize=13, weight="bold", ha="center", va="center",
+             bbox=dict(fc="white", alpha=.7))
+plt.title("2차원 PCA 공간의 결정 영역")
+plt.xlabel("제1 주성분")
+plt.ylabel("제2 주성분")
+plt.show()
 </code></pre>
 <p>최근접 중심 분류기의 결정 영역은 중심들 사이의 수직이등분선으로 나뉜 다각형(보로노이 영역)이다. 경계가 모두 직선이라는 점이 이 방법의 한계다.</p>
 

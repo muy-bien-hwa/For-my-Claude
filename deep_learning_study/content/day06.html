@@ -28,9 +28,11 @@ $$\mathbb E[X] = \sum_x x\,p(x), \qquad \mathrm{Var}[X] = \mathbb E\big[(X - \ma
 import matplotlib.pyplot as plt
 rng = np.random.default_rng(0)
 rolls = rng.integers(1, 7, size=100_000)
-print("표본 평균:", rolls.mean().round(4), " 표본 분산:", rolls.var().round(4), " (이론 3.5, 2.917)")
+print("표본 평균:", rolls.mean().round(4), " 표본 분산:", rolls.var().round(4),
+      " (이론 3.5, 2.917)")
 coin = rng.random(10_000) &lt; 0.3                      # 베르누이(0.3)
-print("앞면 비율:", coin.mean(), " 이론 분산 p(1-p):", 0.3 * 0.7, " 표본 분산:", coin.var().round(4))
+print("앞면 비율:", coin.mean(), " 이론 분산 p(1-p):", 0.3 * 0.7, " 표본 분산:",
+      coin.var().round(4))
 g = rng.normal(loc=2.0, scale=0.5, size=10_000)
 print("가우시안 표본 평균, 표준편차:", g.mean().round(3), g.std().round(3))
 </code></pre>
@@ -92,8 +94,10 @@ $$-\log p(y\mid x) = \frac{\big(y - f_\theta(x)\big)^2}{2\sigma^2} + \frac12\log
 <pre class="run"><code>ps = np.linspace(0.01, 0.99, 99)
 loglik = 7 * np.log(ps) + 3 * np.log(1 - ps)
 print("로그 우도를 최대로 하는 p:", ps[loglik.argmax()].round(2))
-x = rng.normal(5.0, 2.0, size=500)                       # 가우시안의 MLE는 표본 평균과 표본 분산
-print("평균의 MLE:", x.mean().round(3), "  분산의 MLE:", ((x - x.mean()) ** 2).mean().round(3), " (참값 5, 4)")
+# 가우시안의 MLE는 표본 평균과 표본 분산
+x = rng.normal(5.0, 2.0, size=500)
+print("평균의 MLE:", x.mean().round(3), "  분산의 MLE:",
+      ((x - x.mean()) ** 2).mean().round(3), " (참값 5, 4)")
 </code></pre>
 
 <h2 data-min="15" data-kind="concept">정보량과 엔트로피</h2>
@@ -206,12 +210,15 @@ print("횟수 행렬 형상:", C.shape, " 학습 스팸 비율:", ytr.mean().rou
 </code></pre></li>
 <li><b>최대우도로 확률 추정.</b> 클래스 사전확률과 클래스별 단어 확률을 센다. 학습 데이터에 한 번도 안 나온 단어 때문에 확률이 0이 되지 않도록 모든 횟수에 1을 더한다(라플라스 평활화). TODO를 완성하라.
 <pre class="run"><code>prior = np.array([(ytr == 0).mean(), (ytr == 1).mean()])            # P(정상), P(스팸)
-counts = np.stack([Ctr[ytr == k].sum(axis=0) for k in (0, 1)]) + 1   # (2, V) 라플라스 평활화
-word_p = counts / counts.sum(axis=1, keepdims=True)                  # TODO 확인: 각 행의 합이 1
+# (2, V) 라플라스 평활화
+counts = np.stack([Ctr[ytr == k].sum(axis=0) for k in (0, 1)]) + 1
+# TODO 확인: 각 행의 합이 1
+word_p = counts / counts.sum(axis=1, keepdims=True)
 print("사전확률:", prior.round(3), " 행 합:", word_p.sum(axis=1))
 </code></pre></li>
 <li><b>로그 공간에서 분류.</b> 확률의 곱은 언더플로가 나므로 로그 확률의 합을 쓴다. 행렬곱 한 번으로 모든 메시지의 두 클래스 점수를 계산한다.
-<pre class="run"><code>log_score = Cte @ np.log(word_p).T + np.log(prior)        # (150, V)@(V, 2) + (2,) → (150, 2)
+<pre class="run"><code># (150, V)@(V, 2) + (2,) → (150, 2)
+log_score = Cte @ np.log(word_p).T + np.log(prior)
 pred = log_score.argmax(axis=1)
 acc = (pred == yte).mean()
 print(f"테스트 정확도 {acc:.3f}   (모두 정상으로 찍는 기준선 {1 - yte.mean():.3f})")

@@ -105,7 +105,7 @@ print("M[::2]  =\n", M[::2], "  (2칸 간격)")
 <pre class="run"><code>mask = M % 2 == 0
 print(mask)
 print("짝수만:", M[mask])
-print("5보다 큰 원소 개수:", (M > 5).sum())
+print("5보다 큰 원소 개수:", (M &gt; 5).sum())
 rows = np.array([2, 0])
 print("2행과 0행:\n", M[rows])
 y = np.array([2, 0, 1])
@@ -118,7 +118,8 @@ print("원-핫 인코딩:\n", np.eye(3)[y])     # 단위행렬의 y번째 행들
 print(M.reshape(-1).shape, M.reshape(2, -1).shape, M.reshape(-1, 1).shape)
 print("전치 M.T 형상:", M.T.shape)
 v = np.array([1, 2, 3])
-print("열벡터", v[:, None].shape, " 행벡터", v[None, :].shape)   # None = np.newaxis: 크기 1인 축 추가
+# None = np.newaxis: 크기 1인 축 추가
+print("열벡터", v[:, None].shape, " 행벡터", v[None, :].shape)
 </code></pre>
 <div class="box warn" data-title="뷰와 복사">
 <p>슬라이싱 결과는 원본과 메모리를 공유하는 <dfn data-t="view">뷰</dfn>다. 뷰를 수정하면 원본도 바뀐다. 독립된 배열이 필요하면 <code>.copy()</code>를 쓴다. 불리언·정수 배열 인덱싱의 결과는 복사본이다.</p>
@@ -301,7 +302,8 @@ print(m.shape, z.mean(axis=(0, 2, 3)).round(6))
 <pre class="run"><code>import numpy as np
 import matplotlib.pyplot as plt
 H = W = 64
-yy, xx = np.mgrid[0:H, 0:W]                          # 각 픽셀의 (행, 열) 좌표, 형상 (64, 64)
+# 각 픽셀의 (행, 열) 좌표, 형상 (64, 64)
+yy, xx = np.mgrid[0:H, 0:W]
 img = 0.2 + 0.4 * xx / W                             # 가로 그라데이션
 img[(xx - 22) ** 2 + (yy - 24) ** 2 &lt; 12 ** 2] = 1.0  # 원 (불리언 마스크)
 img[38:56, 36:58] = 0.0                              # 사각형 (슬라이싱)
@@ -324,7 +326,8 @@ show(img, bright, contrast, inverted, titles=["원본", "밝게", "대비 2배",
 flip_ud = img[::-1, :]          # 상하 뒤집기
 rot90 = img.T[::-1, :]          # 반시계 90도 회전 (np.rot90과 같음)
 crop = img[10:42, 6:38]         # 32×32 자르기
-print("자른 이미지 형상:", crop.shape, " 회전 확인:", np.array_equal(rot90, np.rot90(img)))
+print("자른 이미지 형상:", crop.shape, " 회전 확인:",
+      np.array_equal(rot90, np.rot90(img)))
 show(flip_lr, flip_ud, rot90, crop, titles=["좌우", "상하", "회전", "자르기"])
 </code></pre></li>
 <li><b>흐리게 하기.</b> 각 픽셀을 주변 3×3 픽셀의 평균으로 바꾼다. 반복문 대신, 가장자리를 덧댄 이미지를 9가지 방향으로 밀어 더한다. 빈칸을 채워 완성하라.
@@ -345,16 +348,19 @@ show(img, blur, titles=["원본", "흐리게 ×3"])
 gx[:, 1:-1] = img[:, 2:] - img[:, :-2]        # 오른쪽 - 왼쪽
 gy[1:-1, :] = img[2:, :] - img[:-2, :]        # 아래 - 위
 edge = np.sqrt(gx ** 2 + gy ** 2)
-show(np.abs(gx), np.abs(gy), edge / edge.max(), titles=["가로 변화", "세로 변화", "경계 크기"])
+show(np.abs(gx), np.abs(gy), edge / edge.max(),
+     titles=["가로 변화", "세로 변화", "경계 크기"])
 </code></pre></li>
 <li><b>묶음 처리.</b> 손글씨 1797장 전체를 한 번에 처리한다. 각 이미지를 0~1로 정규화하고, 좌우 뒤집은 버전을 만들어 원본과 이어 붙인다(3600장 가까운 데이터 증강). 형상을 주석으로 적으며 진행한다.
 <pre class="run"><code>d = load_data("digits")
 batch = d["X"].reshape(-1, 8, 8) / 16.0                 # (1797, 8, 8), 0~1
-flipped = batch[:, :, ::-1]                              # 모든 이미지를 한 번에 좌우 뒤집기
+# 모든 이미지를 한 번에 좌우 뒤집기
+flipped = batch[:, :, ::-1]
 both = np.concatenate([batch, flipped], axis=0)          # (3594, 8, 8)
 per_img_mean = both.mean(axis=(1, 2))                    # 이미지별 평균 밝기 (3594,)
 print(both.shape, per_img_mean.shape, per_img_mean[:3].round(3))
-show(batch[0], flipped[0], batch[5], flipped[5], titles=["원본", "뒤집기", "원본", "뒤집기"])
+show(batch[0], flipped[0], batch[5], flipped[5],
+     titles=["원본", "뒤집기", "원본", "뒤집기"])
 </code></pre></li>
 </ol>
 <details class="sol"><summary>참고 답안과 해설</summary>

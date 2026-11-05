@@ -1,0 +1,298 @@
+<ul class="goals">
+  <li>다중 분류의 정답을 원-핫 벡터로 표현하고, 정수 레이블을 그대로 쓰면 안 되는 이유를 설명할 수 있다.</li>
+  <li>소프트맥스를 계산하고, 온도와 상수 이동에 대한 성질을 설명할 수 있다.</li>
+  <li>소프트맥스 회귀의 각 텐서의 형상을 쓰고, 교차 엔트로피의 그래디언트 $(P - Y)$를 유도할 수 있다.</li>
+  <li>로그-합-지수 트릭으로 넘침 없이 소프트맥스와 손실을 계산할 수 있다.</li>
+  <li>손글씨 숫자 10종 분류기를 직접 구현하고, 가중치를 이미지로 해석할 수 있다.</li>
+</ul>
+
+<h2 data-min="8" data-kind="concept">이진 분류에서 다중 분류로</h2>
+<p>붓꽃은 세 품종, 손글씨 숫자는 열 종류다. 클래스가 $K$개인 분류를 다중 분류라 한다. 10일차의 로지스틱 회귀를 확장하는 방법은 두 가지다.</p>
+<table>
+  <thead><tr><th>방법</th><th>구성</th><th>단점</th></tr></thead>
+  <tbody>
+    <tr><td>일대다 (one-vs-rest)</td><td>"클래스 $k$인가 아닌가" 이진 분류기 $K$개를 따로 학습</td><td>각 분류기의 확률을 더해도 1이 아니다. 서로 모순된 답이 나올 수 있다.</td></tr>
+    <tr><td>소프트맥스 회귀</td><td>점수 $K$개를 한꺼번에 계산하고 확률분포로 정규화</td><td>없음. 신경망 분류기의 표준 출력층.</td></tr>
+  </tbody>
+</table>
+<p>이 강의는 두 번째 방법을 다룬다. 출력이 "클래스마다 하나씩, 합이 1인 확률"이 되도록 설계한다.</p>
+
+<h2 data-min="10" data-kind="concept">정답의 표현: 원-핫 인코딩</h2>
+<p>클래스를 0, 1, 2로 번호 매긴 정수를 그대로 회귀의 정답으로 쓰면 "2는 1보다 크다", "0과 2의 평균은 1이다" 같은 의미 없는 순서와 거리가 생긴다. 붓꽃 품종 사이에는 그런 관계가 없다. 그래서 정답을 길이 $K$의 벡터로, 해당 클래스 자리만 1이고 나머지는 0으로 쓴다. 이를 <dfn data-t="one-hot">원-핫 인코딩</dfn>이라 한다.</p>
+<table>
+  <thead><tr><th>품종</th><th>정수 레이블</th><th>원-핫 벡터</th></tr></thead>
+  <tbody>
+    <tr><td>setosa</td><td>0</td><td>(1, 0, 0)</td></tr>
+    <tr><td>versicolor</td><td>1</td><td>(0, 1, 0)</td></tr>
+    <tr><td>virginica</td><td>2</td><td>(0, 0, 1)</td></tr>
+  </tbody>
+</table>
+<p>원-핫 벡터는 "정답 클래스의 확률이 1인 확률분포"로 읽을 수도 있다. 그러면 모델의 출력(예측 분포)과 정답(원-핫 분포)을 6일차의 교차 엔트로피로 비교할 수 있다. NumPy에서는 단위 행렬의 행을 골라 만든다: <code>np.eye(K)[y]</code>.</p>
+<div class="box note"><p>입력 특징이 범주형(예: 색 = 빨강/초록/파랑)일 때도 같은 이유로 원-핫으로 바꿔 넣는다(13일차의 전처리). 범주가 수만 개인 단어는 원-핫 대신 39일차의 임베딩을 쓴다.</p></div>
+
+<h2 data-min="20" data-kind="concept">소프트맥스</h2>
+<p>모델이 클래스마다 실수 점수(로짓) $z_1, \dots, z_K$를 낸다고 하자. 점수는 음수일 수도 있고 합이 1도 아니다. 지수함수로 모두 양수로 만든 뒤 합으로 나누면 확률분포가 된다. 이 함수가 <dfn data-t="softmax">소프트맥스</dfn>다.</p>
+$$p_k = \mathrm{softmax}(\mathbf z)_k = \frac{e^{z_k}}{\sum_{j=1}^K e^{z_j}}$$
+<div class="box ex" data-title="세 클래스의 소프트맥스"><p>$\mathbf z = (2, 1, 0.1)$. $e^2 = 7.389$, $e^1 = 2.718$, $e^{0.1} = 1.105$, 합 $11.212$. 확률 $\mathbf p = (0.659, 0.242, 0.099)$. 점수 차이 1이 확률 비 $e^1 \approx 2.7$배로 바뀐다. 가장 큰 점수가 가장 큰 확률을 받지만 나머지도 0이 아니다. "부드러운(soft) 최댓값(max)"이라는 이름의 유래다.</p></div>
+<div class="flow"><div>로짓 $\mathbf z$<br>(2, 1, 0.1)</div><div>지수<br>(7.39, 2.72, 1.11)</div><div class="hl">합으로 나누기<br>(0.659, 0.242, 0.099)</div><div>예측<br>argmax = 클래스 0</div></div>
+<div class="box key"><ul>
+<li>모든 점수에 같은 상수를 더해도 결과가 같다: $\mathrm{softmax}(\mathbf z + c) = \mathrm{softmax}(\mathbf z)$. 분자와 분모에 $e^c$가 똑같이 곱해지기 때문이다. 이 성질이 다음 절의 넘침 방지에 쓰인다.</li>
+<li>$K = 2$이고 점수가 $(z, 0)$이면 $p_1 = \frac{e^z}{e^z + 1} = \sigma(z)$. 시그모이드는 소프트맥스의 특수한 경우다.</li>
+<li>argmax(가장 큰 점수의 클래스)는 소프트맥스 전후가 같다. 예측만 필요하면 소프트맥스를 계산하지 않아도 된다.</li>
+</ul></div>
+<p>점수를 <dfn data-t="temperature">온도</dfn> $\tau$로 나눈 뒤 소프트맥스를 쓰면 분포의 날카로움을 조절할 수 있다: $p_k \propto e^{z_k/\tau}$. $\tau &lt; 1$이면 1등에 확률이 몰리고, $\tau &gt; 1$이면 평평해진다. 40일차와 45일차의 언어 모델 문장 생성에서 다양성을 조절하는 손잡이로 쓴다.</p>
+<div class="viz-mount" data-viz="softmax"></div>
+
+<h2 data-min="20" data-kind="concept">소프트맥스 회귀</h2>
+<p>클래스마다 가중치 벡터 $\mathbf w_k$와 편향 $b_k$를 두고 점수 $z_k = \mathbf w_k\cdot\mathbf x + b_k$를 계산한 뒤 소프트맥스를 씌운 모델이 <dfn data-t="softmax-regression">소프트맥스 회귀</dfn>다(다항 로지스틱 회귀라고도 한다). $K$개의 가중치 벡터를 열로 모으면 행렬 $W$가 된다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 300" width="640" role="img" aria-label="입력 4개, 클래스 3개인 소프트맥스 회귀의 구조">
+  <g class="s-mu" stroke-width="1">
+    <line x1="150" y1="60" x2="330" y2="90"/><line x1="150" y1="60" x2="330" y2="150"/><line x1="150" y1="60" x2="330" y2="210"/>
+    <line x1="150" y1="120" x2="330" y2="90"/><line x1="150" y1="120" x2="330" y2="150"/><line x1="150" y1="120" x2="330" y2="210"/>
+    <line x1="150" y1="180" x2="330" y2="90"/><line x1="150" y1="180" x2="330" y2="150"/><line x1="150" y1="180" x2="330" y2="210"/>
+    <line x1="150" y1="240" x2="330" y2="90"/><line x1="150" y1="240" x2="330" y2="150"/><line x1="150" y1="240" x2="330" y2="210"/>
+  </g>
+  <line x1="150" y1="60" x2="330" y2="210" class="s-ac" stroke-width="2.2"/>
+  <line x1="150" y1="120" x2="330" y2="210" class="s-ac" stroke-width="2.2"/>
+  <line x1="150" y1="180" x2="330" y2="210" class="s-ac" stroke-width="2.2"/>
+  <line x1="150" y1="240" x2="330" y2="210" class="s-ac" stroke-width="2.2"/>
+  <g font-size="12.5">
+  <g class="s-f"><circle cx="150" cy="60" r="18"/><circle cx="150" cy="120" r="18"/><circle cx="150" cy="180" r="18"/><circle cx="150" cy="240" r="18"/></g>
+  <g class="s-tx" text-anchor="middle"><text x="150" y="64">x₁</text><text x="150" y="124">x₂</text><text x="150" y="184">x₃</text><text x="150" y="244">x₄</text></g>
+  <g class="s-txm" text-anchor="end"><text x="122" y="64">꽃받침 길이</text><text x="122" y="124">꽃받침 너비</text><text x="122" y="184">꽃잎 길이</text><text x="122" y="244">꽃잎 너비</text></g>
+  <g class="s-f2"><circle cx="330" cy="90" r="20"/><circle cx="330" cy="150" r="20"/><circle cx="330" cy="210" r="20"/></g>
+  <g class="s-tx" text-anchor="middle"><text x="330" y="94">z₁</text><text x="330" y="154">z₂</text><text x="330" y="214">z₃</text></g>
+  <rect x="400" y="65" width="70" height="170" rx="10" class="s-acs" stroke-width="1.6"/>
+  <text x="435" y="154" text-anchor="middle" class="s-txa" font-weight="700" transform="rotate(-90 435 150)">softmax</text>
+  <g class="s-ln" stroke-width="1.4"><line x1="350" y1="90" x2="398" y2="90"/><line x1="350" y1="150" x2="398" y2="150"/><line x1="350" y1="210" x2="398" y2="210"/>
+  <line x1="470" y1="90" x2="500" y2="90"/><line x1="470" y1="150" x2="500" y2="150"/><line x1="470" y1="210" x2="500" y2="210"/></g>
+  <g class="s-tx"><text x="506" y="94">p(setosa)</text><text x="506" y="154">p(versicolor)</text><text x="506" y="214">p(virginica)</text></g>
+  <text x="240" y="285" text-anchor="middle" class="s-txm">선 하나 = 가중치 하나: W는 (4, 3)</text>
+  <text x="240" y="30" text-anchor="middle" class="s-txa">진한 선 4개 = W의 3번째 열 = w₃</text>
+  </g>
+</svg>
+<figcaption>입력 4개, 클래스 3개인 소프트맥스 회귀. 모든 입력이 모든 점수에 연결된다. 이것은 은닉층이 없는 가장 작은 신경망이며, 16일차 이후 신경망의 마지막 층이 정확히 이 구조다.</figcaption>
+</figure>
+$$Z = XW + \mathbf b, \qquad P = \mathrm{softmax}(Z) \;(\text{행마다})$$
+<table>
+  <thead><tr><th>기호</th><th>형상</th><th>붓꽃 ($N = 150$)</th><th>손글씨 숫자</th></tr></thead>
+  <tbody>
+    <tr><td>$X$ 입력</td><td>$(N, d)$</td><td>(150, 4)</td><td>(1797, 64)</td></tr>
+    <tr><td>$W$ 가중치</td><td>$(d, K)$</td><td>(4, 3)</td><td>(64, 10)</td></tr>
+    <tr><td>$\mathbf b$ 편향</td><td>$(K,)$</td><td>(3,)</td><td>(10,)</td></tr>
+    <tr><td>$Z$, $P$ 로짓·확률</td><td>$(N, K)$</td><td>(150, 3)</td><td>(1797, 10)</td></tr>
+  </tbody>
+</table>
+<p>$XW$는 $(N, K)$이고, $\mathbf b$는 2일차의 브로드캐스팅으로 모든 행에 더해진다. 파라미터 수는 $dK + K$로 숫자 분류기는 650개다.</p>
+<h3>다중 클래스의 결정 경계</h3>
+<p>클래스 $k$와 $j$의 경계는 두 점수가 같은 곳, $(\mathbf w_k - \mathbf w_j)\cdot\mathbf x + (b_k - b_j) = 0$이다. 여전히 초평면이다. 따라서 소프트맥스 회귀는 입력 공간을 직선(초평면)으로 둘러싸인 $K$개의 볼록한 영역으로 나눈다. 코드 실습에서 그 모양을 그린다.</p>
+
+<h2 data-min="25" data-kind="concept">교차 엔트로피와 그래디언트</h2>
+<p>손실은 10일차와 같은 방식으로 정한다. 정답이 클래스 $c$일 확률이 $p_c$이므로 음의 로그우도는 $-\ln p_c$다. 원-핫 벡터 $\mathbf y$로 쓰면 6일차의 교차 엔트로피가 된다.</p>
+$$\ell = -\sum_{k=1}^K y_k\ln p_k = -\ln p_{c}, \qquad L = \frac1N\sum_{i=1}^N \ell_i$$
+<p>원-핫이라 합에서 정답 항 하나만 남는다. "정답 클래스에 준 확률의 로그를 음수로 취한 값"이다. 균등하게 찍는 모델($p_c = 1/K$)의 손실은 $\ln K$로, 10클래스면 $\ln10 \approx 2.303$이다. 학습 첫 스텝의 손실이 이 값 근처인지 보는 것은 27일차 디버깅 점검표의 첫 항목이다.</p>
+<h3>그래디언트: 다시 (예측 − 정답)</h3>
+<p>로짓 $z_j$에 대한 미분을 구한다. $\ell = -z_c + \ln\sum_k e^{z_k}$이므로</p>
+$$\frac{\partial\ell}{\partial z_j} = -[j = c] + \frac{e^{z_j}}{\sum_k e^{z_k}} = p_j - y_j$$
+<p>$[j = c]$는 $j = c$이면 1, 아니면 0이다. 벡터로 쓰면 $\partial\ell/\partial\mathbf z = \mathbf p - \mathbf y$. 10일차의 이진 분류와 정확히 같은 모양이다. 나머지는 선형층의 미분(5일차)이다.</p>
+$$\frac{\partial L}{\partial W} = \frac1N X^\top(P - Y), \qquad \frac{\partial L}{\partial\mathbf b} = \frac1N\sum_i(\mathbf p_i - \mathbf y_i)$$
+<div class="box ex" data-title="그래디언트 숫자로 보기"><p>로짓 $(2, 1, 0.1)$, 정답은 클래스 1(두 번째). $\mathbf p = (0.659, 0.242, 0.099)$, $\mathbf y = (0, 1, 0)$. 손실 $-\ln0.242 = 1.42$. $\mathbf p - \mathbf y = (0.659, -0.758, 0.099)$. 경사하강법은 그래디언트의 반대로 가므로 정답 점수 $z_1$은 올리고, 틀린 클래스 점수는 받은 확률에 비례해 내린다. 가장 헷갈린 클래스 0을 가장 세게 내린다.</p></div>
+<div class="box note" data-title="형상 점검"><p>$X^\top$는 $(d, N)$, $(P - Y)$는 $(N, K)$이므로 곱은 $(d, K)$로 $W$와 같다. 형상만 맞춰도 행렬 미분의 절반은 맞힌 것이다(5일차).</p></div>
+
+<h2 data-min="12" data-kind="concept">로그-합-지수 트릭</h2>
+<p>$e^{z}$는 $z$가 710을 넘으면 64비트 실수의 범위를 넘어 <code>inf</code>가 된다. 학습 초기에 큰 로짓이 나오면 소프트맥스가 <code>inf/inf = nan</code>을 낸다. 상수 이동 성질을 써서 가장 큰 점수를 빼고 계산하면 지수의 최댓값이 $e^0 = 1$이 되어 넘치지 않는다.</p>
+$$\mathrm{softmax}(\mathbf z) = \mathrm{softmax}(\mathbf z - \max_k z_k)$$
+<p>손실에는 $\ln\sum_k e^{z_k}$가 필요하다. 같은 방식으로 $m = \max_k z_k$를 꺼내 계산하는 것을 <dfn data-t="logsumexp">로그-합-지수 트릭</dfn>이라 한다.</p>
+$$\ln\sum_k e^{z_k} = m + \ln\sum_k e^{z_k - m}, \qquad \ell = \ln\sum_k e^{z_k} - z_c$$
+<pre class="run"><code>import numpy as np
+def softmax_naive(z):
+    e = np.exp(z); return e / e.sum()
+def softmax(Z):
+    Z = Z - Z.max(axis=-1, keepdims=True)                   # 행마다 최댓값 빼기
+    E = np.exp(Z); return E / E.sum(axis=-1, keepdims=True)
+def logsumexp(Z):
+    m = Z.max(axis=-1, keepdims=True)
+    return (m + np.log(np.exp(Z - m).sum(axis=-1, keepdims=True)))[..., 0]
+z = np.array([1000.0, 1001.0, 999.0])
+with np.errstate(over="ignore", invalid="ignore"):
+    print("그대로      :", softmax_naive(z))
+print("최댓값 빼기 :", softmax(z).round(4))
+print("logsumexp   :", logsumexp(z).round(4), "  손실(정답 0) =",
+      (logsumexp(z) - z[0]).round(4))
+print("작은 예제   :", softmax(np.array([2.0, 1.0, 0.1])).round(3))
+</code></pre>
+<p>$(1000, 1001, 999)$의 소프트맥스는 $(0, 1, -1)$의 소프트맥스와 같다. PyTorch의 <code>CrossEntropyLoss</code>가 확률이 아니라 로짓을 입력으로 받는 것도 내부에서 이 트릭을 쓰기 위해서다.</p>
+
+<h2 data-min="22" data-kind="practice">코드 실습: 붓꽃 세 품종</h2>
+<p>붓꽃 4개 특징으로 세 품종을 분류한다. 층화 분할 후 표준화하고, 배치 경사하강법으로 학습한다.</p>
+<pre class="run"><code>import matplotlib.pyplot as plt
+d = load_data("iris")
+X, y = d["X"], d["y"]
+rng = np.random.default_rng(0); tr, te = [], []
+for c in range(3):
+    idx = rng.permutation(np.where(y == c)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+mu, sd = X[tr].mean(axis=0), X[tr].std(axis=0)
+Z = (X - mu) / sd
+Y = np.eye(3)[y]                                            # 원-핫 (150, 3)
+W = np.zeros((4, 3)); b = np.zeros(3); hist = []
+for step in range(500):
+    Zl = Z[tr] @ W + b                                      # 로짓 (120, 3)
+    # 갱신 전 손실
+    hist.append((logsumexp(Zl) - Zl[np.arange(len(tr)), y[tr]]).mean())
+    G = (softmax(Zl) - Y[tr]) / len(tr)                     # ∂L/∂Z
+    W -= 0.5 * Z[tr].T @ G; b -= 0.5 * G.sum(axis=0)
+P_te = softmax(Z[te] @ W + b)
+print("첫 손실 %.3f (ln 3 = %.3f), 마지막 손실 %.4f" % (hist[0], np.log(3), hist[-1]))
+print("테스트 정확도:", (P_te.argmax(axis=1) == y[te]).mean())
+print("W (행: 특징, 열: 품종)\n", W.round(2))
+</code></pre>
+<p>첫 손실은 정확히 $\ln3$이고, 테스트 30송이를 모두 맞힌다. 가중치 행렬을 읽는다. virginica 열(세 번째)은 꽃잎 길이·너비에 큰 양수(3.25, 3.81), setosa 열은 큰 음수(−2.63, −2.60)다. 꽃잎이 클수록 virginica, 작을수록 setosa라는 뜻이다. 다음은 꽃잎 두 특징만으로 학습해 결정 영역을 그린다.</p>
+<pre class="run"><code>Z2 = Z[:, 2:4]                                              # 꽃잎 길이, 너비 (표준화)
+W2 = np.zeros((2, 3)); b2 = np.zeros(3)
+for step in range(2000):
+    G = (softmax(Z2 @ W2 + b2) - Y) / len(Y)
+    W2 -= 0.5 * Z2.T @ G; b2 -= 0.5 * G.sum(axis=0)
+g1, g2 = np.meshgrid(np.linspace(-1.8, 2.0, 300), np.linspace(-1.7, 2.0, 300))
+grid = np.c_[g1.ravel(), g2.ravel()]
+region = softmax(grid @ W2 + b2).argmax(axis=1).reshape(g1.shape)
+plt.figure(figsize=(5.4, 4.4))
+plt.contourf(g1, g2, region, levels=[-0.5, 0.5, 1.5, 2.5], colors=["C0", "C1", "C2"],
+             alpha=.18)
+for c, nm in enumerate(d["target_names"]):
+    plt.scatter(Z2[y == c, 0], Z2[y == c, 1], s=14, color=f"C{c}", label=nm)
+plt.xlabel("꽃잎 길이 (표준화)")
+plt.ylabel("꽃잎 너비 (표준화)")
+plt.legend()
+plt.title("직선으로 나뉜 세 영역")
+plt.show()
+print("학습 정확도 (꽃잎 두 특징):",
+      (softmax(Z2 @ W2 + b2).argmax(axis=1) == y).mean().round(4))
+</code></pre>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>다중 분류의 정답은 원-핫 벡터. 정수 레이블에는 없는 순서·거리가 생기기 때문.</li>
+  <li>소프트맥스 $p_k = e^{z_k}/\sum_j e^{z_j}$: 점수를 확률분포로. 상수 이동에 불변, $K = 2$이면 시그모이드. 온도로 날카로움 조절.</li>
+  <li>소프트맥스 회귀: $Z = XW + \mathbf b$, $W$는 $(d, K)$. 결정 경계는 초평면. 은닉층 없는 신경망 = 신경망의 출력층.</li>
+  <li>교차 엔트로피 $-\ln p_{\text{정답}}$. 그래디언트 $\partial\ell/\partial\mathbf z = \mathbf p - \mathbf y$, $\partial L/\partial W = X^\top(P - Y)/N$.</li>
+  <li>최댓값을 빼고 계산하는 로그-합-지수 트릭으로 넘침을 막는다. 첫 손실은 $\ln K$ 근처여야 한다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"클래스가 4개일 때 정답 '클래스 2'(0부터 셈)의 원-핫 벡터는?","o":["(0, 0, 2, 0)","(0, 0, 1, 0)","(0, 1, 0, 0)","(1, 1, 1, 0)"],"a":1,"e":"세 번째 자리(인덱스 2)만 1이다."},
+ {"q":"로짓 (3, 3, 3)의 소프트맥스는?","o":["(1, 1, 1)","(1/3, 1/3, 1/3)","(3, 3, 3)","(0, 0, 1)"],"a":1,"e":"점수가 모두 같으면 확률도 같다."},
+ {"q":"softmax(z + 100)과 softmax(z)의 관계는?","o":["100배 차이","같다","100만큼 차이","정의되지 않는다"],"a":1,"e":"분자와 분모에 같은 $e^{100}$이 곱해져 상쇄된다."},
+ {"q":"온도 τ를 0에 가깝게 줄이면 소프트맥스 분포는?","o":["균등분포에 가까워진다","가장 큰 점수의 클래스에 확률이 몰린다","변하지 않는다","모든 확률이 0이 된다"],"a":1,"e":"점수 차이가 $1/\\tau$배로 커져 argmax에 몰린다."},
+ {"q":"입력 784차원, 클래스 10개인 소프트맥스 회귀의 파라미터 수는?","o":["784","7840","7850","794"],"a":2,"e":"$784\\times10 + 10 = 7850$."},
+ {"q":"정답 클래스에 확률 0.25를 준 표본의 교차 엔트로피 손실은?","o":["0.25","ln 4 ≈ 1.386","0.75","4"],"a":1,"e":"$-\\ln 0.25 = \\ln 4$."},
+ {"q":"소프트맥스 + 교차 엔트로피에서 로짓에 대한 그래디언트는?","o":["p","p − y","y − p","p(1 − p)"],"a":1,"e":"이진 분류와 같은 (예측 − 정답) 모양이다."},
+ {"q":"10클래스 분류기를 무작위로 초기화했는데 첫 손실이 25가 나왔다. 가장 그럴듯한 해석은?","o":["정상이다","초기 로짓이 너무 커서 일부 정답에 매우 작은 확률을 주고 있다(초기화나 입력 스케일 문제)","학습률이 너무 작다","데이터가 너무 많다"],"a":1,"e":"정상이라면 첫 손실은 $\\ln 10 \\approx 2.3$ 근처여야 한다."}
+]</script>
+
+<h2 data-min="8" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>로짓 $(1, 2, 3)$의 소프트맥스를 계산하고, 온도 $\tau = 0.5$와 $\tau = 2$일 때와 비교하라.
+    <details class="sol"><summary>풀이</summary><p>$\tau = 1$: $(0.090, 0.245, 0.665)$. $\tau = 0.5$(점수 2배): $(0.016, 0.117, 0.867)$. $\tau = 2$(점수 절반): $(0.186, 0.307, 0.506)$.</p>
+<pre><code>for tau in [1, 0.5, 2]:
+    print(tau, softmax(np.array([1.0, 2.0, 3.0]) / tau).round(3))
+</code></pre></details></li>
+  <li>$\partial p_j/\partial z_k = p_j([j = k] - p_k)$임을 보이고, 이를 이용해 $\partial\ell/\partial z_k = p_k - y_k$를 다시 유도하라.
+    <details class="sol"><summary>풀이</summary><p>$p_j = e^{z_j}/S$, $S = \sum e^{z_i}$. $j = k$이면 $\frac{e^{z_j}S - e^{z_j}e^{z_k}}{S^2} = p_j - p_jp_k$, $j \ne k$이면 $-\frac{e^{z_j}e^{z_k}}{S^2} = -p_jp_k$. $\ell = -\sum_j y_j\ln p_j$이므로 $\frac{\partial\ell}{\partial z_k} = -\sum_j\frac{y_j}{p_j}p_j([j = k] - p_k) = -y_k + p_k\sum_j y_j = p_k - y_k$ ($\sum_j y_j = 1$).</p></details></li>
+  <li>두 클래스 소프트맥스 회귀의 가중치 $\mathbf w_1, \mathbf w_2$와 로지스틱 회귀 가중치 $\mathbf w$의 관계를 쓰라. 소프트맥스 회귀의 파라미터는 왜 하나로 정해지지 않는가?
+    <details class="sol"><summary>풀이</summary><p>$p_1 = \frac{e^{z_1}}{e^{z_1} + e^{z_2}} = \sigma(z_1 - z_2)$이므로 $\mathbf w = \mathbf w_1 - \mathbf w_2$, $b = b_1 - b_2$. 모든 $\mathbf w_k$에 같은 벡터를 더해도 차이가 그대로라 예측이 변하지 않는다. 그래서 해가 무수히 많다. 실전에서는 상관없으며, L2 규제를 넣으면 하나로 정해진다.</p></details></li>
+  <li>정답 클래스의 로짓이 다른 모든 로짓보다 10만큼 큰 표본의 손실을 $K = 10$일 때 계산하라. 이 표본의 그래디언트는 대략 얼마인가?
+    <details class="sol"><summary>풀이</summary><p>$p_c = \frac{1}{1 + 9e^{-10}} \approx 1 - 9e^{-10} \approx 0.99959$, 손실 $\approx 9e^{-10} \approx 4.1\times10^{-4}$. 그래디언트 $\mathbf p - \mathbf y$의 각 성분도 $10^{-4}$ 수준이다. 이미 잘 맞힌 표본은 거의 학습 신호를 주지 않는다.</p></details></li>
+</ol>
+
+<h2 data-min="40" data-kind="project">미니 프로젝트: 손글씨 숫자 소프트맥스 분류기</h2>
+<section class="project" data-title="8×8 손글씨 숫자 10종을 분류하는 소프트맥스 회귀" data-min="40">
+<p class="lead">7일차에 최근접 중심 분류기로 91.5%를 얻은 손글씨 숫자 데이터를, 같은 분할에서 소프트맥스 회귀로 다시 분류한다. 미니배치 경사하강법으로 학습하고, 학습된 가중치를 "숫자별 템플릿" 이미지로 해석하고, 남은 오류를 분석한다.</p>
+<ol class="steps">
+<li><b>데이터와 분할.</b> 7일차와 같은 층화 분할(시드 0)을 쓴다. 픽셀은 0~16의 정수이므로 16으로 나눠 0~1로 맞춘다(최소-최대 정규화). 표준화 대신 이렇게 하면 가중치를 이미지로 보기 쉽다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("digits")
+X, y = d["X"].astype(float) / 16, d["y"]
+rng = np.random.default_rng(0); tr, te = [], []
+for k in range(10):
+    idx = rng.permutation(np.where(y == k)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+Xtr, ytr, Xte, yte = X[tr], y[tr], X[te], y[te]
+Ytr = np.eye(10)[ytr]
+print("학습", Xtr.shape, " 테스트", Xte.shape, " 원-핫", Ytr.shape)
+</code></pre></li>
+<li><b>모델 함수.</b> 로짓, 손실(로그-합-지수), 그래디언트를 함수로 만든다. 가중치 0에서 첫 손실이 $\ln10$인지 확인한다.
+<pre class="run"><code>def logits(W, b, X_): return X_ @ W + b
+def loss(W, b, X_, y_):
+    Z = logits(W, b, X_)
+    # TODO 확인: −ln p_정답의 평균
+    return (logsumexp(Z) - Z[np.arange(len(y_)), y_]).mean()
+def grads(W, b, X_, Y_):
+    # TODO 확인: (B, 10)
+    G = (softmax(logits(W, b, X_)) - Y_) / len(X_)
+    return X_.T @ G, G.sum(axis=0)
+W = np.zeros((64, 10)); b = np.zeros(10)
+print("첫 손실 %.4f,  ln 10 = %.4f" % (loss(W, b, Xtr, ytr), np.log(10)))
+</code></pre></li>
+<li><b>미니배치 학습.</b> 배치 크기 32, 학습률 0.5로 30에폭 학습하며 에폭마다 학습 손실과 테스트 정확도를 기록한다.
+<pre class="run"><code>W = np.zeros((64, 10)); b = np.zeros(10); r = np.random.default_rng(1); log = []
+for ep in range(30):
+    order = r.permutation(len(Xtr))
+    for s in range(0, len(Xtr), 32):
+        i = order[s:s + 32]
+        gW, gb = grads(W, b, Xtr[i], Ytr[i])
+        W -= 0.5 * gW; b -= 0.5 * gb
+    acc_te = (logits(W, b, Xte).argmax(axis=1) == yte).mean()
+    log.append((loss(W, b, Xtr, ytr), acc_te))
+log = np.array(log)
+fig, axs = plt.subplots(1, 2, figsize=(9, 3))
+axs[0].plot(range(1, 31), log[:, 0])
+axs[0].set_xlabel("에폭")
+axs[0].set_ylabel("학습 손실")
+axs[0].grid(alpha=.3)
+axs[1].plot(range(1, 31), log[:, 1])
+axs[1].axhline(0.915, color="gray", ls="--", label="7일차 최근접 중심")
+axs[1].set_xlabel("에폭")
+axs[1].set_ylabel("테스트 정확도")
+axs[1].legend()
+axs[1].grid(alpha=.3)
+plt.tight_layout(); plt.show()
+print("테스트 정확도: %.4f" % log[-1, 1])
+</code></pre></li>
+<li><b>가중치를 이미지로.</b> $W$의 열 $k$는 64개 픽셀 각각이 "숫자 $k$" 점수에 기여하는 정도다. 8×8로 되돌려 그린다. 빨강은 그 픽셀에 잉크가 있으면 점수가 오르는 곳, 파랑은 내려가는 곳이다.
+<pre class="run"><code>fig, axs = plt.subplots(2, 5, figsize=(8.5, 3.8))
+v = np.abs(W).max()
+for k, ax in enumerate(axs.ravel()):
+    ax.imshow(W[:, k].reshape(8, 8), cmap="RdBu_r", vmin=-v, vmax=v)
+    ax.set_title(f"숫자 {k}"); ax.axis("off")
+plt.suptitle("W의 열: 숫자별 템플릿 (빨강 +, 파랑 −)"); plt.tight_layout(); plt.show()
+</code></pre></li>
+<li><b>오류 분석.</b> 혼동 행렬에서 가장 많이 헷갈린 쌍을 찾고, 틀린 표본 중 모델이 가장 확신한 것들을 그린다.
+<pre class="run"><code>P = softmax(logits(W, b, Xte)); pred = P.argmax(axis=1)
+C = np.zeros((10, 10), int)
+for t_, p_ in zip(yte, pred): C[t_, p_] += 1
+pairs = sorted([(C[i, j], i, j) for i in range(10) for j in range(10) if i != j],
+               reverse=True)[:4]
+print("정답 → 예측 (횟수):", [(f"{i}→{j}", n) for n, i, j in pairs])
+wrong = np.where(pred != yte)[0]
+wrong = wrong[np.argsort(-P[wrong, pred[wrong]])][:8]
+fig, axs = plt.subplots(1, len(wrong), figsize=(1.2 * len(wrong), 1.8))
+for ax, k in zip(np.atleast_1d(axs), wrong):
+    ax.imshow(Xte[k].reshape(8, 8), cmap="gray_r"); ax.axis("off")
+    ax.set_title(f"{yte[k]}→{pred[k]}\n{P[k, pred[k]]:.2f}", fontsize=8)
+plt.show()
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>2단계: 가중치가 0이면 모든 로짓이 0이고 확률이 균등(0.1)하므로 첫 손실은 정확히 $\ln10 = 2.3026$이다.</li>
+<li>3단계: 테스트 정확도는 첫 에폭 90.9%, 두 번째 에폭 94.0%로 최근접 중심(91.5%)을 넘고, 30에폭 후 97.0%가 된다. 최근접 중심은 클래스마다 평균 이미지 하나만 저장하지만, 소프트맥스 회귀는 "다른 숫자와 구별되는 픽셀"에 가중치를 몰아줄 수 있다.</li>
+<li>4단계: 템플릿은 평균 이미지와 다르다. 숫자 0의 템플릿은 가운데가 파랑(가운데에 잉크가 있으면 0이 아니다)이고 둘레가 빨강이다. 숫자 1은 가운데 세로 획 자리가 빨강이다. 모델은 "이 숫자의 모양"보다 "다른 숫자와의 차이"를 배운다.</li>
+<li>5단계: 5↔9, 8↔1처럼 획의 일부가 겹치는 쌍이 주로 헷갈린다. 확신하며 틀린 표본 중에는 사람도 헷갈릴 만한 글씨가 섞여 있다. 남은 오류를 줄이려면 픽셀 사이의 관계(위치가 조금 어긋나도 같은 획)를 볼 수 있는 모델, 즉 3주차의 신경망과 5주차의 합성곱 신경망이 필요하다.</li>
+</ul></details>
+</section>
