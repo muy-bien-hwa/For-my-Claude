@@ -1,123 +1,329 @@
 <ul class="goals">
-  <li>인공지능 · 머신러닝 · 딥러닝의 관계를 정확히 구분해서 말할 수 있다.</li>
-  <li>"학습(learning)"이 수학적으로 무엇을 의미하는지 <b>함수 근사 + 최적화</b>의 관점으로 설명할 수 있다.</li>
-  <li>딥러닝이 왜 2012년 이후 폭발했는지 세 가지 이유를 댈 수 있다.</li>
-  <li>앞으로 30일간 사용할 실습 환경(브라우저 실행기, Google Colab)을 준비한다.</li>
+  <li>규칙을 작성하는 프로그래밍과 데이터로부터 규칙을 학습하는 프로그래밍의 차이를 설명할 수 있다.</li>
+  <li>인공지능, 머신러닝, 딥러닝의 포함 관계와 표현 학습의 의미를 설명할 수 있다.</li>
+  <li>학습을 "손실을 최소화하는 파라미터 찾기"로 정의하고, 모델·손실·최적화의 역할을 구분할 수 있다.</li>
+  <li>지도·비지도·자기지도·강화학습, 회귀와 분류를 구분할 수 있다.</li>
+  <li>브라우저 실행기와 Colab을 사용해 코드를 실행할 수 있다.</li>
 </ul>
 
-<div class="callout prof"><span class="ct">👨‍🏫 첫 강의를 시작하며</span>
-반갑습니다. 앞으로 30일 동안 여러분과 함께 딥러닝이라는 산을 오를 담당 교수입니다. 첫날은 코드를 많이 짜지 않습니다. 대신 앞으로 배울 모든 것을 걸어 둘 <b>"지도"</b>를 머릿속에 그리는 날입니다. 지도가 없으면 Transformer를 배우는 날, 그것이 퍼셉트론과 어떻게 연결되는지 모른 채 길을 잃게 됩니다.</div>
-
-<h2>1. 규칙을 짜는 프로그래밍 vs. 규칙을 배우는 프로그래밍</h2>
-<p>전통적인 프로그래밍은 이렇게 동작합니다. 사람이 <b>규칙</b>을 작성하고, 컴퓨터는 <b>데이터</b>에 그 규칙을 적용해 <b>답</b>을 냅니다.</p>
-<p>그런데 "사진 속 동물이 고양이인가?"라는 규칙을 if 문으로 쓸 수 있을까요? 귀가 뾰족하면? 수염이 있으면? 어두운 사진은? 옆모습은? 규칙은 끝없이 늘어나고, 결국 실패합니다.</p>
-<p>머신러닝은 방향을 뒤집습니다. <b>데이터</b>와 <b>답</b>을 주면, 컴퓨터가 <b>규칙</b>을 찾아냅니다.</p>
+<h2 data-min="12" data-kind="concept">규칙을 짜는 프로그램과 규칙을 배우는 프로그램</h2>
+<p>전통적인 프로그래밍에서는 사람이 규칙을 작성하고, 컴퓨터는 입력 데이터에 그 규칙을 적용해 답을 낸다. 스팸 메일 필터라면 "제목에 '무료'가 있으면 스팸" 같은 조건문을 사람이 하나씩 적는다.</p>
+<div class="flow"><div>규칙<small>사람이 작성</small></div><div>데이터</div><div class="hl">프로그램</div><div>답</div></div>
+<p>이 방식은 규칙을 말로 설명할 수 있는 문제에서는 잘 동작한다. 그러나 "이 사진이 고양이인가"처럼 규칙을 명시하기 어려운 문제에서는 조건문이 끝없이 늘어나고 예외를 감당하지 못한다.</p>
+<p>머신러닝은 방향을 바꾼다. 데이터와 정답을 주면, 컴퓨터가 둘 사이의 관계를 설명하는 규칙을 찾는다. 이렇게 찾은 규칙이 <b>모델</b>이고, 새로운 데이터가 오면 모델이 답을 낸다.</p>
+<div class="flow"><div>데이터</div><div>정답</div><div class="hl">학습</div><div>규칙<small>= 학습된 모델</small></div></div>
 <table>
-  <tr><th></th><th>입력</th><th>출력</th></tr>
-  <tr><td>전통적 프로그래밍</td><td>규칙 + 데이터</td><td>답</td></tr>
-  <tr><td>머신러닝</td><td>데이터 + 답</td><td>규칙(= 학습된 모델)</td></tr>
+  <thead><tr><th></th><th>입력</th><th>출력</th><th>잘 맞는 문제</th></tr></thead>
+  <tbody>
+    <tr><td>전통적 프로그래밍</td><td>규칙 + 데이터</td><td>답</td><td>계산기, 회계, 정렬처럼 규칙이 명확한 문제</td></tr>
+    <tr><td>머신러닝</td><td>데이터 + 정답</td><td>규칙(모델)</td><td>이미지 인식, 번역, 추천처럼 규칙을 적기 어려운 문제</td></tr>
+  </tbody>
 </table>
 
-<h2>2. AI ⊃ 머신러닝 ⊃ 딥러닝</h2>
+<h2 data-min="13" data-kind="concept">인공지능, 머신러닝, 딥러닝</h2>
 <figure class="fig">
-<svg viewBox="0 0 520 260" width="520" role="img" aria-label="AI, ML, DL 포함 관계">
-  <ellipse cx="260" cy="130" rx="250" ry="122" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>
-  <ellipse cx="290" cy="150" rx="175" ry="90" fill="#5b5bd6" fill-opacity=".10" stroke="#5b5bd6" stroke-width="2"/>
-  <ellipse cx="330" cy="165" rx="95" ry="52" fill="#5b5bd6" fill-opacity=".25" stroke="#5b5bd6" stroke-width="2"/>
-  <text x="60" y="60" font-size="17" font-weight="700" fill="currentColor">인공지능 (AI)</text>
-  <text x="130" y="110" font-size="15" font-weight="700" fill="#5b5bd6">머신러닝 (ML)</text>
-  <text x="290" y="170" font-size="15" font-weight="800" fill="#5b5bd6">딥러닝 (DL)</text>
-  <text x="40" y="150" font-size="12" fill="currentColor" opacity=".7">규칙 기반 전문가 시스템</text>
-  <text x="140" y="200" font-size="12" fill="currentColor" opacity=".7">결정트리 · SVM</text>
+<svg viewBox="0 0 560 280" width="560" role="img" aria-label="인공지능이 머신러닝을, 머신러닝이 딥러닝을 포함하는 관계">
+  <ellipse cx="280" cy="140" rx="268" ry="128" class="s-f"/>
+  <ellipse cx="318" cy="158" rx="190" ry="95" class="s-f2"/>
+  <ellipse cx="360" cy="172" rx="112" ry="58" class="s-acs" stroke-width="2"/>
+  <text x="48" y="64" class="s-tx" font-size="16" font-weight="700">인공지능</text>
+  <text x="48" y="84" class="s-txm" font-size="12">규칙 기반 전문가 시스템, 탐색</text>
+  <text x="150" y="120" class="s-tx" font-size="15" font-weight="700">머신러닝</text>
+  <text x="150" y="140" class="s-txm" font-size="12">선형 모델, 결정 트리, SVM</text>
+  <text x="318" y="172" class="s-txa" font-size="15" font-weight="700">딥러닝</text>
+  <text x="318" y="192" class="s-txm" font-size="12">다층 신경망</text>
 </svg>
-<figcaption>딥러닝은 머신러닝의 한 갈래이고, 머신러닝은 인공지능의 한 갈래입니다.</figcaption>
+<figcaption>딥러닝은 머신러닝의 한 갈래이고, 머신러닝은 인공지능의 한 갈래이다.</figcaption>
 </figure>
 <ul>
-  <li><b>인공지능</b>: 지능적인 행동을 기계로 구현하려는 모든 시도. 1950년대 체스 프로그램, 규칙 기반 전문가 시스템도 AI입니다.</li>
-  <li><b>머신러닝</b>: 데이터로부터 학습하는 AI. 선형회귀, 결정트리, SVM 등이 있습니다.</li>
-  <li><b>딥러닝</b>: 여러 층(layer)의 신경망으로 학습하는 머신러닝. 핵심 차이는 <b>특징(feature)까지 스스로 학습</b>한다는 점입니다.</li>
+  <li><dfn data-t="ai">인공지능</dfn>(AI): 인식, 추론, 언어, 계획 같은 지적 행동을 기계로 구현하려는 분야 전체.</li>
+  <li><dfn data-t="ml">머신러닝</dfn>: 데이터로부터 규칙을 학습하는 인공지능.</li>
+  <li><dfn data-t="dl">딥러닝</dfn>: 여러 층의 신경망으로 학습하는 머신러닝. "깊다"는 것은 층이 여러 겹 쌓였다는 뜻이다.</li>
 </ul>
-<div class="callout key"><span class="ct">🔑 핵심: 특징 공학 vs. 표현 학습</span>
-고전 머신러닝으로 고양이를 분류하려면 사람이 "윤곽선 히스토그램", "색상 분포" 같은 <b>특징</b>을 직접 설계해 넣어야 했습니다(특징 공학). 딥러닝은 원시 픽셀을 그대로 넣습니다. 첫 층은 선과 모서리를, 중간 층은 눈·귀 같은 부품을, 마지막 층은 "고양이다움"을 <b>스스로</b> 학습합니다. 이것을 <b>표현 학습(representation learning)</b>이라 부르고, "딥(deep)"이라는 말은 이 표현이 여러 층에 걸쳐 계층적으로 쌓인다는 뜻입니다.</div>
+<h3>특징을 누가 만드는가</h3>
+<p>딥러닝과 고전 머신러닝의 본질적 차이는 <b>특징을 누가 만드는가</b>에 있다. 고전적인 방법으로 고양이 사진을 분류하려면 사람이 "윤곽선 방향의 분포", "색상 히스토그램" 같은 특징을 설계해 모델에 넣어야 했다(특징 공학).</p>
+<div class="flow"><div>원시 픽셀</div><div>사람이 설계한 특징<small>윤곽선, 색 분포</small></div><div>분류기<small>학습</small></div><div>고양이 / 개</div></div>
+<p>딥러닝은 원시 픽셀을 그대로 입력받는다. 앞쪽 층은 선과 모서리를, 중간 층은 눈·귀 같은 부품을, 뒤쪽 층은 물체 전체를 나타내는 특징을 학습한다. 과제에 유용한 특징까지 데이터로부터 학습하는 것을 <dfn data-t="representation-learning">표현 학습</dfn>이라 한다.</p>
+<div class="flow"><div>원시 픽셀</div><div class="hl">층 1<small>선, 모서리</small></div><div class="hl">층 2<small>무늬, 부품</small></div><div class="hl">층 3<small>물체</small></div><div>고양이 / 개</div></div>
+<p class="flow-cap">강조된 단계 전체를 학습한다. 특징이 층을 따라 단순한 것에서 복잡한 것으로 쌓인다.</p>
 
-<h2>3. "학습"이란 무엇인가 — 단 한 줄의 정의</h2>
-<p>이 강의 전체를 관통하는 문장 하나를 외워 두세요.</p>
-<div class="callout prof"><span class="ct">📌 이 강의의 대전제</span>
-딥러닝 모델은 파라미터 $\theta$를 가진 함수 $f_\theta(x)$이고, <b>학습</b>이란 손실 함수 $L(\theta)$를 최소화하는 $\theta$를 <b>경사하강법</b>으로 찾는 과정이다.</div>
-<p>이 문장의 각 부분이 앞으로의 강의가 됩니다.</p>
-<ol>
-  <li><b>함수 $f_\theta$</b> — 모델의 구조. 선형 모델(Day 6), MLP(Day 8), CNN(Day 17), RNN(Day 20), Transformer(Day 23)는 모두 "어떤 모양의 함수를 쓸 것인가"에 대한 서로 다른 답입니다.</li>
-  <li><b>손실 함수 $L$</b> — 예측이 얼마나 틀렸는지 재는 자. MSE(Day 6), 교차 엔트로피(Day 5, 7).</li>
-  <li><b>경사하강법</b> — 손실을 줄이는 방향으로 $\theta$를 조금씩 고치는 방법(Day 6). 그 방향을 구하는 효율적인 알고리즘이 <b>역전파</b>(Day 10~11)입니다.</li>
-</ol>
-<p>수식으로 쓰면, 데이터 $\{(x_i, y_i)\}_{i=1}^N$이 있을 때 우리가 푸는 문제는 다음과 같습니다.</p>
-$$\theta^* = \arg\min_\theta \; \frac{1}{N}\sum_{i=1}^{N} \ell\big(f_\theta(x_i),\, y_i\big)$$
-<p>읽는 법: "모든 데이터에 대해 예측 $f_\theta(x_i)$와 정답 $y_i$ 사이의 손실 $\ell$의 평균을 가장 작게 만드는 $\theta$를 $\theta^*$라 하자." 겁낼 것 없습니다. 이번 주 안에 이 식을 직접 코드로 풀게 됩니다.</p>
+<h2 data-min="28" data-kind="concept">학습의 정의: 함수 근사와 최적화</h2>
+<p>이 과정 전체는 다음 한 문장 위에 서 있다.</p>
+<div class="box key"><p>모델은 파라미터 $\theta$를 가진 함수 $f_\theta(x)$이다. <b>학습</b>이란 데이터에 대한 손실 $L(\theta)$를 가장 작게 만드는 $\theta$를 찾는 일이다.</p></div>
+<h3>세 가지 구성 요소</h3>
+<ul>
+  <li><dfn data-t="model">모델</dfn> $f_\theta$: 입력 $x$를 받아 예측 $\hat y = f_\theta(x)$를 내는 함수. 함수의 "모양"을 정한다. 직선, 신경망, 트랜스포머는 모두 서로 다른 모양의 함수다.</li>
+  <li><dfn data-t="parameter">파라미터</dfn> $\theta$: 모델 안에서 학습으로 정해지는 수. 직선 $\hat y = wx+b$라면 $w$와 $b$다. GPT 같은 모델은 수천억 개의 파라미터를 가진다.</li>
+  <li><dfn data-t="loss">손실 함수</dfn> $L(\theta)$: 예측이 정답과 얼마나 다른지를 하나의 수로 잰 것. 작을수록 좋다.</li>
+</ul>
+<p>손실을 가장 작게 만드는 파라미터를 찾는 과정이 <dfn data-t="optimization">최적화</dfn>이며, 이 과정을 데이터에 대해 수행하는 것이 <dfn data-t="training">학습</dfn>이다. 학습이 끝난 모델로 새 입력의 답을 계산하는 것은 <dfn data-t="inference">추론</dfn>이라 한다.</p>
+$$\theta^* = \arg\min_{\theta}\; L(\theta), \qquad L(\theta) = \frac{1}{N}\sum_{i=1}^{N} \ell\big(f_\theta(x_i),\, y_i\big)$$
+<p>읽는 법: 데이터 $N$개 각각에 대해 예측 $f_\theta(x_i)$와 정답 $y_i$의 오차 $\ell$을 구하고, 그 평균 $L(\theta)$를 가장 작게 만드는 $\theta$를 $\theta^*$라 한다. $\arg\min$은 "최솟값을 만드는 입력"이라는 뜻이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 600 250" width="600" role="img" aria-label="학습의 반복 과정">
+  <defs><marker id="d1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker></defs>
+  <rect x="20" y="95" width="100" height="56" rx="8" class="s-f"/><text x="70" y="120" text-anchor="middle" class="s-tx" font-weight="700">데이터</text><text x="70" y="138" text-anchor="middle" class="s-txm" font-size="12">입력 x, 정답 y</text>
+  <rect x="170" y="95" width="110" height="56" rx="8" class="s-acs" stroke-width="1.5"/><text x="225" y="120" text-anchor="middle" class="s-tx" font-weight="700">모델 f<tspan font-size="10" dy="3">θ</tspan></text><text x="225" y="140" text-anchor="middle" class="s-txm" font-size="12">예측 ŷ</text>
+  <rect x="330" y="95" width="100" height="56" rx="8" class="s-f"/><text x="380" y="120" text-anchor="middle" class="s-tx" font-weight="700">손실 L</text><text x="380" y="138" text-anchor="middle" class="s-txm" font-size="12">ŷ와 y의 차이</text>
+  <rect x="480" y="95" width="100" height="56" rx="8" class="s-f"/><text x="530" y="120" text-anchor="middle" class="s-tx" font-weight="700">최적화</text><text x="530" y="138" text-anchor="middle" class="s-txm" font-size="12">θ 조정</text>
+  <path d="M120 123 H166" class="s-ac" stroke-width="2" marker-end="url(#d1a)"/>
+  <path d="M280 123 H326" class="s-ac" stroke-width="2" marker-end="url(#d1a)"/>
+  <path d="M430 123 H476" class="s-ac" stroke-width="2" marker-end="url(#d1a)"/>
+  <path d="M530 95 V50 H225 V91" class="s-ac" stroke-width="2" marker-end="url(#d1a)"/>
+  <text x="378" y="42" text-anchor="middle" class="s-txa" font-size="12.5" font-weight="700">파라미터 갱신 후 반복</text>
+  <text x="300" y="200" text-anchor="middle" class="s-txm" font-size="12.5">손실이 충분히 작아질 때까지 예측 → 손실 계산 → 파라미터 조정을 반복한다</text>
+</svg>
+<figcaption>학습의 반복 구조. 2주차에 이 고리를 직접 구현하고, 7주차의 GPT도 같은 고리로 학습한다.</figcaption>
+</figure>
+<div class="box ex" data-title="손실을 손으로 계산하기">
+<p>데이터 세 점 $(1, 3), (2, 5), (3, 7)$에 모델 $\hat y = wx$를 맞춘다고 하자. 손실은 평균제곱오차 $L(w) = \frac13\sum(wx_i - y_i)^2$로 정한다.</p>
+<ul>
+<li>$w=2$: 예측 $(2, 4, 6)$, 오차 $(-1, -1, -1)$, $L = \frac{1+1+1}{3} = 1$.</li>
+<li>$w=2.5$: 예측 $(2.5, 5, 7.5)$, 오차 $(-0.5, 0, 0.5)$, $L = \frac{0.25+0+0.25}{3} \approx 0.167$.</li>
+<li>$w=3$: 예측 $(3, 6, 9)$, 오차 $(0, 1, 2)$, $L = \frac{0+1+4}{3} \approx 1.667$.</li>
+</ul>
+<p>세 후보 중 $w=2.5$의 손실이 가장 작다. 학습은 이런 비교를 체계적으로, 그리고 효율적으로 하는 방법이다.</p>
+</div>
+<p>아래 인터랙티브에서 파라미터를 바꾸며 손실이 어떻게 변하는지 직접 확인한다.</p>
+<div class="viz-mount" data-viz="learn-1d"></div>
+<p>여기서는 $w$를 0.05 간격으로 모두 시험했다(무차별 탐색). 파라미터가 1개라 가능했다. 파라미터가 100만 개이고 각각 10개 값만 시험해도 조합은 $10^{1{,}000{,}000}$개다. 그래서 딥러닝은 손실이 줄어드는 방향을 미분으로 계산해 그쪽으로 조금씩 이동하는 <b>경사하강법</b>(9일차)을 쓴다.</p>
+<p>학습 전에 사람이 정하는 값도 있다. 학습률, 층 수, 학습 반복 횟수처럼 학습으로 정해지지 않는 설정값을 <dfn data-t="hyperparameter">하이퍼파라미터</dfn>라 한다.</p>
 
-<h2>4. 학습의 종류</h2>
+<h2 data-min="12" data-kind="concept">학습의 종류와 과제의 종류</h2>
+<p>데이터는 <dfn data-t="sample">샘플</dfn>(관측 하나)들의 모음인 <dfn data-t="dataset">데이터셋</dfn>으로 주어진다. 각 샘플은 입력의 측정값인 <dfn data-t="feature">특징</dfn>과, 있을 경우 정답인 <dfn data-t="label">레이블</dfn>로 이루어진다.</p>
 <table>
-  <tr><th>종류</th><th>데이터</th><th>예시</th><th>강의</th></tr>
-  <tr><td><b>지도학습</b></td><td>입력 + 정답 레이블</td><td>이미지 분류, 집값 예측</td><td>대부분의 강의</td></tr>
-  <tr><td><b>비지도학습</b></td><td>입력만</td><td>군집화, 차원 축소, 오토인코더</td><td>Day 26</td></tr>
-  <tr><td><b>자기지도학습</b></td><td>입력에서 정답을 스스로 만듦</td><td>다음 단어 예측(GPT), 빈칸 채우기(BERT)</td><td>Day 24~25</td></tr>
-  <tr><td><b>강화학습</b></td><td>행동에 대한 보상</td><td>게임 AI, 로봇 제어, RLHF</td><td>Day 30(로드맵)</td></tr>
+  <thead><tr><th>학습 방식</th><th>데이터</th><th>예</th><th>과정</th></tr></thead>
+  <tbody>
+    <tr><td><dfn data-t="supervised">지도학습</dfn></td><td>입력 + 레이블</td><td>사진 분류, 집값 예측</td><td>2~5주차 대부분</td></tr>
+    <tr><td><dfn data-t="unsupervised">비지도학습</dfn></td><td>입력만</td><td>군집화, 차원 축소</td><td>4일차(PCA), 13일차</td></tr>
+    <tr><td><dfn data-t="self-supervised">자기지도학습</dfn></td><td>입력에서 정답을 만든다</td><td>다음 단어 예측(GPT), 가린 단어 맞히기(BERT)</td><td>6~7주차</td></tr>
+    <tr><td><dfn data-t="rl">강화학습</dfn></td><td>행동에 대한 보상</td><td>게임, 로봇 제어, 대화 모델 정렬</td><td>53일차</td></tr>
+  </tbody>
 </table>
-<p>지도학습은 다시 두 가지로 나뉩니다. 연속적인 값을 맞히는 <b>회귀(regression)</b>, 그리고 범주를 맞히는 <b>분류(classification)</b>입니다.</p>
+<p>지도학습의 과제는 출력의 종류에 따라 둘로 나뉜다. 연속적인 수를 예측하면 <dfn data-t="regression">회귀</dfn>, 범주를 예측하면 <dfn data-t="classification">분류</dfn>다.</p>
+<figure class="fig">
+<svg viewBox="0 0 600 220" width="600" role="img" aria-label="회귀와 분류의 비교">
+  <g transform="translate(30,20)">
+    <rect width="250" height="170" rx="6" class="s-bg" stroke="currentColor" stroke-opacity=".15"/>
+    <line x1="20" y1="150" x2="235" y2="150" class="s-mu"/><line x1="20" y1="15" x2="20" y2="150" class="s-mu"/>
+    <g class="s-acf"><circle cx="40" cy="132" r="4"/><circle cx="62" cy="120" r="4"/><circle cx="85" cy="124" r="4"/><circle cx="104" cy="98" r="4"/><circle cx="128" cy="92" r="4"/><circle cx="150" cy="74" r="4"/><circle cx="172" cy="70" r="4"/><circle cx="196" cy="46" r="4"/><circle cx="218" cy="40" r="4"/></g>
+    <line x1="28" y1="140" x2="230" y2="34" class="s-red" stroke-width="2.5"/>
+    <text x="125" y="-4" text-anchor="middle" class="s-tx" font-weight="700">회귀: 수를 예측</text>
+    <text x="128" y="168" text-anchor="middle" class="s-txm" font-size="12">면적 → 집값</text>
+  </g>
+  <g transform="translate(320,20)">
+    <rect width="250" height="170" rx="6" class="s-bg" stroke="currentColor" stroke-opacity=".15"/>
+    <line x1="20" y1="150" x2="235" y2="150" class="s-mu"/><line x1="20" y1="15" x2="20" y2="150" class="s-mu"/>
+    <g class="s-acf"><circle cx="50" cy="40" r="4"/><circle cx="70" cy="60" r="4"/><circle cx="45" cy="80" r="4"/><circle cx="90" cy="35" r="4"/><circle cx="110" cy="55" r="4"/><circle cx="80" cy="95" r="4"/></g>
+    <g class="s-redf"><circle cx="160" cy="110" r="4"/><circle cx="190" cy="90" r="4"/><circle cx="200" cy="130" r="4"/><circle cx="150" cy="135" r="4"/><circle cx="215" cy="70" r="4"/><circle cx="130" cy="120" r="4"/></g>
+    <line x1="60" y1="148" x2="220" y2="22" class="s-ln" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="125" y="-4" text-anchor="middle" class="s-tx" font-weight="700">분류: 범주를 예측</text>
+    <text x="128" y="168" text-anchor="middle" class="s-txm" font-size="12">두 특징 → 정상 / 스팸</text>
+  </g>
+</svg>
+<figcaption>회귀는 데이터를 지나는 곡선을, 분류는 범주를 나누는 경계를 학습한다.</figcaption>
+</figure>
 
-<h2>5. 짧은 역사: 두 번의 겨울과 한 번의 폭발</h2>
-<ul>
-  <li><b>1958 퍼셉트론</b> (Rosenblatt): 최초의 학습하는 인공 뉴런.</li>
-  <li><b>1969 첫 번째 겨울</b>: Minsky & Papert가 단층 퍼셉트론이 XOR조차 못 푼다는 것을 증명했습니다. 이 문제는 Day 8에서 직접 확인합니다.</li>
-  <li><b>1986 역전파의 재발견</b> (Rumelhart, Hinton, Williams): 다층 신경망을 학습시킬 방법이 생겼습니다.</li>
-  <li><b>1990년대 두 번째 겨울</b>: 깊은 망은 학습이 잘 안 됐고(기울기 소실), SVM 같은 방법이 더 좋은 성능을 냈습니다.</li>
-  <li><b>2012 AlexNet</b>: ImageNet 대회에서 오류율을 26%에서 15%로 떨어뜨리며 딥러닝 시대가 열렸습니다.</li>
-  <li><b>2017 Transformer</b> ("Attention Is All You Need"): 이후 GPT, BERT, 그리고 오늘날의 대규모 언어 모델로 이어집니다.</li>
-</ul>
-<div class="callout tip"><span class="ct">💡 왜 2012년이었을까?</span>
-아이디어 대부분은 1980~90년대에 이미 있었습니다. 폭발을 만든 것은 세 가지가 동시에 갖춰진 덕분입니다.
-<ol><li><b>데이터</b>: 인터넷과 ImageNet(약 1,400만 장).</li><li><b>연산</b>: 행렬곱에 특화된 GPU.</li><li><b>알고리즘의 작은 개선</b>: ReLU, 드롭아웃, 더 나은 초기화.</li></ol>
-이 세 가지는 지금도 딥러닝 발전의 세 축입니다.</div>
-
-<h2>6. 실습 환경 준비</h2>
-<p>이 강의는 두 가지 방식으로 코드를 실행합니다.</p>
-<h3>① 이 웹페이지 안에서 바로 실행 (NumPy 실습)</h3>
-<p>코드 상자의 <b>▶ 실행</b> 버튼을 누르면 브라우저 안에서 파이썬(Pyodide)이 돌아갑니다. 첫 실행은 런타임을 내려받느라 10~20초 걸리고, 그다음부터는 빠릅니다. 코드를 마음껏 고쳐 보세요(<code>Ctrl+Enter</code>로도 실행됩니다). 같은 페이지의 코드 상자들은 변수를 공유하므로, <b>위에서부터 차례로</b> 실행하세요.</p>
-<pre class="run"><code>import numpy as np
-import sys
-print("파이썬 버전:", sys.version.split()[0])
-print("NumPy 버전:", np.__version__)
-print("딥러닝 30일, 시작합니다! 🚀")
-</code></pre>
-<h3>② Google Colab (PyTorch 실습, GPU 사용)</h3>
-<p>3주차부터는 PyTorch와 GPU가 필요합니다. <a href="https://colab.research.google.com" target="_blank" rel="noopener">Google Colab</a>은 구글 계정만 있으면 무료 GPU가 달린 주피터 노트북을 제공합니다. 해당 날짜 상단의 <b>📓 Colab에서 실습 노트북 열기</b> 버튼을 누르면 노트북이 바로 열립니다.</p>
+<h2 data-min="12" data-kind="concept">딥러닝의 역사와 이 과정의 지도</h2>
+<figure class="fig">
+<svg viewBox="0 0 640 170" width="640" role="img" aria-label="딥러닝 역사 연표">
+  <line x1="20" y1="80" x2="620" y2="80" class="s-mu" stroke-width="2"/>
+  <g font-size="12">
+    <circle cx="50" cy="80" r="6" class="s-acf"/><text x="50" y="60" text-anchor="middle" class="s-tx" font-weight="700">1958</text><text x="50" y="104" text-anchor="middle" class="s-txm">퍼셉트론</text>
+    <circle cx="140" cy="80" r="6" class="s-redf"/><text x="140" y="60" text-anchor="middle" class="s-tx" font-weight="700">1969</text><text x="140" y="104" text-anchor="middle" class="s-txm">XOR 한계</text><text x="140" y="120" text-anchor="middle" class="s-txm">첫 침체기</text>
+    <circle cx="230" cy="80" r="6" class="s-acf"/><text x="230" y="60" text-anchor="middle" class="s-tx" font-weight="700">1986</text><text x="230" y="104" text-anchor="middle" class="s-txm">역전파 보급</text>
+    <circle cx="320" cy="80" r="6" class="s-redf"/><text x="320" y="60" text-anchor="middle" class="s-tx" font-weight="700">1990년대</text><text x="320" y="104" text-anchor="middle" class="s-txm">깊은 망 학습 실패</text><text x="320" y="120" text-anchor="middle" class="s-txm">두 번째 침체기</text>
+    <circle cx="420" cy="80" r="6" class="s-acf"/><text x="420" y="60" text-anchor="middle" class="s-tx" font-weight="700">2012</text><text x="420" y="104" text-anchor="middle" class="s-txm">AlexNet</text><text x="420" y="120" text-anchor="middle" class="s-txm">이미지 인식 도약</text>
+    <circle cx="510" cy="80" r="6" class="s-acf"/><text x="510" y="60" text-anchor="middle" class="s-tx" font-weight="700">2017</text><text x="510" y="104" text-anchor="middle" class="s-txm">트랜스포머</text>
+    <circle cx="595" cy="80" r="6" class="s-acf"/><text x="595" y="60" text-anchor="middle" class="s-tx" font-weight="700">2020년대</text><text x="595" y="104" text-anchor="middle" class="s-txm">LLM, 확산 모델</text>
+  </g>
+</svg>
+<figcaption>두 번의 침체기와 2012년 이후의 급성장. 각 사건은 이 과정의 15일차, 18일차, 32일차, 44일차, 47일차, 52일차에서 다룬다.</figcaption>
+</figure>
+<p>대부분의 핵심 아이디어는 1980~90년대에 이미 있었다. 2012년 이후의 급성장은 세 조건이 동시에 갖춰진 결과다.</p>
 <ol>
-  <li>Colab 메뉴 <b>런타임 → 런타임 유형 변경 → T4 GPU</b>를 선택합니다.</li>
-  <li>노트북의 셀을 위에서부터 <code>Shift+Enter</code>로 실행합니다.</li>
-  <li>고친 내용을 저장하려면 <b>파일 → Drive에 사본 저장</b>을 누릅니다.</li>
+  <li><b>데이터</b>: 인터넷과 ImageNet(약 1,400만 장의 레이블된 이미지).</li>
+  <li><b>연산</b>: 행렬 연산을 병렬로 처리하는 GPU.</li>
+  <li><b>알고리즘의 개선</b>: ReLU 활성화 함수, 드롭아웃, 좋은 초기화, 정규화 층.</li>
 </ol>
-<div class="callout warn"><span class="ct">⚠️ 내 컴퓨터에서 하고 싶다면</span>
-Python 3.10 이상에서 <code>pip install numpy matplotlib torch torchvision</code>을 실행하면 됩니다. GPU가 없으면 CPU로도 대부분의 실습이 (느리지만) 돌아갑니다. 처음에는 Colab을 권합니다. 환경 설정에 쓸 에너지를 개념 이해에 쓰세요.</div>
+<h3>8주 과정의 구성</h3>
+<div class="flow"><div>1주<small>수학과 도구</small></div><div>2주<small>머신러닝 기초</small></div><div>3주<small>신경망 원리</small></div><div>4주<small>학습 기술</small></div></div>
+<div class="flow"><div>5주<small>PyTorch, CNN</small></div><div>6주<small>시퀀스, 자연어</small></div><div>7주<small>트랜스포머, LLM</small></div><div>8주<small>생성 모델, 실전</small></div></div>
+<p class="flow-cap">1~4주차는 NumPy만으로 원리를 직접 구현하고, 5~8주차는 PyTorch와 GPU로 현대 모델을 다룬다. 매주 7일차는 주간 프로젝트다.</p>
 
-<h2>7. 이 강의를 200% 활용하는 법</h2>
+<h2 data-min="15" data-kind="practice">실습 환경</h2>
+<h3>브라우저 실행기</h3>
+<p>1~4주차의 코드 칸은 브라우저 안의 Python(Pyodide)으로 실행한다. <b>실행</b> 버튼(또는 <kbd>Ctrl</kbd>+<kbd>Enter</kbd>)을 누르면 결과가 아래에 나온다. 첫 실행은 런타임을 내려받느라 10~30초 걸리고, 이후에는 빠르다. 같은 페이지의 코드 칸은 변수를 공유하므로 위에서부터 차례로 실행한다. 중간부터 시작할 때는 <b>여기까지 모두 실행</b>을 쓴다.</p>
+<pre class="run"><code>import sys
+import numpy as np
+print("Python", sys.version.split()[0])
+print("NumPy", np.__version__)
+print("1 + 2 =", 1 + 2)
+</code></pre>
+<p>코드는 자유롭게 고쳐서 다시 실행할 수 있다. <b>원래대로</b> 버튼은 처음 코드로 되돌린다.</p>
+<h3>실제 데이터 불러오기</h3>
+<p>이 과정은 실제 측정 데이터 네 가지를 내장하고 있다. <code>load_data(이름)</code>은 특징 행렬 <code>X</code>, 레이블 <code>y</code>, 특징 이름 등을 담은 사전을 돌려준다.</p>
+<table>
+  <thead><tr><th>이름</th><th>내용</th><th>크기</th><th>쓰는 곳</th></tr></thead>
+  <tbody>
+    <tr><td><code>iris</code></td><td>붓꽃 3품종의 꽃받침·꽃잎 길이와 너비</td><td>150 × 4</td><td>11, 15일차</td></tr>
+    <tr><td><code>digits</code></td><td>8×8 손글씨 숫자 0~9</td><td>1797 × 64</td><td>2, 4, 7, 20일차 등</td></tr>
+    <tr><td><code>breast_cancer</code></td><td>유방 종양 세포 측정값과 진단(악성 = 1)</td><td>569 × 30</td><td>10, 12, 14일차</td></tr>
+    <tr><td><code>wine</code></td><td>와인 3품종의 화학 성분</td><td>178 × 13</td><td>13일차</td></tr>
+  </tbody>
+</table>
+<pre class="run"><code>iris = load_data("iris")
+X, y = iris["X"], iris["y"]
+print("X 형상:", X.shape, " y 형상:", y.shape)
+print("특징:", iris["feature_names_ko"])
+print("품종:", iris["target_names"])
+print("첫 샘플:", X[0], "→ 품종", iris["target_names"][y[0]])
+
+import matplotlib.pyplot as plt
+plt.figure(figsize=(5.5, 3.8))
+for k, name in enumerate(iris["target_names"]):
+    plt.scatter(X[y == k, 2], X[y == k, 3], s=18, label=name)
+plt.xlabel("꽃잎 길이 (cm)"); plt.ylabel("꽃잎 너비 (cm)"); plt.legend(); plt.title("붓꽃 데이터")
+plt.show()
+</code></pre>
+<p>꽃잎의 길이와 너비 두 특징만으로도 세 품종이 거의 나뉜다. 이렇게 데이터를 먼저 그려 보는 것은 모든 프로젝트의 첫 단계다.</p>
+<h3>Google Colab</h3>
+<p>5주차부터는 GPU가 필요한 PyTorch 실습을 Colab에서 한다. Colab은 구글 계정으로 무료 GPU가 달린 주피터 노트북을 제공한다.</p>
+<ol class="steps">
+  <li>강의 상단의 <b>Colab 노트북 열기</b> 버튼을 누른다.</li>
+  <li>메뉴 <b>런타임 → 런타임 유형 변경 → T4 GPU</b>를 선택한다.</li>
+  <li>셀을 위에서부터 <kbd>Shift</kbd>+<kbd>Enter</kbd>로 실행한다.</li>
+  <li>수정한 노트북을 보존하려면 <b>파일 → Drive에 사본 저장</b>을 누른다.</li>
+</ol>
+<div class="box note"><p>개인 컴퓨터에서 실습하려면 Python 3.10 이상에서 <code>pip install numpy matplotlib torch torchvision</code>을 실행한다. GPU가 없어도 대부분의 실습은 CPU로 (느리지만) 동작한다.</p></div>
+
+<h2 data-min="18" data-kind="practice">Python 핵심 복습</h2>
+<p>이 과정에서 반복해서 쓰는 Python 문법만 정리한다. 각 칸을 실행하고 출력을 예측과 비교한다.</p>
+<h3>리스트, 반복, 함수</h3>
+<pre class="run"><code>xs = [1, 2, 3, 4, 5]
+squares = [x ** 2 for x in xs]              # 리스트 내포
+evens = [x for x in xs if x % 2 == 0]
+print(squares, evens, sum(squares))
+
+def mse(pred, target):
+    """평균제곱오차"""
+    n = len(pred)
+    return sum((p - t) ** 2 for p, t in zip(pred, target)) / n
+
+print("MSE:", mse([2, 4, 6], [3, 5, 7]))
+for i, (p, t) in enumerate(zip([2, 4, 6], [3, 5, 7])):
+    print(f"샘플 {i}: 예측 {p}, 정답 {t}, 오차 {p - t}")
+</code></pre>
+<h3>사전과 튜플</h3>
+<pre class="run"><code>config = {"lr": 0.01, "epochs": 20, "hidden": [64, 32]}
+config["batch_size"] = 32
+for k, v in config.items():
+    print(f"{k:>10s} = {v}")
+shape = (32, 3, 28, 28)                     # 튜플: 바꿀 수 없는 순서열
+batch, channels, height, width = shape      # 풀어 쓰기
+print(batch * channels * height * width, "개의 수")
+</code></pre>
+<h3>클래스</h3>
+<p>3주차에 신경망의 층을 클래스로 만든다. 상태(파라미터)와 동작(계산)을 묶는 방법이다.</p>
+<pre class="run"><code>class Line:
+    """직선 모델 y = w x + b"""
+    def __init__(self, w, b):
+        self.w = w
+        self.b = b
+    def __call__(self, x):                  # 객체를 함수처럼 호출
+        return self.w * x + self.b
+    def __repr__(self):
+        return f"Line(w={self.w}, b={self.b})"
+
+m = Line(1.8, 32)
+print(m, "→ 섭씨 25도 =", m(25), "화씨")
+m.w = 2.0                                   # 파라미터 변경
+print(m, "→", m(25))
+</code></pre>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key">
 <ul>
-  <li><b>손으로 쓰세요.</b> 수식이 나오면 노트에 직접 따라 쓰고 유도해 보세요. 눈으로 읽는 것과 손으로 쓰는 것은 완전히 다릅니다.</li>
-  <li><b>코드를 망가뜨리세요.</b> 학습률을 100배로 바꾸고, 층을 지우고, 무슨 일이 생기는지 보세요. 에러는 최고의 선생님입니다.</li>
-  <li><b>매일 노트를 쓰세요.</b> 각 강의 하단의 학습 노트에 "오늘 배운 것"을 남에게 설명하듯 3줄로 쓰세요.</li>
-  <li><b>🔖 책갈피를 쓰세요.</b> 소제목 옆 🔖을 누르면 그 위치가 저장되고, 대시보드의 "이어서 공부하기"가 정확히 그곳으로 데려다 줍니다.</li>
+  <li>머신러닝은 데이터와 정답으로부터 규칙(모델)을 학습한다. 딥러닝은 여러 층의 신경망으로 특징까지 학습한다(표현 학습).</li>
+  <li>모델 = 파라미터를 가진 함수, 손실 = 예측의 틀린 정도, 학습 = 손실을 최소화하는 파라미터 찾기.</li>
+  <li>파라미터가 많으면 무차별 탐색은 불가능하므로 미분을 이용한 경사하강법을 쓴다.</li>
+  <li>지도학습의 두 과제: 수를 예측하는 회귀, 범주를 예측하는 분류.</li>
 </ul>
+</div>
 
-<h2>8. 확인 퀴즈</h2>
+<h2 data-min="10" data-kind="review">확인 문제</h2>
 <script type="application/json" class="quiz">[
- {"q":"고전 머신러닝과 비교했을 때 딥러닝의 가장 본질적인 차이는?","o":["반드시 GPU를 사용한다","데이터에서 특징(표현)까지 스스로 학습한다","레이블이 필요 없다","항상 더 정확하다"],"a":1,"e":"딥러닝의 핵심은 표현 학습입니다. GPU는 도구일 뿐이고, 레이블 필요 여부는 학습 방식(지도/비지도)의 문제입니다. 데이터가 적을 때는 고전 ML이 더 나을 때도 많습니다."},
- {"q":"이 강의의 대전제에서 '학습'이란?","o":["데이터를 모델에 저장하는 것","손실 함수를 최소화하는 파라미터를 찾는 최적화 과정","규칙을 사람이 작성하는 것","데이터를 늘리는 것"],"a":1,"e":"학습 = 최적화입니다. 모델은 파라미터를 가진 함수이고, 손실을 줄이는 쪽으로 파라미터를 조정합니다."},
- {"q":"'다음 주택 가격 예측'은 어떤 문제인가?","o":["분류","회귀","군집화","강화학습"],"a":1,"e":"연속적인 숫자를 예측하므로 회귀입니다."},
- {"q":"GPT가 '다음 단어 예측'으로 사전학습하는 방식은?","o":["지도학습(사람이 단 레이블)","자기지도학습","강화학습","비지도 군집화"],"a":1,"e":"텍스트 자체에서 정답(다음 단어)을 만들어 내므로 자기지도학습입니다."},
- {"q":"1969년 첫 번째 AI 겨울의 계기가 된 단층 퍼셉트론의 한계는?","o":["메모리 부족","XOR 같은 선형 분리 불가능 문제를 풀 수 없음","학습 속도가 느림","이미지를 처리할 수 없음"],"a":1,"e":"단층 퍼셉트론은 직선(초평면) 하나로만 나눌 수 있어서 XOR을 풀지 못합니다. Day 8에서 직접 확인합니다."}
+ {"q":"고전 머신러닝과 비교한 딥러닝의 가장 본질적인 차이는?","o":["반드시 GPU를 쓴다","특징(표현)까지 데이터로부터 학습한다","레이블이 필요 없다","항상 더 정확하다"],"a":1,"e":"딥러닝의 핵심은 표현 학습이다. GPU는 도구이고, 레이블 필요 여부는 학습 방식의 문제이며, 데이터가 적으면 고전 방법이 나을 때도 많다."},
+ {"q":"이 과정에서 정의한 '학습'은?","o":["데이터를 모델에 저장하는 것","손실을 최소화하는 파라미터를 찾는 최적화","규칙을 사람이 작성하는 것","하이퍼파라미터를 고르는 것"],"a":1,"e":"학습 = 최적화. 모델은 파라미터를 가진 함수이고, 손실이 작아지도록 파라미터를 조정한다."},
+ {"q":"다음 중 하이퍼파라미터는?","o":["선형 모델의 기울기 w","신경망의 가중치","학습률","편향 b"],"a":2,"e":"학습률은 학습 전에 사람이 정한다. 나머지는 학습으로 정해지는 파라미터다."},
+ {"q":"내일 기온(섭씨)을 예측하는 과제는?","o":["분류","회귀","군집화","강화학습"],"a":1,"e":"연속적인 수를 예측하므로 회귀다."},
+ {"q":"GPT가 '다음 단어 맞히기'로 사전학습하는 방식은?","o":["사람이 레이블을 단 지도학습","자기지도학습","강화학습","비지도 군집화"],"a":1,"e":"텍스트 자체에서 정답(다음 단어)을 만들어 학습하므로 자기지도학습이다."},
+ {"q":"데이터 (1, 3), (2, 5), (3, 7)에 모델 ŷ = 2x + 1을 쓰면 평균제곱오차는?","o":["0","1","2","4"],"a":0,"e":"예측이 (3, 5, 7)로 정답과 정확히 같으므로 오차가 모두 0이다."}
 ]</script>
 
-<h2>9. 오늘의 과제</h2>
-<ol>
-  <li>위 코드 상자를 실행해 브라우저 파이썬이 동작하는지 확인하세요.</li>
-  <li>Colab에 접속해 새 노트북을 만들고 <code>import torch; print(torch.__version__, torch.cuda.is_available())</code>를 실행해 보세요. GPU 런타임이면 <code>True</code>가 나와야 합니다.</li>
-  <li>여러분이 딥러닝으로 풀고 싶은 문제 3가지를 학습 노트에 적어 두세요. 입력은 무엇이고 출력은 무엇인지, 회귀인지 분류인지도 함께요. Day 29 캡스톤의 씨앗이 됩니다.</li>
+<h2 data-min="15" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>데이터 $(0, 1), (1, 3), (2, 5)$에 모델 $\hat y = wx + 1$을 맞출 때 $w = 1, 2, 3$ 각각의 평균제곱오차를 손으로 구하라.
+    <details class="sol"><summary>풀이</summary><p>정답은 $y = 2x+1$이다. $w=1$: 예측 $(1, 2, 3)$, 오차 $(0, -1, -2)$, $L = 5/3 \approx 1.667$. $w=2$: 오차 0, $L=0$. $w=3$: 예측 $(1, 4, 7)$, 오차 $(0, 1, 2)$, $L = 5/3$. 손실은 $w=2$에서 최소이고 양쪽으로 대칭적으로 커진다.</p></details></li>
+  <li>다음 과제를 회귀·이진 분류·다중 분류로 구분하라. (a) 사진 속 숫자 0~9 맞히기 (b) 내일 주가 예측 (c) 대출 연체 여부 예측 (d) 문장의 감정을 긍정·중립·부정으로 분류
+    <details class="sol"><summary>풀이</summary><p>(a) 다중 분류(10개 범주) (b) 회귀 (c) 이진 분류 (d) 다중 분류(3개 범주).</p></details></li>
+  <li>파라미터가 2개($w$, $b$)인 모델에서 각 파라미터를 0.01 간격으로 $[-10, 10]$ 범위에서 무차별 탐색하면 손실을 몇 번 계산해야 하는가? 파라미터가 10개라면?
+    <details class="sol"><summary>풀이</summary><p>한 축에 $20/0.01 + 1 = 2001$개 값. 2개면 $2001^2 \approx 4\times10^6$번, 10개면 $2001^{10}\approx 10^{33}$번이다. 차원이 늘면 탐색량이 지수적으로 증가한다(차원의 저주).</p></details></li>
+  <li>붓꽃 데이터에서 꽃받침 길이(0번 특징)와 꽃받침 너비(1번 특징)로 산점도를 그리고, 꽃잎 특징을 쓴 그래프와 비교해 어느 쪽이 품종을 더 잘 나누는지 설명하라.
+    <details class="sol"><summary>풀이</summary><p>위의 산점도 코드에서 인덱스 2, 3을 0, 1로 바꾼다. 꽃받침 특징에서는 versicolor와 virginica가 크게 겹친다. 꽃잎 특징이 품종을 더 잘 나눈다. 어떤 특징을 쓰느냐가 성능을 좌우하며, 딥러닝은 이런 특징을 스스로 만든다.</p></details></li>
 </ol>
+
+<h2 data-min="40" data-kind="project">미니 프로젝트: 무차별 탐색으로 관계 학습하기</h2>
+<section class="project" data-title="섭씨-화씨 변환식을 데이터로부터 찾기" data-min="40">
+<p class="lead">측정 오차가 섞인 (섭씨, 화씨) 데이터만 보고 변환식 $y = wx + b$의 $w$와 $b$를 찾는다. 2차원 무차별 탐색으로 손실 지형을 그리고, 이 방법의 한계를 확인한다.</p>
+<ol class="steps">
+<li><b>데이터 만들기.</b> 실제 관계 $y = 1.8x + 32$에 표준편차 3의 잡음을 더한 측정값 30개를 만든다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(0)
+x = rng.uniform(-10, 40, 30)                 # 섭씨
+y = 1.8 * x + 32 + rng.normal(0, 3, 30)      # 화씨 (측정 오차 포함)
+plt.figure(figsize=(5, 3.5)); plt.scatter(x, y, s=15)
+plt.xlabel("섭씨"); plt.ylabel("화씨"); plt.show()
+</code></pre></li>
+<li><b>손실 함수 정의.</b> 파라미터 <code>w, b</code>를 받아 평균제곱오차를 돌려주는 함수를 완성한다.
+<pre class="run"><code>def loss(w, b):
+    pred = w * x + b
+    # TODO: pred와 y의 평균제곱오차를 반환
+    return ((pred - y) ** 2).mean()
+
+print(loss(1.8, 32), loss(2.0, 30), loss(1.0, 0))
+</code></pre></li>
+<li><b>2차원 무차별 탐색.</b> $w\in[0, 3.5]$, $b\in[0, 60]$을 격자로 나눠 모든 조합의 손실을 계산하고 최소인 곳을 찾는다.
+<pre class="run"><code>ws = np.linspace(0, 3.5, 141)
+bs = np.linspace(0, 60, 121)
+L = np.array([[loss(w, b) for w in ws] for b in bs])      # 형상 (b 개수, w 개수)
+i, j = np.unravel_index(L.argmin(), L.shape)
+print(f"계산 횟수 {L.size}회, 최적 w = {ws[j]:.3f}, b = {bs[i]:.2f}, 손실 {L[i, j]:.3f}")
+</code></pre></li>
+<li><b>손실 지형 시각화.</b> 손실을 등고선으로 그린다. 등고선 하나는 손실이 같은 $(w, b)$의 모임이다(5일차에서 자세히 다룬다).
+<pre class="run"><code>plt.figure(figsize=(6, 4.2))
+cs = plt.contour(ws, bs, L, levels=[5, 10, 25, 50, 100, 200, 400, 800], cmap="Blues_r")
+plt.clabel(cs, fmt="%d", fontsize=8)
+plt.plot(ws[j], bs[i], "r*", ms=12, label="탐색으로 찾은 최소점")
+plt.plot(1.8, 32, "kx", ms=9, label="참값 (1.8, 32)")
+plt.xlabel("w"); plt.ylabel("b"); plt.legend(); plt.title("손실 L(w, b)의 등고선")
+plt.show()
+</code></pre></li>
+<li><b>결과 해석.</b> 찾은 직선을 데이터 위에 그리고, 참값과 다른 이유를 설명한다. 등고선이 한 방향으로 길쭉한 이유도 생각한다.
+<pre class="run"><code>w_best, b_best = ws[j], bs[i]
+xs = np.linspace(-10, 40, 50)
+plt.figure(figsize=(5, 3.5))
+plt.scatter(x, y, s=15, label="측정값")
+plt.plot(xs, w_best * xs + b_best, "r", label=f"학습 결과 y = {w_best:.2f}x + {b_best:.1f}")
+plt.plot(xs, 1.8 * xs + 32, "k--", lw=1, label="참값")
+plt.legend(); plt.xlabel("섭씨"); plt.ylabel("화씨"); plt.show()
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>찾은 값은 대략 $w\approx1.8$, $b\approx 32$ 근처지만 정확히 같지는 않다. 측정 오차가 있는 30개 데이터로는 참값을 정확히 복원할 수 없고, 격자 간격만큼의 오차도 생긴다.</li>
+<li>등고선이 길쭉한 이유: $x$ 값이 수십 단위라 $w$를 조금만 바꿔도 예측이 크게 변하지만, $b$는 예측을 1씩만 바꾼다. 두 파라미터에 대한 손실의 민감도가 다르면 등고선이 길쭉해진다. 9일차에서 이것이 경사하강법을 느리게 만드는 원인이며, 입력 표준화로 해결함을 다룬다.</li>
+<li>계산 횟수는 $141\times121 = 17{,}061$회였다. 파라미터가 하나 늘 때마다 이 수가 100배 이상 늘어난다.</li>
+</ul></details>
+</section>
