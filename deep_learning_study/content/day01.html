@@ -183,7 +183,10 @@ import matplotlib.pyplot as plt
 plt.figure(figsize=(5.5, 3.8))
 for k, name in enumerate(iris["target_names"]):
     plt.scatter(X[y == k, 2], X[y == k, 3], s=18, label=name)
-plt.xlabel("꽃잎 길이 (cm)"); plt.ylabel("꽃잎 너비 (cm)"); plt.legend(); plt.title("붓꽃 데이터")
+plt.xlabel("꽃잎 길이 (cm)")
+plt.ylabel("꽃잎 너비 (cm)")
+plt.legend()
+plt.title("붓꽃 데이터")
 plt.show()
 </code></pre>
 <p>꽃잎의 길이와 너비 두 특징만으로도 세 품종이 거의 나뉜다. 이렇게 데이터를 먼저 그려 보는 것은 모든 프로젝트의 첫 단계다.</p>
@@ -218,7 +221,7 @@ for i, (p, t) in enumerate(zip([2, 4, 6], [3, 5, 7])):
 <pre class="run"><code>config = {"lr": 0.01, "epochs": 20, "hidden": [64, 32]}
 config["batch_size"] = 32
 for k, v in config.items():
-    print(f"{k:>10s} = {v}")
+    print(f"{k:&gt;10s} = {v}")
 shape = (32, 3, 28, 28)                     # 튜플: 바꿀 수 없는 순서열
 batch, channels, height, width = shape      # 풀어 쓰기
 print(batch * channels * height * width, "개의 수")
@@ -303,7 +306,8 @@ print(f"계산 횟수 {L.size}회, 최적 w = {ws[j]:.3f}, b = {bs[i]:.2f}, 손�
 </code></pre></li>
 <li><b>손실 지형 시각화.</b> 손실을 등고선으로 그린다. 등고선 하나는 손실이 같은 $(w, b)$의 모임이다(5일차에서 자세히 다룬다).
 <pre class="run"><code>plt.figure(figsize=(6, 4.2))
-cs = plt.contour(ws, bs, L, levels=[5, 10, 25, 50, 100, 200, 400, 800], cmap="Blues_r")
+cs = plt.contour(ws, bs, L, levels=[5, 10, 25, 50, 100, 200, 400, 800],
+                 cmap="Blues_r")
 plt.clabel(cs, fmt="%d", fontsize=8)
 plt.plot(ws[j], bs[i], "r*", ms=12, label="탐색으로 찾은 최소점")
 plt.plot(1.8, 32, "kx", ms=9, label="참값 (1.8, 32)")
@@ -315,7 +319,8 @@ plt.show()
 xs = np.linspace(-10, 40, 50)
 plt.figure(figsize=(5, 3.5))
 plt.scatter(x, y, s=15, label="측정값")
-plt.plot(xs, w_best * xs + b_best, "r", label=f"학습 결과 y = {w_best:.2f}x + {b_best:.1f}")
+plt.plot(xs, w_best * xs + b_best, "r",
+         label=f"학습 결과 y = {w_best:.2f}x + {b_best:.1f}")
 plt.plot(xs, 1.8 * xs + 32, "k--", lw=1, label="참값")
 plt.legend(); plt.xlabel("섭씨"); plt.ylabel("화씨"); plt.show()
 </code></pre></li>

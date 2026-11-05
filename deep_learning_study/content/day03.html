@@ -78,7 +78,8 @@ $$\cos\theta = \frac{\mathbf a\cdot\mathbf b}{\|\mathbf a\|\,\|\mathbf b\|}$$
 <pre class="run"><code>def cos_sim(u, v):
     return (u @ v) / (np.linalg.norm(u) * np.linalg.norm(v))
 a, b = np.array([3.0, 1.0]), np.array([1.0, 2.0])
-print("a·b =", a @ b, " cos =", round(cos_sim(a, b), 4), " 각도 =", round(np.degrees(np.arccos(cos_sim(a, b))), 1), "도")
+print("a·b =", a @ b, " cos =", round(cos_sim(a, b), 4), " 각도 =",
+      round(np.degrees(np.arccos(cos_sim(a, b))), 1), "도")
 print("직교 예:", np.array([1, 2]) @ np.array([-2, 1]))
 print("길이를 10배 해도 코사인 유사도는 같다:", round(cos_sim(10 * a, b), 4))
 </code></pre>
@@ -143,7 +144,8 @@ print("C = AB =\n", C, "\n형상", C.shape)
 print("C[1, 2] = A[1] · B[:, 2] =", A[1] @ B[:, 2])
 print("BA 형상:", (B @ A).shape, "→ AB와 형상부터 다르다")
 print("(AB)^T == B^T A^T:", np.array_equal((A @ B).T, B.T @ A.T))
-print("원소별 곱(*)과 행렬곱(@)은 다르다:\n", np.array([[1, 2], [3, 4]]) * np.array([[1, 2], [3, 4]]))
+print("원소별 곱(*)과 행렬곱(@)은 다르다:\n",
+      np.array([[1, 2], [3, 4]]) * np.array([[1, 2], [3, 4]]))
 </code></pre>
 <div class="box warn"><p>NumPy에서 <code>*</code>는 원소별 곱, <code>@</code>는 행렬곱이다. 1차원 배열끼리의 <code>@</code>는 내적이다.</p></div>
 
@@ -183,7 +185,8 @@ d = load_data("digits")
 X, y = d["X"].astype(float), d["y"]
 M = np.stack([X[y == k].mean(axis=0) for k in range(10)])   # (10, 64) 숫자별 평균
 Mn = M / np.linalg.norm(M, axis=1, keepdims=True)             # 각 행을 길이 1로
-S = Mn @ Mn.T                                                 # (10, 10) 코사인 유사도 표
+# (10, 10) 코사인 유사도 표
+S = Mn @ Mn.T
 plt.figure(figsize=(4.8, 4))
 plt.imshow(S, cmap="Blues", vmin=0.4, vmax=1); plt.colorbar(label="코사인 유사도")
 plt.xticks(range(10)); plt.yticks(range(10)); plt.title("숫자별 평균 이미지의 유사도")
@@ -237,14 +240,24 @@ print(C.round(3))
 import matplotlib.pyplot as plt
 rng = np.random.default_rng(7)
 movies = ["액션1", "액션2", "액션3", "액션4", "로맨스1", "로맨스2", "로맨스3", "로맨스4", "공포1", "공포2", "공포3", "액션로맨스"]
-G = np.array([[1, 0, 0]] * 4 + [[0, 1, 0]] * 4 + [[0, 0, 1]] * 3 + [[.7, .7, 0]], float)   # (12, 3) 영화의 장르
-U = rng.dirichlet([.6, .6, .6], size=30)                                            # (30, 3) 사용자의 취향 (합 1)
-R = np.clip(1 + 4 * (U @ G.T) + rng.normal(0, .3, (30, 12)), 1, 5).round()           # (30, 12) 평점 1~5
-seen = rng.random((30, 12)) &gt; 0.4                                                   # 본 영화 표시
-R_obs = np.where(seen, R, 0)                                                         # 안 본 영화는 0
+# (12, 3) 영화의 장르
+G = np.array([[1, 0, 0]] * 4 + [[0, 1, 0]] * 4 + [[0, 0, 1]] * 3 + [[.7, .7, 0]],
+             float)
+# (30, 3) 사용자의 취향 (합 1)
+U = rng.dirichlet([.6, .6, .6], size=30)
+# (30, 12) 평점 1~5
+R = np.clip(1 + 4 * (U @ G.T) + rng.normal(0, .3, (30, 12)), 1, 5).round()
+# 본 영화 표시
+seen = rng.random((30, 12)) &gt; 0.4
+# 안 본 영화는 0
+R_obs = np.where(seen, R, 0)
 print("평점 행렬 형상:", R_obs.shape, " 관측 비율:", seen.mean().round(2))
-plt.figure(figsize=(6, 4)); plt.imshow(R_obs, cmap="Blues", aspect="auto"); plt.colorbar(label="평점 (0 = 안 봄)")
-plt.xticks(range(12), movies, rotation=60, fontsize=8); plt.ylabel("사용자"); plt.show()
+plt.figure(figsize=(6, 4))
+plt.imshow(R_obs, cmap="Blues", aspect="auto")
+plt.colorbar(label="평점 (0 = 안 봄)")
+plt.xticks(range(12), movies, rotation=60, fontsize=8)
+plt.ylabel("사용자")
+plt.show()
 </code></pre></li>
 <li><b>사용자별 평균 빼기.</b> 사람마다 평점을 후하게 주거나 짜게 주는 습관이 다르다. 각 사용자의 평균 평점을 빼서 "평소보다 좋게 봤는가"만 남긴다. 안 본 영화는 0(평소와 같음)으로 둔다.
 <pre class="run"><code>mu = (R_obs.sum(axis=1) / seen.sum(axis=1))[:, None]       # (30, 1) 사용자별 평균
@@ -255,14 +268,20 @@ print("사용자 0의 평균:", mu[0, 0].round(2), " 중심화된 평점:", C[0]
 <pre class="run"><code>Mv = C.T                                                # (12, 30) 영화 벡터
 norms = np.linalg.norm(Mv, axis=1, keepdims=True)       # (12, 1)
 Sim = (Mv @ Mv.T) / (norms @ norms.T)                   # (12, 12) 코사인 유사도
-plt.figure(figsize=(5, 4.2)); plt.imshow(Sim, cmap="RdBu", vmin=-1, vmax=1); plt.colorbar()
-plt.xticks(range(12), movies, rotation=60, fontsize=8); plt.yticks(range(12), movies, fontsize=8); plt.title("영화 간 코사인 유사도"); plt.show()
+plt.figure(figsize=(5, 4.2))
+plt.imshow(Sim, cmap="RdBu", vmin=-1, vmax=1)
+plt.colorbar()
+plt.xticks(range(12), movies, rotation=60, fontsize=8)
+plt.yticks(range(12), movies, fontsize=8)
+plt.title("영화 간 코사인 유사도")
+plt.show()
 for m in [0, 4, 8, 11]:
     order = np.argsort(-Sim[m])[1:4]
     print(f"'{movies[m]}'와 비슷한 영화:", [movies[j] for j in order])
 </code></pre></li>
 <li><b>추천 점수.</b> 사용자 $u$가 안 본 영화 $j$의 예측 평점은 "사용자 평균 + (본 영화들의 중심화된 평점을 영화 $j$와의 유사도로 가중평균한 값)"이다. 음수 유사도는 0으로 자른다. 행렬곱 한 번으로 모든 사용자·영화의 점수가 나온다.
-<pre class="run"><code>W = np.clip(Sim, 0, None); np.fill_diagonal(W, 0)        # 양의 유사도만, 자기 자신 제외
+<pre class="run"><code># 양의 유사도만, 자기 자신 제외
+W = np.clip(Sim, 0, None); np.fill_diagonal(W, 0)
 pred = mu + (C @ W) / (seen.astype(float) @ W + 1e-9)    # (30,12)@(12,12) → (30, 12)
 u = 3
 cand = np.where(~seen[u])[0]

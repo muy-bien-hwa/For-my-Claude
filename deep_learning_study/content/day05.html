@@ -148,7 +148,11 @@ fwd = [abs((np.sin(x0 + h) - np.sin(x0)) / h - true) for h in hs]
 cen = [abs((np.sin(x0 + h) - np.sin(x0 - h)) / (2 * h) - true) for h in hs]
 plt.figure(figsize=(5.5, 3.4))
 plt.loglog(hs, fwd, label="한쪽 차분"); plt.loglog(hs, cen, label="중앙 차분")
-plt.xlabel("h"); plt.ylabel("오차 |근사 − 참값|"); plt.legend(); plt.grid(alpha=.3); plt.title("sin x의 x=1에서 미분 오차")
+plt.xlabel("h")
+plt.ylabel("오차 |근사 − 참값|")
+plt.legend()
+plt.grid(alpha=.3)
+plt.title("sin x의 x=1에서 미분 오차")
 plt.show()
 </code></pre>
 <p>오차는 $h$가 줄면 줄다가 어느 지점부터 다시 커진다. 중앙 차분은 $h\approx10^{-5}$ 근처에서 오차가 약 $10^{-11}$로 가장 작다. 20일차의 기울기 검증에서 이 값을 쓴다.</p>
@@ -210,7 +214,8 @@ import matplotlib.pyplot as plt
 f = lambda v: (v[0] ** 2 + v[1] - 11) ** 2 + (v[0] + v[1] ** 2 - 7) ** 2
 xs = np.linspace(-5, 5, 200)
 XX, YY = np.meshgrid(xs, xs)
-ZZ = f([XX, YY])                                       # 배열 연산으로 격자 전체를 한 번에
+# 배열 연산으로 격자 전체를 한 번에
+ZZ = f([XX, YY])
 levels = [0.5, 2, 5, 10, 20, 40, 80, 150, 300, 600]
 def base_plot():
     plt.figure(figsize=(5.6, 5))
@@ -253,7 +258,11 @@ for lr in [0.001, 0.01, 0.02, 0.03]:
     P = descend((0, 0), lr=lr, steps=100)
     vals = [f(q) for q in P]
     plt.semilogy(np.clip(vals, 1e-12, 1e6), label=f"lr = {lr}")
-plt.xlabel("반복 횟수"); plt.ylabel("f (로그 눈금)"); plt.legend(); plt.grid(alpha=.3); plt.show()
+plt.xlabel("반복 횟수")
+plt.ylabel("f (로그 눈금)")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
 </code></pre></li>
 </ol>
 <details class="sol"><summary>참고 답안과 해설</summary>
