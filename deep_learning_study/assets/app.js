@@ -265,11 +265,11 @@
     $$(':scope > h2, :scope > h3', body).forEach(h => {
       if (h.tagName === 'H2') {
         h2i++; h3i = 0; h.id = 's' + h2i;
+        const label = h.textContent.trim();          // 번호를 붙이기 전의 제목
         h.insertAdjacentHTML('afterbegin', `<span class="hno">${h2i}</span>`);
         const b = document.createElement('button');
         b.className = 'h-bm' + (S.bookmark && S.bookmark.day === n && S.bookmark.anchor === h.id ? ' on' : '');
         b.dataset.id = h.id; b.title = '이 절에 책갈피'; b.setAttribute('aria-label', '이 절에 책갈피'); b.innerHTML = I.bookmark;
-        const label = h.textContent.replace(/^\d+/, '').trim();
         b.onclick = () => setBookmark(n, h.id, label);
         h.prepend(b);
         secs.push({ el: h, id: h.id, label, min: +(h.dataset.min || 0), kind: h.dataset.kind || 'concept' });

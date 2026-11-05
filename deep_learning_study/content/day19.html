@@ -1,0 +1,348 @@
+<ul class="goals">
+  <li>수치 미분, 기호 미분, 자동 미분의 차이와 역방향 모드가 신경망에 맞는 이유를 설명할 수 있다.</li>
+  <li>연산을 기록해 계산 그래프를 만드는 스칼라 자동 미분 엔진을 구현할 수 있다.</li>
+  <li>위상 정렬로 역전파 순서를 정하고, 기울기를 누적해야 하는 이유를 설명할 수 있다.</li>
+  <li>엔진 위에 뉴런, 층, MLP를 만들고 분류기를 학습시킬 수 있다.</li>
+  <li>스칼라 엔진과 PyTorch 같은 텐서 엔진의 관계를 설명할 수 있다.</li>
+</ul>
+
+<h2 data-min="12" data-kind="concept">자동 미분</h2>
+<p>18일차에서 층마다 역전파 공식을 손으로 유도하고 코드로 옮겼다. 새 층을 만들 때마다 이 일을 반복하는 것은 번거롭고 실수하기 쉽다. 컴퓨터가 순전파에서 수행한 연산을 기록해 두었다가 그 기록을 거꾸로 따라가며 미분을 자동으로 계산하게 할 수 있다. 이것이 <dfn data-t="autograd">자동 미분</dfn>이다. PyTorch, TensorFlow, JAX의 핵심 기능이다.</p>
+<table>
+  <thead><tr><th>방법</th><th>원리</th><th>정확도</th><th>비용 (파라미터 $P$개)</th></tr></thead>
+  <tbody>
+    <tr><td>수치 미분 (5일차)</td><td>$\frac{f(x+h) - f(x-h)}{2h}$</td><td>근사 (반올림 오차)</td><td>순전파 $2P$번</td></tr>
+    <tr><td>기호 미분</td><td>수식을 미분 규칙으로 변형 (계산기의 미분 기능)</td><td>정확</td><td>식이 기하급수적으로 길어질 수 있음</td></tr>
+    <tr><td>자동 미분 (역방향)</td><td>연산 기록 + 노드별 국소 미분 + 연쇄법칙</td><td>정확 (기계 정밀도)</td><td>순전파 약 2~3번</td></tr>
+  </tbody>
+</table>
+<p>자동 미분에는 입력 쪽부터 미분을 전달하는 전방 모드와, 출력 쪽부터 전달하는 역방향 모드가 있다. 신경망은 입력(파라미터)이 수백만 개이고 출력(손실)이 하나이므로, 한 번의 역방향 계산으로 모든 입력의 미분을 얻는 역방향 모드가 맞다. 역전파는 역방향 모드 자동 미분의 다른 이름이다.</p>
+
+<h2 data-min="20" data-kind="concept">값 객체와 연산 기록</h2>
+<p>숫자 하나를 감싼 객체 <code>Value</code>를 만든다. 이 객체는 값(<code>data</code>), 손실에 대한 기울기(<code>grad</code>), 자신을 만든 입력 노드들(<code>_prev</code>), 그리고 "내 기울기를 입력들에게 나눠 주는 방법"(<code>_backward</code>)을 기억한다. 파이썬의 연산자 오버로딩으로 <code>a * b</code>를 쓰면 곱셈 결과와 함께 그래프 노드가 자동으로 만들어진다.</p>
+<pre><code class="language-python">class Value:
+    def __init__(self, data, _children=(), _op=""):
+        self.data, self.grad = data, 0.0
+        self._prev, self._op = set(_children), _op
+        self._backward = lambda: None             # 입력 노드는 할 일이 없다
+
+    def __mul__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        out = Value(self.data * other.data, (self, other), "*")
+        def _backward():                           # 곱셈 노드: 서로 바꿔 곱함
+            self.grad += other.data * out.grad
+            other.grad += self.data * out.grad
+        out._backward = _backward
+        return out
+</code></pre>
+<p><code>_backward</code>는 순전파 시점의 <code>self</code>, <code>other</code>, <code>out</code>을 기억하는 클로저(closure)다. 나중에 <code>out.grad</code>(상류 기울기)가 정해지면 국소 기울기를 곱해 입력들의 <code>grad</code>에 더한다. 18일차 노드별 패턴표의 한 줄이 함수 하나가 된다.</p>
+<div class="flow"><div>순전파<br>연산마다 노드 생성</div><div>그래프 완성<br>(<code>_prev</code>로 연결)</div><div class="hl">loss.backward()</div><div>노드마다 <code>_backward</code><br>역순 호출</div><div>모든 <code>.grad</code> 채워짐</div></div>
+
+<h2 data-min="15" data-kind="concept">위상 정렬과 역전파 순서</h2>
+<p>노드의 <code>_backward</code>를 호출하려면 그 노드의 <code>grad</code>가 이미 완성되어 있어야 한다. 즉 그 노드를 사용하는 모든 노드가 먼저 처리되어야 한다. 그래프의 노드를 "입력이 항상 출력보다 앞에 오도록" 나열하는 것을 <dfn data-t="topological-sort">위상 정렬</dfn>이라 하며, 역전파는 이 순서를 거꾸로 따라간다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 200" width="640" role="img" aria-label="계산 그래프의 위상 정렬 순서와 역전파 순서">
+  <defs><marker id="d19a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker></defs>
+  <g font-size="13">
+  <g class="s-ln" stroke-width="1.5" fill="none"><path d="M92 50 L 192 85" marker-end="url(#d19a)"/><path d="M92 130 L 192 100" marker-end="url(#d19a)"/><path d="M240 92 L 352 108" marker-end="url(#d19a)"/><path d="M92 170 L 352 125" marker-end="url(#d19a)"/><path d="M400 116 L 482 116" marker-end="url(#d19a)"/></g>
+  <g class="s-f"><rect x="40" y="32" width="52" height="34" rx="8"/><rect x="40" y="112" width="52" height="34" rx="8"/><rect x="40" y="156" width="52" height="34" rx="8"/></g>
+  <g class="s-tx" text-anchor="middle" font-weight="700"><text x="66" y="54">a</text><text x="66" y="134">b</text><text x="66" y="178">d</text></g>
+  <g class="s-acs" stroke-width="1.5"><circle cx="216" cy="92" r="22"/><circle cx="376" cy="116" r="22"/><circle cx="508" cy="116" r="24"/></g>
+  <g class="s-tx" text-anchor="middle" font-weight="700"><text x="216" y="97">×</text><text x="376" y="121">+</text><text x="508" y="121">tanh</text></g>
+  <g class="s-txm" text-anchor="middle"><text x="216" y="60">c = a·b</text><text x="376" y="84">e = c + d</text><text x="508" y="84">f</text></g>
+  <g class="s-txa" font-weight="700" font-size="12"><text x="22" y="54">1</text><text x="22" y="134">2</text><text x="22" y="178">4</text><text x="244" y="76">3</text><text x="404" y="100">5</text><text x="540" y="100">6</text></g>
+  <text x="320" y="20" text-anchor="middle" class="s-txa">파란 숫자: 위상 정렬 순서 (a, b, c, d, e, f)</text>
+  <text x="400" y="186" text-anchor="middle" class="s-redf">역전파: f → e → d → c → b → a 순으로 _backward 호출</text>
+  </g>
+</svg>
+<figcaption>깊이 우선 탐색으로 "자식을 모두 넣은 뒤 자신을 넣는" 순서가 위상 정렬이다. 이 순서를 뒤집으면 어떤 노드도 자신을 쓰는 노드보다 먼저 처리되지 않는다.</figcaption>
+</figure>
+<pre><code class="language-python">    def backward(self):
+        topo, visited = [], set()
+        def build(v):                       # 깊이 우선 탐색
+            if v not in visited:
+                visited.add(v)
+                for child in v._prev:
+                    build(child)
+                topo.append(v)              # 입력들을 모두 넣은 뒤에 자신을
+        build(self)
+        self.grad = 1.0                     # ∂L/∂L = 1
+        for v in reversed(topo):
+            v._backward()
+</code></pre>
+
+<h2 data-min="12" data-kind="concept">기울기 누적과 초기화</h2>
+<p><code>_backward</code>에서 <code>self.grad = ...</code>가 아니라 <code>self.grad += ...</code>를 쓴 이유는 18일차의 분기 규칙 때문이다. 값 하나가 여러 곳에서 쓰이면 각 경로의 기울기를 더해야 한다. 이를 <dfn data-t="grad-accumulation">기울기 누적</dfn>이라 한다.</p>
+<div class="box ex" data-title="=를 쓰면 틀린다"><p><code>a = Value(3.0); b = a + a</code>. 덧셈 노드의 <code>_backward</code>는 <code>self</code>와 <code>other</code>(둘 다 <code>a</code>)에 1씩 보낸다. <code>+=</code>면 $\partial b/\partial a = 2$(정답), <code>=</code>면 두 번째 대입이 첫 번째를 덮어 1이 된다. <code>a * a</code>도 마찬가지로 <code>+=</code>여야 $2a = 6$이 나온다.</p></div>
+<p>누적의 대가로, 학습 스텝마다 역전파 전에 모든 파라미터의 <code>grad</code>를 0으로 되돌려야 한다. 안 하면 이전 스텝의 기울기가 계속 쌓인다. PyTorch에서 매 스텝 <code>optimizer.zero_grad()</code>를 호출하는 이유가 이것이다. 반대로 이 성질을 이용해, 메모리가 부족할 때 작은 배치 여러 개의 기울기를 일부러 누적한 뒤 한 번에 갱신하기도 한다.</p>
+
+<h2 data-min="15" data-kind="concept">연산 추가하기</h2>
+<p>연산마다 순전파 값과 국소 미분만 정의하면 된다.</p>
+<table>
+  <thead><tr><th>연산</th><th>순전파</th><th><code>_backward</code> (상류 <code>g</code> = <code>out.grad</code>)</th></tr></thead>
+  <tbody>
+    <tr><td>덧셈</td><td>$a + b$</td><td><code>a.grad += g; b.grad += g</code></td></tr>
+    <tr><td>곱셈</td><td>$ab$</td><td><code>a.grad += b.data * g; b.grad += a.data * g</code></td></tr>
+    <tr><td>거듭제곱 (상수 $k$)</td><td>$a^k$</td><td><code>a.grad += k * a.data**(k-1) * g</code></td></tr>
+    <tr><td>지수</td><td>$e^a$</td><td><code>a.grad += out.data * g</code></td></tr>
+    <tr><td>로그</td><td>$\ln a$</td><td><code>a.grad += (1 / a.data) * g</code></td></tr>
+    <tr><td>tanh</td><td>$\tanh a$</td><td><code>a.grad += (1 - out.data**2) * g</code></td></tr>
+    <tr><td>ReLU</td><td>$\max(0, a)$</td><td><code>a.grad += (a.data &gt; 0) * g</code></td></tr>
+  </tbody>
+</table>
+<p>뺄셈, 나눗셈, 부호 바꾸기는 새 미분 없이 기존 연산의 조합으로 만든다: $a - b = a + (-1)b$, $a/b = a\cdot b^{-1}$. <code>2 * a</code>나 <code>1 / a</code>처럼 왼쪽이 일반 숫자일 때도 동작하도록 <code>__rmul__</code>, <code>__radd__</code>, <code>__rtruediv__</code>를 정의한다.</p>
+
+<h2 data-min="12" data-kind="concept">엔진 위에 신경망 만들기</h2>
+<p>값 객체만 있으면 신경망은 평범한 파이썬 코드다. 뉴런은 가중치 <code>Value</code>들의 리스트이고, 층은 뉴런의 리스트, MLP는 층의 리스트다. 각 객체가 <code>parameters()</code>로 자기 아래의 모든 파라미터를 돌려주면, 학습 루프는 그 목록만 보고 갱신한다.</p>
+<pre><code class="language-python">class Neuron:
+    def __init__(self, n_in, act=True):
+        self.w = [Value(random.uniform(-1, 1)) for _ in range(n_in)]
+        self.b = Value(0.0); self.act = act
+    def __call__(self, x):
+        z = sum((wi * xi for wi, xi in zip(self.w, x)), self.b)
+        return z.tanh() if self.act else z
+    def parameters(self):
+        return self.w + [self.b]
+</code></pre>
+<p>PyTorch의 <code>nn.Module</code>도 같은 구조다. 모듈이 하위 모듈과 파라미터를 품고, <code>model.parameters()</code>로 모두 꺼내 옵티마이저에 넘긴다(29일차).</p>
+
+<h2 data-min="30" data-kind="practice">코드 실습: 자동 미분 엔진 구현</h2>
+<p>전체 엔진이다. 이 셀을 실행한 뒤 아래 셀들로 검증한다.</p>
+<pre class="run"><code>import math, random
+class Value:
+    def __init__(self, data, _children=(), _op=""):
+        self.data, self.grad = float(data), 0.0
+        self._prev, self._op = set(_children), _op
+        self._backward = lambda: None
+    def __repr__(self): return f"Value(data={self.data:.4f}, grad={self.grad:.4f})"
+    def __add__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        out = Value(self.data + other.data, (self, other), "+")
+        def _backward():
+            self.grad += out.grad; other.grad += out.grad
+        out._backward = _backward; return out
+    def __mul__(self, other):
+        other = other if isinstance(other, Value) else Value(other)
+        out = Value(self.data * other.data, (self, other), "*")
+        def _backward():
+            self.grad += other.data * out.grad; other.grad += self.data * out.grad
+        out._backward = _backward; return out
+    def __pow__(self, k):
+        out = Value(self.data ** k, (self,), f"**{k}")
+        def _backward(): self.grad += k * self.data ** (k - 1) * out.grad
+        out._backward = _backward; return out
+    def exp(self):
+        out = Value(math.exp(self.data), (self,), "exp")
+        def _backward(): self.grad += out.data * out.grad
+        out._backward = _backward; return out
+    def log(self):
+        out = Value(math.log(self.data), (self,), "log")
+        def _backward(): self.grad += (1 / self.data) * out.grad
+        out._backward = _backward; return out
+    def tanh(self):
+        out = Value(math.tanh(self.data), (self,), "tanh")
+        def _backward(): self.grad += (1 - out.data ** 2) * out.grad
+        out._backward = _backward; return out
+    def relu(self):
+        out = Value(max(0.0, self.data), (self,), "relu")
+        def _backward(): self.grad += (self.data &gt; 0) * out.grad
+        out._backward = _backward; return out
+    def __neg__(self): return self * -1
+    def __sub__(self, other): return self + (-other)
+    def __truediv__(self, other):
+        return self * (other ** -1 if isinstance(other, Value) else 1.0 / other)
+    def __radd__(self, other): return self + other
+    def __rmul__(self, other): return self * other
+    def __rsub__(self, other): return (-self) + other
+    def __rtruediv__(self, other): return other * self ** -1     # 숫자 / Value
+    def backward(self):
+        topo, visited = [], set()
+        def build(v):
+            if v not in visited:
+                visited.add(v)
+                for child in v._prev: build(child)
+                topo.append(v)
+        build(self)
+        self.grad = 1.0
+        for v in reversed(topo): v._backward()
+        return topo
+print("엔진 준비 완료")
+</code></pre>
+<p>18일차 그림의 $(x + y)z$와 뉴런 예제를 엔진으로 계산한다. 손으로 구한 값($-4, -4, 3$과 $0.269, -0.538, \dots$)이 나와야 한다.</p>
+<pre class="run"><code>x, y, z = Value(-2.0), Value(5.0), Value(-4.0)
+f = (x + y) * z
+f.backward()
+print("f =", f.data, " grads:", x.grad, y.grad, z.grad)
+
+w1, x1, w2, x2, b = Value(2.0), Value(-1.0), Value(-3.0), Value(-2.0), Value(-3.0)
+s = w1 * x1 + w2 * x2 + b
+p = 1 / (1 + (-s).exp())                     # 시그모이드를 기본 연산으로 조립
+L = -p.log()
+topo = L.backward()
+print(f"L = {L.data:.4f}, ∂w1 = {w1.grad:.4f}, ∂x1 = {x1.grad:.4f}, ∂w2 = {w2.grad:.4f}, ∂x2 = {x2.grad:.4f}, ∂b = {b.grad:.4f}")
+print("그래프 노드 수:", len(topo), " 연산 순서:", [v._op for v in topo if v._op])
+</code></pre>
+<p>시그모이드를 전용 연산 없이 <code>exp</code>, 덧셈, 거듭제곱의 조합으로 만들었는데도 기울기가 정확하다. 자동 미분은 조립한 연산이 무엇이든 연쇄법칙을 기계적으로 적용한다. 마지막으로 기울기 누적과 수치 미분을 확인한다.</p>
+<pre class="run"><code>a = Value(3.0); c = a * a + a                 # a를 세 번 사용
+c.backward()
+print("c = a² + a, ∂c/∂a =", a.grad, "(정답 2a + 1 = 7)")
+
+def f_num(av): return av * av + av
+h = 1e-6
+print("수치 미분:", (f_num(3.0 + h) - f_num(3.0 - h)) / (2 * h))
+c.backward()                                   # grad를 비우지 않고 한 번 더
+print("초기화 없이 두 번 backward:", a.grad, "→ 중간 노드의 grad까지 쌓여 엉뚱한 값")
+</code></pre>
+
+<h2 data-min="8" data-kind="concept">스칼라 엔진과 텐서 엔진</h2>
+<p>오늘의 엔진은 숫자 하나마다 파이썬 객체를 만들어 느리다. 64 → 32 → 10 MLP의 표본 하나만 해도 노드가 수천 개다. PyTorch는 같은 일을 텐서(배열) 단위로 한다. 노드 하나가 행렬곱 전체이고, 그 노드의 <code>_backward</code>는 18일차의 $X^\top G$, $GW^\top$ 공식을 C++/CUDA로 구현한 것이다. 원리는 같다.</p>
+<pre><code class="language-python">import torch                                   # 29일차 미리 보기 (브라우저에서는 실행되지 않음)
+x = torch.tensor(-2.0, requires_grad=True)     # requires_grad: 연산을 기록하라
+y = torch.tensor(5.0, requires_grad=True); z = torch.tensor(-4.0, requires_grad=True)
+f = (x + y) * z
+f.backward()                                   # 위상 정렬 + 역순 _backward
+print(x.grad, y.grad, z.grad)                  # tensor(-4.) tensor(-4.) tensor(3.)
+</code></pre>
+<p>PyTorch는 코드가 실행되는 순간 그래프를 만들고(define-by-run), 역전파가 끝나면 버린다. 그래서 반복문이나 조건문으로 매번 다른 구조의 신경망을 만들어도 그대로 미분된다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>자동 미분 = 연산 기록 + 노드별 국소 미분 + 연쇄법칙. 역방향 모드는 출력 하나에 대한 모든 입력의 미분을 한 번에 구한다.</li>
+  <li><code>Value</code>: data, grad, _prev, _backward(클로저). 연산자 오버로딩으로 순전파 중 그래프가 만들어진다.</li>
+  <li>backward: 위상 정렬 후 역순으로 _backward 호출, 출력 grad = 1에서 시작.</li>
+  <li>기울기는 누적(<code>+=</code>)해야 분기가 맞다. 대신 매 스텝 0으로 초기화한다(<code>zero_grad</code>).</li>
+  <li>새 연산은 순전파와 국소 미분만 정의하면 된다. PyTorch는 같은 원리를 텐서 단위로 구현한다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"신경망 학습에 역방향 모드 자동 미분이 적합한 이유는?","o":["입력이 하나이고 출력이 많아서","입력(파라미터)은 많고 출력(손실)은 하나여서","기호 미분보다 느려서","근사값을 주어서"],"a":1,"e":"역방향 한 번으로 스칼라 출력에 대한 모든 입력의 미분을 얻는다."},
+ {"q":"Value의 _backward가 하는 일은?","o":["순전파 값을 계산한다","상류 기울기(out.grad)에 국소 기울기를 곱해 입력들의 grad에 더한다","그래프를 지운다","학습률을 곱한다"],"a":1,"e":"노드별 연쇄법칙 한 단계다."},
+ {"q":"역전파를 위상 정렬의 역순으로 진행하는 이유는?","o":["메모리를 아끼려고","노드를 처리할 때 그 노드를 사용하는 모든 노드의 기울기가 이미 전달되어 있도록","무작위성을 위해","순서는 상관없다"],"a":1,"e":"grad가 완성된 노드만 _backward를 호출할 수 있다."},
+ {"q":"a = Value(2); b = a * a; b.backward() 후 a.grad는?","o":["2","4","1","8"],"a":1,"e":"∂(a²)/∂a = 2a = 4. 곱셈 노드가 두 입력(둘 다 a)에 2씩 누적한다."},
+ {"q":"_backward에서 grad를 =로 대입하면 생기는 문제는?","o":["값이 두 배가 된다","한 값이 여러 곳에서 쓰일 때 이전 경로의 기울기가 덮어써져 틀린다","속도가 느려진다","문제없다"],"a":1,"e":"분기 규칙(기울기 합)이 깨진다."},
+ {"q":"학습 스텝마다 grad를 0으로 초기화해야 하는 이유는?","o":["기울기가 누적되므로 이전 스텝의 기울기가 더해지지 않게","메모리 해제","그래프를 다시 만들기 위해","학습률 조절"],"a":0,"e":"PyTorch의 optimizer.zero_grad()가 이 일을 한다."},
+ {"q":"새 연산 sin을 엔진에 추가할 때 _backward에 쓸 식은?","o":["self.grad += math.sin(self.data) * out.grad","self.grad += math.cos(self.data) * out.grad","self.grad = out.grad","out.grad += math.cos(self.data)"],"a":1,"e":"국소 미분 cos를 상류 기울기에 곱해 누적한다."},
+ {"q":"PyTorch와 오늘 만든 엔진의 가장 큰 차이는?","o":["PyTorch는 연쇄법칙을 쓰지 않는다","PyTorch는 노드가 스칼라가 아니라 텐서 연산이고 C++/CUDA로 구현되어 빠르다","PyTorch는 수치 미분을 쓴다","PyTorch는 그래프를 만들지 않는다"],"a":1,"e":"원리는 같고 단위와 구현이 다르다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>엔진에 <code>sigmoid()</code> 연산을 직접 추가하라(국소 미분 $\sigma(1 - \sigma)$). 조립식 시그모이드와 기울기가 같은지 확인하라.
+    <details class="sol"><summary>풀이</summary><pre><code>def sigmoid(self):
+    s = 1 / (1 + math.exp(-self.data))
+    out = Value(s, (self,), "sigmoid")
+    def _backward(): self.grad += s * (1 - s) * out.grad
+    out._backward = _backward; return out
+Value.sigmoid = sigmoid
+u = Value(0.7); u.sigmoid().backward(); g1 = u.grad
+v = Value(0.7); (1 / (1 + (-v).exp())).backward(); print(g1, v.grad)
+</code></pre><p>둘 다 약 0.2217이다. 전용 연산은 노드 수가 적어 빠르고 수치적으로 안정하다.</p></details></li>
+  <li>$f = \frac{a}{b}$에서 엔진이 계산하는 $\partial f/\partial b$가 $-a/b^2$임을 엔진의 연산 조합($a\cdot b^{-1}$)으로 설명하라.
+    <details class="sol"><summary>풀이</summary><p>$u = b^{-1}$ 노드의 국소 미분은 $-b^{-2}$, 곱셈 노드에서 $\partial f/\partial u = a$. 연쇄법칙으로 $a\cdot(-b^{-2}) = -a/b^2$.</p></details></li>
+  <li>그림의 그래프 $f = \tanh(ab + d)$에서 $a = 1, b = -2, d = 2.5$일 때 엔진으로 세 기울기를 구하고 손으로 검산하라.
+    <details class="sol"><summary>풀이</summary><p>$e = 0.5$, $f = \tanh 0.5 = 0.4621$, $\partial f/\partial e = 1 - 0.4621^2 = 0.7864$. $\partial f/\partial d = 0.7864$, $\partial f/\partial a = 0.7864\cdot b = -1.5729$, $\partial f/\partial b = 0.7864\cdot a = 0.7864$.</p>
+<pre><code>a, b, dd = Value(1.0), Value(-2.0), Value(2.5)
+f = (a * b + dd).tanh(); f.backward(); print(a.grad, b.grad, dd.grad)
+</code></pre></details></li>
+</ol>
+
+<h2 data-min="35" data-kind="project">미니 프로젝트: 자동 미분 엔진으로 분류기 학습</h2>
+<section class="project" data-title="스칼라 자동 미분 엔진 위에 MLP를 만들어 두 개의 달 데이터 분류기 학습하기" data-min="35">
+<p class="lead">오늘 만든 엔진 위에 뉴런, 층, MLP를 만들고 두 개의 달 모양 데이터(40개)를 분류하도록 학습시킨다. 손실 함수도 엔진의 연산으로 조립하므로, 역전파 공식을 한 줄도 쓰지 않고 학습이 된다. 마지막으로 18일차 방식의 NumPy 역전파와 기울기를 비교해 엔진을 검증한다. 학습 셀은 브라우저에서 몇 초 걸린다.</p>
+<ol class="steps">
+<li><b>데이터.</b> 두 개의 반달이 맞물린 데이터를 만들고 표준화한다. 레이블은 $y \in \{-1, +1\}$로 쓴다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(0); n = 40
+t = rng.random(n) * np.pi; c = np.arange(n) % 2
+Xm = np.where(c[:, None] == 0, np.c_[np.cos(t), np.sin(t)],
+              np.c_[1 - np.cos(t), 0.5 - np.sin(t)])
+Xm = Xm + rng.normal(0, 0.1, (n, 2)); Xm = (Xm - Xm.mean(0)) / Xm.std(0)
+ym = np.where(c == 1, 1.0, -1.0)
+plt.figure(figsize=(4, 3.2))
+plt.scatter(Xm[:, 0], Xm[:, 1], c=ym, cmap="coolwarm_r", s=18)
+plt.title("두 개의 달")
+plt.show()
+</code></pre></li>
+<li><b>뉴런, 층, MLP.</b> 은닉층은 tanh, 출력층은 활성화 없는 점수 하나다.
+<pre class="run"><code>class Neuron:
+    def __init__(self, n_in, act=True):
+        self.w = [Value(random.uniform(-1, 1)) for _ in range(n_in)]
+        self.b = Value(0.0)
+        self.act = act
+    def __call__(self, x):
+        z = sum((wi * xi for wi, xi in zip(self.w, x)), self.b)
+        return z.tanh() if self.act else z
+    def parameters(self): return self.w + [self.b]
+class Layer:
+    def __init__(self, n_in, n_out, act=True):
+        self.neurons = [Neuron(n_in, act) for _ in range(n_out)]
+    def __call__(self, x):
+        out = [nr(x) for nr in self.neurons]
+        return out[0] if len(out) == 1 else out
+    def parameters(self): return [p for nr in self.neurons for p in nr.parameters()]
+class MLP:
+    def __init__(self, n_in, sizes):
+        dims = [n_in] + sizes
+        self.layers = [Layer(dims[i], dims[i + 1],
+                             act=(i &lt; len(sizes) - 1)) for i in range(len(sizes))]
+    def __call__(self, x):
+        for layer in self.layers: x = layer(x)
+        return x
+    def parameters(self):
+        return [p for layer in self.layers for p in layer.parameters()]
+random.seed(1)
+model = MLP(2, [6, 1])
+print("파라미터 수:", len(model.parameters()))
+</code></pre></li>
+<li><b>학습 루프.</b> 로지스틱 손실 $\ln(1 + e^{-ys})$(10일차의 BCE를 $y = \pm1$로 쓴 것)을 엔진 연산으로 만들고, 경사하강법으로 100스텝 학습한다. <code>zero_grad</code>를 빠뜨리지 않는다.
+<pre class="run"><code>losses = []
+for step in range(100):
+    scores = [model([Value(a), Value(b)]) for a, b in Xm]
+    loss = sum(((-yi * s).exp() + 1).log() for yi, s in zip(ym, scores)) * (1.0 / n)
+    for p in model.parameters(): p.grad = 0.0           # TODO 확인: zero_grad
+    loss.backward()
+    for p in model.parameters(): p.data -= 2.0 * p.grad  # 학습률 2.0
+    losses.append(loss.data)
+acc = np.mean([(s.data &gt; 0) == (yi &gt; 0) for s, yi in zip(scores, ym)])
+print(f"마지막 손실 {losses[-1]:.4f},  학습 정확도 {acc:.3f}")
+g1, g2 = np.meshgrid(np.linspace(-2.2, 2.2, 45), np.linspace(-2.2, 2.2, 45))
+S = np.array([[model([Value(a), Value(b)]).data for a, b in zip(r1, r2)] for r1, r2 in zip(g1, g2)])
+fig, axs = plt.subplots(1, 2, figsize=(9, 3.4))
+axs[0].plot(losses)
+axs[0].set_xlabel("스텝")
+axs[0].set_ylabel("손실")
+axs[0].grid(alpha=.3)
+axs[1].contourf(g1, g2, S &gt; 0, levels=[-.5, .5, 1.5], colors=["#f3d6d3", "#d6e1f3"])
+axs[1].scatter(Xm[:, 0], Xm[:, 1], c=ym, cmap="coolwarm_r", s=16)
+axs[1].set_title("결정 경계")
+plt.tight_layout(); plt.show()
+</code></pre></li>
+<li><b>엔진 검증.</b> 같은 신경망의 가중치를 NumPy 배열로 옮겨 18일차 방식으로 기울기를 구하고, 엔진의 기울기와 비교한다.
+<pre class="run"><code>L1, L2 = model.layers
+W1 = np.array([[nr.w[i].data for nr in L1.neurons] for i in range(2)])
+b1 = np.array([nr.b.data for nr in L1.neurons])
+W2 = np.array([L2.neurons[0].w[j].data for j in range(6)]); b2 = L2.neurons[0].b.data
+# 엔진으로 한 번 더 기울기 계산
+scores = [model([Value(a), Value(b)]) for a, b in Xm]
+loss = sum(((-yi * s).exp() + 1).log() for yi, s in zip(ym, scores)) * (1.0 / n)
+for p in model.parameters(): p.grad = 0.0
+loss.backward()
+gW1_engine = np.array([[nr.w[i].grad for nr in L1.neurons] for i in range(2)])
+# NumPy 역전파
+H = np.tanh(Xm @ W1 + b1); s = H @ W2 + b2
+G = (-ym * np.exp(-ym * s) / (1 + np.exp(-ym * s))) / n     # ∂L/∂s
+dH = np.outer(G, W2) * (1 - H ** 2)
+gW1_numpy = Xm.T @ dH
+print("최대 차이 (W1):", np.abs(gW1_engine - gW1_numpy).max())
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>2단계: 파라미터는 $(2\times6 + 6) + (6 + 1) = 25$개다.</li>
+<li>3단계: 손실이 약 1.1에서 0.06 근처까지 내려가고 학습 정확도는 1.0이다. 경계가 두 반달 사이를 휘어 지난다. 엔진 연산으로 조립한 손실을 <code>backward()</code> 한 번으로 미분했으므로, 손실 함수를 바꿔도(예: 힌지 손실 <code>(1 - yi * s).relu()</code>) 학습 코드는 그대로다.</li>
+<li>4단계: 최대 차이는 $10^{-16}$ 수준(기계 정밀도)이다. 엔진은 근사가 아니라 정확한 미분을 계산한다.</li>
+<li>속도: 100스텝에 노드 수십만 개를 만들어 몇 초가 걸린다. 같은 계산을 NumPy 행렬로 하면 수 밀리초다. 20일차부터는 18일차 방식의 층 단위 역전파(행렬 연산)로 큰 신경망을 학습한다.</li>
+</ul></details>
+</section>

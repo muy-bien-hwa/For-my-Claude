@@ -126,7 +126,8 @@ plt.figure(figsize=(5, 4.3)); plt.imshow(cm, cmap="Blues"); plt.colorbar()
 for i in range(10):
     for j in range(10):
         if cm[i, j]:
-            plt.text(j, i, cm[i, j], ha="center", va="center", fontsize=8, color="white" if cm[i, j] &gt; cm.max() / 2 else "black")
+            plt.text(j, i, cm[i, j], ha="center", va="center", fontsize=8,
+                     color="white" if cm[i, j] &gt; cm.max() / 2 else "black")
 plt.xlabel("예측")
 plt.ylabel("정답")
 plt.xticks(range(10))

@@ -61,7 +61,7 @@
     { id: 'quantization', mod: 'w8', day: 54, title: '양자화 오차', kw: 'int8 경량화' }
   ];
   V.modsReady = [];                     // 불러온 모듈 (각 모듈 파일이 스스로 등록)
-  V.modsAvailable = ['w1', 'w2'];             // 배포된 모듈. 실험실은 이 모듈의 시각화만 보여 준다.
+  V.modsAvailable = ['w1', 'w2', 'w3'];             // 배포된 모듈. 실험실은 이 모듈의 시각화만 보여 준다.
   const CAT = Object.fromEntries(V.catalog.map(c => [c.id, c]));
   const REG = {};
   V.register = (id, fn) => { REG[id] = fn; };

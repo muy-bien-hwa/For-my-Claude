@@ -1,0 +1,356 @@
+<ul class="goals">
+  <li>인공 뉴런의 계산 $\phi(\mathbf w\cdot\mathbf x + b)$를 구성 요소별로 설명할 수 있다.</li>
+  <li>퍼셉트론으로 AND, OR, NOT 게이트를 직접 설계할 수 있다.</li>
+  <li>퍼셉트론 학습 규칙을 손으로 적용하고, 선형 분리 가능한 데이터에서 수렴함을 설명할 수 있다.</li>
+  <li>XOR이 선형 분리 불가능함을 증명하고, 층을 쌓아 해결하는 방법을 보일 수 있다.</li>
+</ul>
+
+<h2 data-min="12" data-kind="concept">생물 뉴런에서 인공 뉴런으로</h2>
+<p>뇌의 신경세포는 여러 가지돌기로 신호를 받아, 신호의 합이 어떤 문턱을 넘으면 축삭으로 신호를 내보낸다. 1943년 매컬러와 피츠는 이 동작을 수식으로 단순화했다. 입력마다 중요도를 곱해 더하고, 문턱과 비교해 출력을 정한다. 이것이 <dfn data-t="neuron">인공 뉴런</dfn>이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 230" width="640" role="img" aria-label="인공 뉴런의 구조: 입력, 가중치, 합, 활성화">
+  <defs><marker id="d15a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker></defs>
+  <g font-size="13">
+  <g class="s-f"><circle cx="70" cy="50" r="20"/><circle cx="70" cy="115" r="20"/><circle cx="70" cy="180" r="20"/></g>
+  <g class="s-tx" text-anchor="middle"><text x="70" y="55">x₁</text><text x="70" y="120">x₂</text><text x="70" y="185">x₃</text></g>
+  <g class="s-ln" stroke-width="1.6"><line x1="90" y1="55" x2="268" y2="108"/><line x1="90" y1="115" x2="268" y2="115"/><line x1="90" y1="175" x2="268" y2="122"/></g>
+  <g class="s-txa" font-weight="700"><text x="160" y="66">w₁</text><text x="160" y="108">w₂</text><text x="160" y="170">w₃</text></g>
+  <circle cx="300" cy="115" r="32" class="s-acs" stroke-width="1.8"/>
+  <text x="300" y="121" text-anchor="middle" class="s-tx" font-size="20">Σ</text>
+  <text x="300" y="168" text-anchor="middle" class="s-txm">z = w·x + b</text>
+  <line x1="300" y1="40" x2="300" y2="81" class="s-ln" stroke-width="1.4"/>
+  <text x="300" y="32" text-anchor="middle" class="s-tx">편향 b</text>
+  <line x1="332" y1="115" x2="398" y2="115" class="s-ac" stroke-width="2" marker-end="url(#d15a)"/>
+  <rect x="402" y="90" width="80" height="50" rx="8" class="s-f2"/>
+  <text x="442" y="120" text-anchor="middle" class="s-tx" font-weight="700">φ(z)</text>
+  <text x="442" y="160" text-anchor="middle" class="s-txm">활성화 함수</text>
+  <line x1="482" y1="115" x2="548" y2="115" class="s-ac" stroke-width="2" marker-end="url(#d15a)"/>
+  <text x="575" y="120" text-anchor="middle" class="s-tx" font-weight="700">a</text>
+  <text x="575" y="145" text-anchor="middle" class="s-txm">출력</text>
+  </g>
+</svg>
+<figcaption>인공 뉴런은 입력의 가중합에 편향을 더한 뒤($z$), 활성화 함수 $\phi$를 통과시켜 출력 $a$를 낸다.</figcaption>
+</figure>
+$$a = \phi(z), \qquad z = w_1x_1 + w_2x_2 + \cdots + w_dx_d + b = \mathbf w\cdot\mathbf x + b$$
+<ul>
+<li><dfn data-t="weight">가중치</dfn> $w_i$: 입력 $x_i$가 출력에 미치는 영향의 크기와 방향. 양수면 흥분, 음수면 억제.</li>
+<li><dfn data-t="bias">편향</dfn> $b$: 뉴런이 얼마나 쉽게 켜지는지 정하는 값. 문턱의 부호를 바꾼 것이다($z &gt; 0 \iff \mathbf w\cdot\mathbf x &gt; -b$).</li>
+<li>활성화 함수 $\phi$: 가중합을 출력으로 바꾸는 함수. 오늘은 계단 함수, 16일차부터는 매끄러운 함수를 쓴다.</li>
+</ul>
+<p>2주차의 로지스틱 회귀는 $\phi = \sigma$인 뉴런 하나였다. 신경망은 이런 뉴런을 수천~수십억 개 연결한 것이다.</p>
+
+<h2 data-min="18" data-kind="concept">퍼셉트론과 논리 게이트</h2>
+<p>1958년 로젠블랫은 출력을 0 또는 1로 내는 뉴런에 학습 규칙을 붙인 <dfn data-t="perceptron">퍼셉트론</dfn>을 만들었다. 활성화 함수는 <dfn data-t="step-function">계단 함수</dfn>다.</p>
+$$\hat y = \mathrm{step}(\mathbf w\cdot\mathbf x + b), \qquad \mathrm{step}(z) = \begin{cases}1 &amp; z &gt; 0\\ 0 &amp; z \le 0\end{cases}$$
+<p>가중치와 편향을 잘 고르면 퍼셉트론 하나로 논리 게이트를 만들 수 있다.</p>
+<table>
+  <thead><tr><th>$x_1$</th><th>$x_2$</th><th>AND: $\mathbf w = (1, 1), b = -1.5$</th><th>OR: $\mathbf w = (1, 1), b = -0.5$</th><th>NAND: $\mathbf w = (-1, -1), b = 1.5$</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>0</td><td>$z = -1.5$ → 0</td><td>$z = -0.5$ → 0</td><td>$z = 1.5$ → 1</td></tr>
+    <tr><td>0</td><td>1</td><td>$z = -0.5$ → 0</td><td>$z = 0.5$ → 1</td><td>$z = 0.5$ → 1</td></tr>
+    <tr><td>1</td><td>0</td><td>$z = -0.5$ → 0</td><td>$z = 0.5$ → 1</td><td>$z = 0.5$ → 1</td></tr>
+    <tr><td>1</td><td>1</td><td>$z = 0.5$ → 1</td><td>$z = 1.5$ → 1</td><td>$z = -0.5$ → 0</td></tr>
+  </tbody>
+</table>
+<p>AND와 OR는 가중치가 같고 편향만 다르다. 편향이 문턱을 정한다: AND는 "두 입력의 합이 1.5를 넘어야" 켜지고, OR는 "0.5만 넘어도" 켜진다. 기하학적으로 퍼셉트론은 입력 평면을 직선 $\mathbf w\cdot\mathbf x + b = 0$으로 나누고 한쪽을 1, 다른 쪽을 0으로 판정한다(10일차의 결정 경계와 같다).</p>
+<figure class="fig">
+<svg viewBox="0 0 640 240" width="640" role="img" aria-label="AND와 OR 퍼셉트론의 결정 직선">
+  <g font-size="12">
+  <g transform="translate(90,20)">
+    <polygon points="75,0 180,0 180,105" class="s-acf" opacity=".14"/>
+    <rect x="0" y="0" width="180" height="180" class="s-mu" stroke-width="1.2"/>
+    <line x1="75" y1="0" x2="180" y2="105" class="s-ln" stroke-width="2.4"/>
+    <circle cx="15" cy="165" r="9" class="s-redf"/><circle cx="15" cy="15" r="9" class="s-redf"/><circle cx="165" cy="165" r="9" class="s-redf"/><circle cx="165" cy="15" r="9" class="s-acf"/>
+    <g class="s-txm"><text x="30" y="169">(0,0)</text><text x="30" y="19">(0,1)</text><text x="150" y="169" text-anchor="end">(1,0)</text><text x="150" y="44" text-anchor="end">(1,1)</text></g>
+    <text x="90" y="204" text-anchor="middle" class="s-tx" font-weight="700">AND: x₁ + x₂ = 1.5</text>
+    <text x="90" y="222" text-anchor="middle" class="s-txm">파란 영역(1)은 오른쪽 위 모서리뿐</text>
+  </g>
+  <g transform="translate(370,20)">
+    <polygon points="0,0 180,0 180,180 105,180 0,75" class="s-acf" opacity=".14"/>
+    <rect x="0" y="0" width="180" height="180" class="s-mu" stroke-width="1.2"/>
+    <line x1="0" y1="75" x2="105" y2="180" class="s-ln" stroke-width="2.4"/>
+    <circle cx="15" cy="165" r="9" class="s-redf"/><circle cx="15" cy="15" r="9" class="s-acf"/><circle cx="165" cy="165" r="9" class="s-acf"/><circle cx="165" cy="15" r="9" class="s-acf"/>
+    <g class="s-txm"><text x="30" y="150">(0,0)</text><text x="30" y="19">(0,1)</text><text x="150" y="169" text-anchor="end">(1,0)</text><text x="150" y="19" text-anchor="end">(1,1)</text></g>
+    <text x="90" y="204" text-anchor="middle" class="s-tx" font-weight="700">OR: x₁ + x₂ = 0.5</text>
+    <text x="90" y="222" text-anchor="middle" class="s-txm">빨간 영역(0)은 왼쪽 아래 모서리뿐</text>
+  </g>
+  </g>
+</svg>
+<figcaption>네 점을 단위 정사각형의 꼭짓점에 놓았다(가로 $x_1$, 세로 $x_2$). 파랑은 출력 1, 빨강은 출력 0. 직선의 위쪽(오른쪽 위)이 1로 판정된다.</figcaption>
+</figure>
+
+<h2 data-min="22" data-kind="concept">퍼셉트론 학습 규칙</h2>
+<p>게이트처럼 답을 알 때는 손으로 가중치를 고를 수 있다. 데이터만 있을 때는 틀린 표본을 보며 가중치를 고친다. 정답 $y$와 예측 $\hat y$가 다를 때만 다음과 같이 갱신한다.</p>
+$$\mathbf w \leftarrow \mathbf w + \eta\,(y - \hat y)\,\mathbf x, \qquad b \leftarrow b + \eta\,(y - \hat y)$$
+<table>
+  <thead><tr><th>상황</th><th>$y - \hat y$</th><th>갱신</th><th>효과</th></tr></thead>
+  <tbody>
+    <tr><td>맞힘</td><td>0</td><td>변화 없음</td><td></td></tr>
+    <tr><td>1인데 0이라 함</td><td>+1</td><td>$\mathbf w$에 $\eta\mathbf x$를 더함</td><td>$z$가 $\eta(\|\mathbf x\|^2 + 1)$만큼 커짐</td></tr>
+    <tr><td>0인데 1이라 함</td><td>−1</td><td>$\mathbf w$에서 $\eta\mathbf x$를 뺌</td><td>$z$가 그만큼 작아짐</td></tr>
+  </tbody>
+</table>
+<p>틀린 표본에 대해 점수 $z$를 정답 쪽으로 미는 방향이다. 결정 직선은 그 점을 올바른 쪽에 두도록 회전·이동한다. 레이블을 $\{-1, +1\}$로 쓰면 같은 규칙이 "$y\,z \le 0$이면 $\mathbf w \leftarrow \mathbf w + \eta y\mathbf x$"로 간단해진다. 아래 인터랙티브는 이 형태를 쓴다.</p>
+<div class="box ex" data-title="AND를 학습하기"><p>$\mathbf w = (0, 0)$, $b = 0$, $\eta = 1$에서 시작해 $(0,0), (0,1), (1,0), (1,1)$ 순서로 본다.</p>
+<table>
+  <thead><tr><th>에폭</th><th>입력</th><th>$y$</th><th>$z$</th><th>$\hat y$</th><th>갱신 후 $\mathbf w$, $b$</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>(0,0)</td><td>0</td><td>0</td><td>0</td><td>(0, 0), 0</td></tr>
+    <tr><td>1</td><td>(0,1)</td><td>0</td><td>0</td><td>0</td><td>(0, 0), 0</td></tr>
+    <tr><td>1</td><td>(1,0)</td><td>0</td><td>0</td><td>0</td><td>(0, 0), 0</td></tr>
+    <tr><td>1</td><td>(1,1)</td><td>1</td><td>0</td><td>0</td><td>(1, 1), 1</td></tr>
+    <tr><td>2</td><td>(0,0)</td><td>0</td><td>1</td><td>1</td><td>(1, 1), 0</td></tr>
+    <tr><td>2</td><td>(0,1)</td><td>0</td><td>1</td><td>1</td><td>(1, 0), −1</td></tr>
+    <tr><td>2</td><td>(1,0)</td><td>0</td><td>0</td><td>0</td><td>(1, 0), −1</td></tr>
+    <tr><td>2</td><td>(1,1)</td><td>1</td><td>0</td><td>0</td><td>(2, 1), 0</td></tr>
+  </tbody>
+</table>
+<p>에폭 3: (0,0) $z = 0$ 맞음, (0,1) $z = 1$ 틀림 → $(2, 0), -1$. (1,0) $z = 1$ 틀림 → $(1, 0), -2$. (1,1) $z = -1$ 틀림 → $(2, 1), -1$. 에폭 4: (0,0) $-1$, (0,1) $0$, (1,0) $1$ 틀림 → $(1, 1), -2$. (1,1) $z = 0$ 틀림 → $(2, 2), -1$. 에폭 5: (0,0) $-1$, (0,1) $1$ 틀림 → $(2, 1), -2$. (1,0) $0$, (1,1) $1$ 맞음. 에폭 6에서는 네 점 모두 맞아 학습이 끝난다. 최종 $\mathbf w = (2, 1)$, $b = -2$: 경계 $2x_1 + x_2 = 2$도 AND를 정확히 가른다. 손으로 고른 $(1, 1), -1.5$와 다르지만 같은 일을 한다. 해는 하나가 아니다.</p></div>
+<div class="viz-mount" data-viz="perceptron"></div>
+
+<h2 data-min="10" data-kind="concept">수렴 정리</h2>
+<p>퍼셉트론은 언제 멈추는가? 로젠블랫과 노비코프(1962)가 답을 증명했다.</p>
+<div class="box key" data-title="퍼셉트론 수렴 정리"><p>모든 표본이 반지름 $R$인 공 안에 있고($\|\mathbf x\| \le R$), 어떤 직선이 두 클래스를 여백 $\gamma &gt; 0$ 이상으로 가른다면, 퍼셉트론이 저지르는 실수(갱신)의 총횟수는 $(R/\gamma)^2$ 이하다. 학습률이나 표본 순서와 무관하다.</p></div>
+<p>증명의 뼈대: 갱신할 때마다 $\mathbf w$와 "정답 방향" 벡터의 내적은 적어도 $\gamma$씩 커지는데, $\|\mathbf w\|^2$은 많아야 $R^2$씩 커진다. $k$번 갱신 뒤 내적은 $k\gamma$ 이상, 길이는 $\sqrt k R$ 이하이고, 코사인은 1을 넘을 수 없으므로 $k\gamma \le \sqrt k R$, 즉 $k \le (R/\gamma)^2$이다. 의미는 두 가지다. 여백이 넓을수록 빨리 끝나고, 선형 분리가 불가능하면($\gamma$가 없으면) 끝나지 않는다.</p>
+
+<h2 data-min="20" data-kind="concept">선형 분리 가능성과 XOR</h2>
+<p>두 클래스를 직선(고차원에서는 초평면) 하나로 오류 없이 나눌 수 있으면 <dfn data-t="linearly-separable">선형 분리 가능</dfn>하다고 한다. AND, OR, NAND는 선형 분리 가능하다. 그런데 두 입력이 다를 때만 1인 XOR은 그렇지 않다.</p>
+<table>
+  <thead><tr><th>$x_1$</th><th>$x_2$</th><th>XOR</th></tr></thead>
+  <tbody><tr><td>0</td><td>0</td><td>0</td></tr><tr><td>0</td><td>1</td><td>1</td></tr><tr><td>1</td><td>0</td><td>1</td></tr><tr><td>1</td><td>1</td><td>0</td></tr></tbody>
+</table>
+<figure class="fig">
+<svg viewBox="0 0 640 230" width="640" role="img" aria-label="XOR의 네 점과 실패하는 직선들">
+  <g transform="translate(230,20)" font-size="12.5">
+    <rect x="0" y="0" width="180" height="180" class="s-bg" stroke-width="1"/>
+    <line x1="0" y1="90" x2="90" y2="0" class="s-mu" stroke-width="1.6" stroke-dasharray="6 4"/>
+    <line x1="90" y1="180" x2="180" y2="90" class="s-mu" stroke-width="1.6" stroke-dasharray="6 4"/>
+    <line x1="0" y1="60" x2="180" y2="120" class="s-mu" stroke-width="1.6" stroke-dasharray="6 4"/>
+    <circle cx="15" cy="165" r="10" class="s-redf"/><circle cx="165" cy="15" r="10" class="s-redf"/>
+    <circle cx="15" cy="15" r="10" class="s-acf"/><circle cx="165" cy="165" r="10" class="s-acf"/>
+    <g class="s-txm"><text x="-12" y="170" text-anchor="end">(0,0)</text><text x="-12" y="20" text-anchor="end">(0,1)</text><text x="192" y="170">(1,0)</text><text x="192" y="20">(1,1)</text></g>
+    <text x="90" y="210" text-anchor="middle" class="s-tx" font-weight="700">어떤 직선도 파랑과 빨강을 가르지 못한다</text>
+  </g>
+</svg>
+<figcaption>XOR에서 같은 클래스의 점이 대각선으로 마주 본다. 점선은 시도해 볼 수 있는 직선의 예이며, 모두 적어도 한 점을 틀린다.</figcaption>
+</figure>
+<div class="box ex" data-title="XOR이 선형 분리 불가능하다는 증명"><p>퍼셉트론이 XOR을 맞힌다고 가정하면 네 부등식이 성립해야 한다.</p>
+$$b \le 0,\qquad w_2 + b &gt; 0,\qquad w_1 + b &gt; 0,\qquad w_1 + w_2 + b \le 0$$
+<p>가운데 두 식을 더하면 $w_1 + w_2 + 2b &gt; 0$, 즉 $w_1 + w_2 + b &gt; -b \ge 0$이다(첫 식에서 $-b \ge 0$). 이는 마지막 식 $w_1 + w_2 + b \le 0$과 모순이다. 따라서 그런 $\mathbf w, b$는 없다.</p></div>
+<p>XOR 문제는 1969년 민스키와 패퍼트의 책에서 단층 퍼셉트론의 한계로 지적되었고, 신경망 연구가 한동안 침체되는 계기가 되었다(첫 번째 AI 겨울). <dfn data-t="xor">XOR 문제</dfn>는 지금도 "선형 모델로 풀 수 없는 가장 작은 문제"의 대명사다.</p>
+
+<h2 data-min="15" data-kind="concept">층을 쌓아 XOR 풀기</h2>
+<p>XOR은 "OR이면서 AND는 아닌 것"이다: $\mathrm{XOR}(x_1, x_2) = \mathrm{AND}(\mathrm{OR}(x_1, x_2), \mathrm{NAND}(x_1, x_2))$. 퍼셉트론 세 개를 두 층으로 연결하면 된다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 220" width="640" role="img" aria-label="두 층 퍼셉트론으로 만든 XOR">
+  <defs><marker id="d15b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker></defs>
+  <g font-size="12.5">
+  <g class="s-f"><circle cx="90" cy="60" r="22"/><circle cx="90" cy="160" r="22"/></g>
+  <g class="s-tx" text-anchor="middle" font-weight="700"><text x="90" y="65">x₁</text><text x="90" y="165">x₂</text></g>
+  <g class="s-ln" stroke-width="1.5"><line x1="112" y1="60" x2="288" y2="60"/><line x1="112" y1="64" x2="290" y2="150"/><line x1="112" y1="156" x2="290" y2="70"/><line x1="112" y1="160" x2="288" y2="160"/></g>
+  <g class="s-txa"><text x="190" y="52">1</text><text x="148" y="92">−1</text><text x="148" y="140">1</text><text x="190" y="176">−1</text></g>
+  <g class="s-acs" stroke-width="1.6"><circle cx="312" cy="60" r="24"/><circle cx="312" cy="160" r="24"/></g>
+  <g class="s-tx" text-anchor="middle" font-weight="700"><text x="312" y="65">OR</text><text x="312" y="165">NAND</text></g>
+  <g class="s-txm" text-anchor="middle"><text x="312" y="24">b = −0.5</text><text x="312" y="202">b = 1.5</text></g>
+  <g class="s-ln" stroke-width="1.5"><line x1="336" y1="64" x2="468" y2="106"/><line x1="336" y1="156" x2="468" y2="114"/></g>
+  <g class="s-txa"><text x="400" y="74">1</text><text x="400" y="150">1</text></g>
+  <circle cx="492" cy="110" r="24" class="s-acs" stroke-width="1.6"/>
+  <text x="492" y="115" text-anchor="middle" class="s-tx" font-weight="700">AND</text>
+  <text x="492" y="152" text-anchor="middle" class="s-txm">b = −1.5</text>
+  <line x1="516" y1="110" x2="580" y2="110" class="s-ac" stroke-width="2" marker-end="url(#d15b)"/>
+  <text x="600" y="115" text-anchor="middle" class="s-tx" font-weight="700">ŷ</text>
+  </g>
+</svg>
+<figcaption>은닉층의 두 뉴런(OR, NAND)이 입력을 새 좌표 $(h_1, h_2)$로 바꾸고, 출력 뉴런(AND)이 그 좌표에서 선형으로 가른다. 선 위 숫자가 가중치, 원 아래 숫자가 편향이다.</figcaption>
+</figure>
+<table>
+  <thead><tr><th>$(x_1, x_2)$</th><th>$h_1 = \mathrm{OR}$</th><th>$h_2 = \mathrm{NAND}$</th><th>$\hat y = \mathrm{AND}(h_1, h_2)$</th></tr></thead>
+  <tbody>
+    <tr><td>(0, 0)</td><td>0</td><td>1</td><td>0</td></tr>
+    <tr><td>(0, 1)</td><td>1</td><td>1</td><td>1</td></tr>
+    <tr><td>(1, 0)</td><td>1</td><td>1</td><td>1</td></tr>
+    <tr><td>(1, 1)</td><td>1</td><td>0</td><td>0</td></tr>
+  </tbody>
+</table>
+<p>핵심은 은닉층이 입력을 "선형으로 가를 수 있는 새 표현"으로 바꾼다는 점이다. 새 좌표에서 네 점은 $(0, 1), (1, 1), (1, 1), (1, 0)$이 되고, 1인 점들($(1, 1)$)과 0인 점들($(0, 1), (1, 0)$)은 직선 $h_1 + h_2 = 1.5$로 갈린다. 남은 문제는 은닉층의 가중치를 손으로 고르지 않고 데이터로 학습하는 것이다. 계단 함수는 거의 모든 곳에서 미분이 0이라 경사하강법을 쓸 수 없다. 16일차에서 매끄러운 활성화 함수로, 18일차에서 역전파로 이 문제를 푼다.</p>
+
+<h2 data-min="22" data-kind="practice">코드 실습: 퍼셉트론 구현</h2>
+<p>퍼셉트론을 함수로 구현하고 AND, OR, XOR에 적용한다. 레이블은 0과 1, 갱신은 $(y - \hat y)$ 형태를 쓴다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+X4 = np.array([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=float)
+gates = {"AND": np.array([0, 0, 0, 1]), "OR": np.array([0, 1, 1, 1]), "XOR": np.array([0, 1, 1, 0])}
+
+def train_perceptron(X, y, eta=1.0, epochs=20):
+    w, b = np.zeros(X.shape[1]), 0.0
+    errors = []                                   # 에폭별 틀린 수
+    for ep in range(epochs):
+        e = 0
+        for xi, yi in zip(X, y):
+            y_hat = 1 if xi @ w + b &gt; 0 else 0
+            if y_hat != yi:
+                # TODO 확인: 퍼셉트론 규칙
+                w = w + eta * (yi - y_hat) * xi
+                b = b + eta * (yi - y_hat)
+                e += 1
+        errors.append(e)
+        if e == 0:
+            break
+    return w, b, errors
+
+for name, y in gates.items():
+    w, b, errors = train_perceptron(X4, y)
+    pred = (X4 @ w + b &gt; 0).astype(int)
+    print(f"{name:3s}: w = {w}, b = {b:4.1f}, 에폭별 틀린 수 {errors[:8]}, 예측 {pred}, 정답 {y}")
+</code></pre>
+<p>AND는 위 예제와 같이 $\mathbf w = (2, 1)$, $b = -2$로 끝난다. XOR은 20에폭 동안 매번 틀리며 끝나지 않는다. 마지막으로 두 층 퍼셉트론으로 XOR을 계산한다.</p>
+<pre class="run"><code>step = lambda z: (z &gt; 0).astype(int)
+W1 = np.array([[1, -1],                           # 열 0: OR, 열 1: NAND
+               [1, -1]], dtype=float)
+b1 = np.array([-0.5, 1.5])
+w2, b2 = np.array([1.0, 1.0]), -1.5                # AND
+H = step(X4 @ W1 + b1)                             # (4, 2) 은닉 표현
+y_hat = step(H @ w2 + b2)
+print("은닉 표현 H:\n", H)
+print("XOR 출력:", y_hat)
+</code></pre>
+
+<h2 data-min="8" data-kind="concept">퍼셉트론과 로지스틱 회귀</h2>
+<table>
+  <thead><tr><th></th><th>퍼셉트론</th><th>로지스틱 회귀 (10일차)</th></tr></thead>
+  <tbody>
+    <tr><td>활성화</td><td>계단 함수 (0 또는 1)</td><td>시그모이드 (0~1 확률)</td></tr>
+    <tr><td>갱신</td><td>틀린 표본에만 $\eta(y - \hat y)\mathbf x$</td><td>모든 표본에 $\eta(y - p)\mathbf x$</td></tr>
+    <tr><td>선형 분리 불가능할 때</td><td>영원히 흔들림</td><td>BCE가 가장 작은 경계로 수렴</td></tr>
+    <tr><td>출력의 의미</td><td>판정만</td><td>확률</td></tr>
+  </tbody>
+</table>
+<p>두 갱신식은 모양이 거의 같다. 퍼셉트론은 $\hat y \in \{0, 1\}$을, 로지스틱 회귀는 $p \in (0, 1)$을 쓸 뿐이다. 퍼셉트론 규칙은 손실 $\max(0, -y z)$($y = \pm1$)에 대한 확률적 경사하강법으로 볼 수도 있다. 이 손실은 13일차 SVM의 힌지 손실 $\max(0, 1 - yz)$에서 여백 1을 뺀 것이다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>인공 뉴런 $a = \phi(\mathbf w\cdot\mathbf x + b)$. 가중치는 영향의 크기와 방향, 편향은 문턱.</li>
+  <li>퍼셉트론 = 계단 함수 뉴런. 결정 경계는 직선(초평면). AND, OR, NAND를 만들 수 있다.</li>
+  <li>학습 규칙 $\mathbf w \leftarrow \mathbf w + \eta(y - \hat y)\mathbf x$: 틀린 표본의 점수를 정답 쪽으로 민다.</li>
+  <li>선형 분리 가능하면 실수 횟수는 $(R/\gamma)^2$ 이하로 끝난다. 불가능하면 끝나지 않는다.</li>
+  <li>XOR은 선형 분리 불가능. 은닉층이 새 표현을 만들어 해결한다. 은닉층을 학습하려면 미분 가능한 활성화와 역전파가 필요하다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"인공 뉴런에서 편향 b의 역할로 옳은 것은?","o":["입력의 개수를 정한다","뉴런이 켜지는 문턱을 정한다(결정 경계를 평행이동한다)","활성화 함수를 고른다","학습률을 정한다"],"a":1,"e":"$z &gt; 0 \\iff \\mathbf w\\cdot\\mathbf x &gt; -b$이므로 편향은 문턱이다."},
+ {"q":"w = (1, 1), b = −1.5인 퍼셉트론이 구현하는 게이트는?","o":["OR","AND","XOR","NAND"],"a":1,"e":"두 입력이 모두 1일 때만 z = 0.5 &gt; 0이다."},
+ {"q":"정답 1인 표본을 0으로 예측했다. 퍼셉트론 규칙(η = 1)의 갱신은?","o":["w에서 x를 뺀다","w에 x를 더하고 b에 1을 더한다","변화 없음","w를 0으로 만든다"],"a":1,"e":"y − ŷ = 1이므로 w ← w + x, b ← b + 1."},
+ {"q":"퍼셉트론이 반드시 유한 번 안에 멈추는 조건은?","o":["학습률이 충분히 작다","데이터가 선형 분리 가능하다","표본이 100개 이하다","입력이 표준화되어 있다"],"a":1,"e":"수렴 정리의 조건이다. 실수 횟수는 (R/γ)² 이하."},
+ {"q":"XOR을 단층 퍼셉트론으로 풀 수 없는 이유는?","o":["입력이 2개뿐이라서","선형 분리가 불가능해서","학습률이 맞지 않아서","계단 함수가 0과 1만 내서"],"a":1,"e":"네 부등식이 모순이 되어 어떤 직선도 두 클래스를 가르지 못한다."},
+ {"q":"XOR을 푸는 두 층 퍼셉트론에서 은닉층의 역할은?","o":["입력을 복사한다","입력을 선형으로 가를 수 있는 새 표현으로 바꾼다","손실을 계산한다","학습률을 조절한다"],"a":1,"e":"OR, NAND 출력 (h₁, h₂) 공간에서는 직선 하나로 XOR이 갈린다."},
+ {"q":"계단 함수 뉴런으로 이루어진 다층 신경망을 경사하강법으로 학습하기 어려운 이유는?","o":["계산이 느려서","계단 함수의 미분이 거의 모든 곳에서 0이라 기울기가 전달되지 않아서","가중치가 정수여야 해서","층이 많아서"],"a":1,"e":"그래서 16일차부터 매끄러운 활성화 함수를 쓴다."},
+ {"q":"퍼셉트론과 로지스틱 회귀의 차이로 옳은 것은?","o":["퍼셉트론은 확률을 출력한다","로지스틱 회귀는 틀린 표본만 사용한다","퍼셉트론은 분리 불가능한 데이터에서 수렴하지 않지만 로지스틱 회귀는 BCE 최소점으로 수렴한다","둘은 완전히 같다"],"a":2,"e":"로지스틱 회귀는 볼록한 BCE를 최소화하므로 항상 하나의 해로 간다."}
+]</script>
+
+<h2 data-min="8" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>NOT 게이트(입력 1개)를 퍼셉트론으로 만들어라. 세 입력 중 두 개 이상이 1이면 1을 내는 "다수결" 게이트는?
+    <details class="sol"><summary>풀이</summary><p>NOT: $w = -1$, $b = 0.5$ ($x = 0$이면 $z = 0.5$ → 1, $x = 1$이면 $z = -0.5$ → 0). 다수결: $\mathbf w = (1, 1, 1)$, $b = -1.5$. 합이 2 이상일 때만 $z &gt; 0$이다.</p></details></li>
+  <li>OR을 $\mathbf w = (0, 0)$, $b = 0$, $\eta = 1$에서 시작해 $(0,0), (0,1), (1,0), (1,1)$ 순서로 손으로 학습시켜라. 몇 번 갱신하는가?
+    <details class="sol"><summary>풀이</summary><p>에폭 1: (0,0) 맞음, (0,1) $z = 0$ 틀림 → $(0, 1), 1$. (1,0) $z = 1$ 맞음, (1,1) 맞음. 에폭 2: (0,0) $z = 1$ 틀림 → $(0, 1), 0$. (0,1) $z = 1$, (1,0) $z = 0$ 틀림 → $(1, 1), 1$. (1,1) 맞음. 에폭 3: (0,0) $z = 1$ 틀림 → $(1, 1), 0$. 나머지 맞음. 에폭 4: 모두 맞음. 갱신 4번, 최종 $\mathbf w = (1, 1)$, $b = 0$. ($z = 0$을 0으로 판정하므로 (0,0)은 경계 위에서 0으로 맞는다.)</p>
+<pre><code>w, b, errors = train_perceptron(X4, gates["OR"])
+print(w, b, errors)
+</code></pre></details></li>
+  <li>XOR을 "OR이면서 NAND"가 아닌 다른 방법으로 두 층 퍼셉트론으로 만들어라. (힌트: $x_1 \wedge \neg x_2$와 $\neg x_1 \wedge x_2$의 OR)
+    <details class="sol"><summary>풀이</summary><p>$h_1 = \mathrm{step}(x_1 - x_2 - 0.5)$ ($x_1 = 1, x_2 = 0$일 때만 1), $h_2 = \mathrm{step}(-x_1 + x_2 - 0.5)$, 출력 $\hat y = \mathrm{step}(h_1 + h_2 - 0.5)$ (OR).</p></details></li>
+</ol>
+
+<h2 data-min="38" data-kind="project">미니 프로젝트: 퍼셉트론 학습 과정 추적</h2>
+<section class="project" data-title="붓꽃 데이터에서 퍼셉트론의 학습 과정을 기록하고 수렴 정리를 확인하기" data-min="38">
+<p class="lead">실제 데이터에서 퍼셉트론이 어떻게 수렴하는지 기록한다. 붓꽃 setosa와 versicolor를 꽃받침 두 특징으로 가르는 문제에서 갱신마다 경계를 저장해 그리고, 입력을 중심화했을 때와 안 했을 때의 실수 횟수를 비교하고, 수렴 정리의 상한을 확인한다. 마지막으로 선형 분리가 불가능한 경우의 대처법(포켓 알고리즘)을 구현한다.</p>
+<ol class="steps">
+<li><b>데이터.</b> setosa(0)와 versicolor(1)의 꽃받침 길이·너비를 그린다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("iris")
+m = d["y"] &lt; 2                                       # setosa, versicolor만
+X, y = d["X"][m][:, :2], d["y"][m]                  # 꽃받침 길이, 너비
+plt.figure(figsize=(4.8, 3.8))
+plt.scatter(*X[y == 0].T, s=14, label="setosa (0)")
+plt.scatter(*X[y == 1].T, s=14, label="versicolor (1)")
+plt.xlabel("꽃받침 길이 (cm)")
+plt.ylabel("꽃받침 너비 (cm)")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
+print(X.shape, np.bincount(y))
+</code></pre></li>
+<li><b>기록하는 퍼셉트론.</b> 갱신할 때마다 $(\mathbf w, b)$를 저장하고, 에폭마다 틀린 수를 센다.
+<pre class="run"><code>def perceptron_log(X, y, eta=1.0, epochs=2000):
+    w, b = np.zeros(X.shape[1]), 0.0
+    snaps, errors = [(w.copy(), b)], []
+    for ep in range(epochs):
+        e = 0
+        for xi, yi in zip(X, y):
+            y_hat = int(xi @ w + b &gt; 0)
+            if y_hat != yi:
+                w = w + eta * (yi - y_hat) * xi; b = b + eta * (yi - y_hat)
+                snaps.append((w.copy(), b)); e += 1
+        errors.append(e)
+        if e == 0:
+            break
+    return w, b, snaps, errors
+
+w_raw, b_raw, snaps_raw, err_raw = perceptron_log(X, y)
+Xc = X - X.mean(axis=0)                              # 중심화: 평균을 원점으로
+w_c, b_c, snaps_c, err_c = perceptron_log(Xc, y)
+print(f"원래 입력: {len(err_raw)}에폭, 갱신 {len(snaps_raw) - 1}회")
+print(f"중심화 입력: {len(err_c)}에폭, 갱신 {len(snaps_c) - 1}회")
+</code></pre></li>
+<li><b>경계의 변화.</b> 중심화한 경우의 모든 갱신 시점 경계를 겹쳐 그린다.
+<pre class="run"><code>plt.figure(figsize=(4.8, 3.8))
+plt.scatter(*Xc[y == 0].T, s=14); plt.scatter(*Xc[y == 1].T, s=14)
+xs = np.linspace(-1.6, 1.6, 2)
+for k, (w, b) in enumerate(snaps_c[1:], 1):
+    if abs(w[1]) &gt; 1e-9:
+        plt.plot(xs, -(w[0] * xs + b) / w[1], color=plt.cm.viridis(k / len(snaps_c)),
+                 lw=1.5, label=f"갱신 {k}")
+plt.ylim(-1.4, 1.6)
+plt.legend(fontsize=8)
+plt.xlabel("꽃받침 길이 (중심화)")
+plt.ylabel("꽃받침 너비 (중심화)")
+plt.show()
+</code></pre></li>
+<li><b>수렴 정리 확인.</b> 편향을 입력에 1을 붙인 형태로 보면 $R = \max\|(\mathbf x, 1)\|$이다. 최종 해의 여백 $\gamma_{\mathbf w} = \min_i y_i'(\mathbf w\cdot\mathbf x_i + b)/\|(\mathbf w, b)\|$($y' = \pm1$)는 최적 여백 이하이므로 $(R/\gamma_{\mathbf w})^2$도 실수 횟수의 상한이다. 두 경우의 상한과 실제 갱신 횟수를 비교하라.
+<pre class="run"><code>def bound(Xs, w, b):
+    A = np.c_[Xs, np.ones(len(Xs))]; t = np.where(y == 1, 1, -1); v = np.r_[w, b]
+    R = np.linalg.norm(A, axis=1).max()
+    gamma = (t * (A @ v)).min() / np.linalg.norm(v)
+    return R, gamma, (R / gamma) ** 2
+for name, Xs, w, b, sn in [("원래", X, w_raw, b_raw, snaps_raw), ("중심화", Xc, w_c, b_c, snaps_c)]:
+    R, g, B = bound(Xs, w, b)
+    print(f"{name}: R = {R:.3f}, γ_w = {g:.4f}, 상한 (R/γ)² = {B:,.0f}, 실제 갱신 {len(sn) - 1}")
+</code></pre></li>
+<li><b>분리 불가능한 경우: 포켓 알고리즘.</b> versicolor와 virginica는 꽃받침 특징으로 선형 분리가 되지 않는다. 퍼셉트론은 끝나지 않으므로, 학습하는 동안 "학습 데이터 정확도가 가장 높았던 가중치"를 주머니(pocket)에 넣어 두었다가 마지막에 꺼낸다.
+<pre class="run"><code>m2 = d["y"] &gt;= 1
+X2 = d["X"][m2][:, :2]; X2 = X2 - X2.mean(axis=0); y2 = (d["y"][m2] == 2).astype(int)
+def pocket(X, y, epochs=200, eta=1.0):
+    w, b = np.zeros(X.shape[1]), 0.0
+    best = (0.0, w.copy(), b)
+    for ep in range(epochs):
+        for xi, yi in zip(X, y):
+            y_hat = int(xi @ w + b &gt; 0)
+            if y_hat != yi:
+                w = w + eta * (yi - y_hat) * xi; b = b + eta * (yi - y_hat)
+                acc = ((X @ w + b &gt; 0).astype(int) == y).mean()
+                if acc &gt; best[0]:
+                    best = (acc, w.copy(), b)      # TODO 확인: 더 나은 해를 주머니에
+    return best, ((X @ w + b &gt; 0).astype(int) == y).mean()
+(best_acc, wb, bb), last_acc = pocket(X2, y2)
+print(f"마지막 가중치의 정확도 {last_acc:.3f},  주머니 속 가중치의 정확도 {best_acc:.3f}")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>2단계: 원래 입력에서는 686에폭, 1,489번 갱신해야 끝나지만, 중심화하면 3에폭, 4번 갱신으로 끝난다. 원래 데이터는 원점에서 멀리(꽃받침 길이 5cm 근처) 떨어져 있어, 편향 $b$를 1씩만 바꾸는 퍼셉트론은 경계를 데이터 쪽으로 옮기는 데 수많은 갱신이 필요하다. 9일차에서 표준화가 경사하강법을 빠르게 한 것과 같은 이유다.</li>
+<li>3단계: 첫 경계는 엉뚱한 방향이지만 갱신마다 틀린 점 쪽으로 회전·이동하며 네 번 만에 두 무리 사이에 자리 잡는다.</li>
+<li>4단계: 상한은 실제보다 훨씬 크다(중심화한 경우 약 4만 3천, 원래 입력은 약 190억). 최종 해의 여백 $\gamma_{\mathbf w}$가 작아(경계가 한 점에 아슬아슬하게 붙어 있음) 상한이 느슨해진다. 그래도 실제 갱신 수는 항상 상한 이하다. 정리는 "끝난다는 보장"이지 정확한 예측이 아니다.</li>
+<li>5단계: 마지막 가중치는 갱신 직후의 상태라 정확도가 들쭉날쭉하다(이번 실행에서 0.51). 주머니 속 가중치는 그동안 본 최선의 해(0.71)로, 꽃받침 두 특징만으로 얻을 수 있는 정확도에 가깝다. 분리 불가능한 데이터에서는 로지스틱 회귀처럼 손실을 최소화하는 방법이 더 체계적이다.</li>
+</ul></details>
+</section>
