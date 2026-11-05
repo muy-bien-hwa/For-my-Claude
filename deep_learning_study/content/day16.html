@@ -1,0 +1,163 @@
+<ul class="goals">
+  <li><code>Dataset</code>과 <code>DataLoader</code>를 직접 구현하고 커스텀 데이터를 불러온다.</li>
+  <li>재사용 가능한 <code>train_one_epoch</code> / <code>evaluate</code> 함수를 작성한다.</li>
+  <li>체크포인트 저장·불러오기, 재현성(시드 고정), 학습률 스케줄러를 사용한다.</li>
+  <li>학습 기록을 남기고 시각화하는 실험 습관을 들인다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 앞으로 모든 프로젝트에 복사해 쓸 '틀'</span>
+어제 본 학습 코드는 최소한의 형태였습니다. 실제 프로젝트에서는 데이터 로딩, 검증, 저장, 로깅, 재현성까지 챙겨야 합니다. 오늘 만드는 템플릿을 Day 29 캡스톤까지 계속 씁니다. 한 줄 한 줄 왜 있는지 이해하세요.</div>
+
+<h2>1. Dataset: 데이터 한 개를 꺼내는 규칙</h2>
+<p><code>Dataset</code>은 두 메서드만 구현하면 됩니다: <code>__len__</code>(개수), <code>__getitem__(i)</code>(i번째 샘플).</p>
+<pre><code class="language-python">import torch
+from torch.utils.data import Dataset, DataLoader, random_split
+import pandas as pd
+from PIL import Image
+
+class CSVDataset(Dataset):
+    """표 형식 데이터: 마지막 열이 레이블"""
+    def __init__(self, path, mean=None, std=None):
+        df = pd.read_csv(path)
+        self.X = torch.tensor(df.iloc[:, :-1].values, dtype=torch.float32)
+        self.y = torch.tensor(df.iloc[:, -1].values, dtype=torch.long)
+        self.mean = self.X.mean(0) if mean is None else mean     # 학습 세트 통계를 검증에 재사용
+        self.std = self.X.std(0) + 1e-8 if std is None else std
+    def __len__(self): return len(self.y)
+    def __getitem__(self, i):
+        return (self.X[i] - self.mean) / self.std, self.y[i]
+
+class ImageFolderDataset(Dataset):
+    """이미지 파일 목록 + 레이블. 이미지는 __getitem__에서 그때그때 읽는다 (메모리 절약)"""
+    def __init__(self, paths, labels, transform=None):
+        self.paths, self.labels, self.transform = paths, labels, transform
+    def __len__(self): return len(self.paths)
+    def __getitem__(self, i):
+        img = Image.open(self.paths[i]).convert("RGB")
+        if self.transform: img = self.transform(img)
+        return img, self.labels[i]
+</code></pre>
+<p>폴더 구조가 <code>root/클래스명/이미지.jpg</code>라면 <code>torchvision.datasets.ImageFolder(root, transform)</code>가 이 일을 해 줍니다.</p>
+
+<h2>2. DataLoader: 배치로 묶고, 섞고, 병렬로 읽기</h2>
+<pre><code class="language-python">full = datasets.CIFAR10("data", train=True, download=True, transform=transforms.ToTensor())
+n_val = 5000
+train_ds, val_ds = random_split(full, [len(full) - n_val, n_val], generator=torch.Generator().manual_seed(42))
+
+train_dl = DataLoader(train_ds, batch_size=128, shuffle=True,  num_workers=2, pin_memory=True, drop_last=True)
+val_dl   = DataLoader(val_ds,   batch_size=512, shuffle=False, num_workers=2, pin_memory=True)
+
+xb, yb = next(iter(train_dl))
+print(xb.shape, yb.shape)     # torch.Size([128, 3, 32, 32]) torch.Size([128])
+</code></pre>
+<ul>
+<li><code>shuffle=True</code>: 학습용만. 검증은 섞을 필요 없음.</li>
+<li><code>num_workers</code>: 데이터를 읽는 병렬 프로세스 수. GPU가 데이터를 기다리며 놀지 않게 합니다.</li>
+<li><code>pin_memory=True</code>: CPU→GPU 전송 가속.</li>
+<li><code>drop_last=True</code>: 마지막 자투리 배치 버림(BN이 배치 크기 1에서 에러 나는 것 방지).</li>
+<li>샘플마다 길이가 다르면(문장 등) <code>collate_fn</code>으로 패딩해서 묶습니다(Day 21).</li>
+</ul>
+
+<h2>3. 재현성: 시드 고정</h2>
+<pre><code class="language-python">import random, numpy as np
+def seed_everything(seed=42):
+    random.seed(seed); np.random.seed(seed); torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True     # 완전 재현이 필요할 때 (약간 느려짐)
+    torch.backends.cudnn.benchmark = False
+seed_everything(42)
+</code></pre>
+<div class="callout tip"><span class="ct">💡 시드는 하나로는 부족하다</span>
+같은 설정도 시드에 따라 정확도가 ±0.5% 넘게 흔들릴 수 있습니다. "A가 B보다 0.3% 좋다"는 결론을 내리려면 시드 3개 이상의 평균과 표준편차를 비교하세요.</div>
+
+<h2>4. 학습·평가 함수 템플릿</h2>
+<pre><code class="language-python">from tqdm.auto import tqdm
+
+def train_one_epoch(model, loader, loss_fn, opt, device, scheduler=None, clip=None):
+    model.train()
+    total_loss, correct, n = 0.0, 0, 0
+    for xb, yb in tqdm(loader, leave=False):
+        xb, yb = xb.to(device, non_blocking=True), yb.to(device, non_blocking=True)
+        logits = model(xb)
+        loss = loss_fn(logits, yb)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        if clip: torch.nn.utils.clip_grad_norm_(model.parameters(), clip)   # 기울기 클리핑
+        opt.step()
+        if scheduler: scheduler.step()                                       # 스텝 단위 스케줄러
+        total_loss += loss.item() * len(yb)
+        correct += (logits.argmax(1) == yb).sum().item(); n += len(yb)
+    return total_loss / n, correct / n
+
+@torch.no_grad()                      # 데코레이터로 함수 전체에 no_grad
+def evaluate(model, loader, loss_fn, device):
+    model.eval()
+    total_loss, correct, n = 0.0, 0, 0
+    for xb, yb in loader:
+        xb, yb = xb.to(device), yb.to(device)
+        logits = model(xb)
+        total_loss += loss_fn(logits, yb).item() * len(yb)
+        correct += (logits.argmax(1) == yb).sum().item(); n += len(yb)
+    return total_loss / n, correct / n
+</code></pre>
+
+<h2>5. 체크포인트: 저장과 불러오기</h2>
+<pre><code class="language-python">def save_ckpt(path, model, opt, epoch, best_val):
+    torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "epoch": epoch, "best_val": best_val}, path)
+
+def load_ckpt(path, model, opt=None, device="cpu"):
+    ck = torch.load(path, map_location=device)
+    model.load_state_dict(ck["model"])
+    if opt: opt.load_state_dict(ck["opt"])       # 옵티마이저 상태(Adam의 m, v)까지 복원해야 이어서 학습 가능
+    return ck["epoch"], ck["best_val"]
+</code></pre>
+<div class="callout key"><span class="ct">🔑 state_dict를 저장하라</span>
+<code>torch.save(model)</code>로 모델 객체 전체를 저장하면 클래스 정의와 파일 경로에 묶여 나중에 깨지기 쉽습니다. <b>파라미터 사전(<code>state_dict</code>)만 저장</b>하고, 불러올 때는 모델을 새로 만든 뒤 <code>load_state_dict</code>하세요. Colab은 세션이 끊기면 파일이 사라지므로 Google Drive에 저장하세요.</div>
+
+<h2>6. 학습률 스케줄러</h2>
+<p>학습 초반에는 크게, 후반에는 작게 움직이는 것이 좋습니다. 자세한 원리는 Day 28에서 다루고, 오늘은 가장 많이 쓰는 두 가지만 봅니다.</p>
+<pre><code class="language-python">EPOCHS = 20
+opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.05)
+# (1) OneCycle: 워밍업 후 코사인 감쇠. 스텝마다 호출
+sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=3e-3, total_steps=EPOCHS * len(train_dl), pct_start=0.1)
+# (2) Cosine: 에폭마다 호출
+# sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS)
+</code></pre>
+
+<h2>7. 전체 조립: 표준 학습 스크립트</h2>
+<pre><code class="language-python">history = {"tr_loss": [], "tr_acc": [], "va_loss": [], "va_acc": [], "lr": []}
+best_val, patience, bad = 0.0, 5, 0
+
+for epoch in range(EPOCHS):
+    tr_loss, tr_acc = train_one_epoch(model, train_dl, loss_fn, opt, device, scheduler=sched)
+    va_loss, va_acc = evaluate(model, val_dl, loss_fn, device)
+    for k, v in zip(history, [tr_loss, tr_acc, va_loss, va_acc, opt.param_groups[0]["lr"]]): history[k].append(v)
+    print(f"[{epoch+1:02d}/{EPOCHS}] train {tr_loss:.4f}/{tr_acc:.3f}  val {va_loss:.4f}/{va_acc:.3f}")
+
+    if va_acc > best_val:                            # 최고 모델 저장
+        best_val, bad = va_acc, 0
+        save_ckpt("best.pt", model, opt, epoch, best_val)
+    else:
+        bad += 1
+        if bad >= patience:                          # 조기 종료
+            print("Early stopping"); break
+
+load_ckpt("best.pt", model)                          # 최고 시점으로 복원 후 테스트
+</code></pre>
+<div class="callout prof"><span class="ct">👨‍🏫 실험 노트를 쓰세요</span>
+"무엇을 바꿨고, 결과가 어땠는가"를 기록하지 않으면 일주일 뒤 아무것도 기억나지 않습니다. 간단하게는 <code>history</code>를 JSON으로 저장하고, 본격적으로는 Weights &amp; Biases, TensorBoard 같은 도구를 씁니다. 노트북에 TensorBoard 사용 예가 있습니다.</div>
+
+<h2>8. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"Dataset 클래스가 반드시 구현해야 하는 메서드는?","o":["__init__과 forward","__len__과 __getitem__","train과 eval","load와 save"],"a":1,"e":"DataLoader는 이 두 메서드로 인덱스를 뽑고 샘플을 꺼냅니다."},
+ {"q":"모델을 저장하는 권장 방법은?","o":["torch.save(model)","torch.save(model.state_dict()) (+ 옵티마이저 state_dict)","pickle로 직접","model.to_json()"],"a":1,"e":"state_dict는 파라미터 텐서들의 사전이라 코드 구조 변경에 강합니다."},
+ {"q":"검증 DataLoader에 shuffle=True가 필요 없는 이유는?","o":["속도","검증은 파라미터를 업데이트하지 않으므로 순서가 결과에 영향을 주지 않는다","에러가 나서","메모리"],"a":1,"e":"순서와 무관하게 전체 평균을 계산할 뿐입니다."},
+ {"q":"학습을 이어서 하려면 무엇까지 저장해야 하는가?","o":["모델 파라미터만","모델 파라미터 + 옵티마이저 상태(+ 스케줄러, 에폭)","옵티마이저만","데이터"],"a":1,"e":"Adam의 m, v가 없으면 이어서 학습할 때 처음부터 다시 쌓아야 해서 거동이 달라집니다."},
+ {"q":"num_workers를 늘리는 목적은?","o":["모델 정확도 향상","데이터 로딩을 병렬화해 GPU 대기 시간을 줄인다","메모리 절약","재현성"],"a":1,"e":"이미지 디코딩·증강 같은 CPU 작업이 병목일 때 효과적입니다."}
+]</script>
+
+<h2>9. 오늘의 과제 (Colab)</h2>
+<ol>
+<li>노트북에서 오늘의 템플릿으로 Fashion-MNIST를 MLP로 학습하고 검증 정확도 89% 이상을 달성하세요.</li>
+<li>시드 3개로 반복해 평균 ± 표준편차를 보고하세요.</li>
+<li>체크포인트를 Google Drive에 저장하고, 런타임을 재시작한 뒤 불러와 이어서 학습해 보세요.</li>
+</ol>

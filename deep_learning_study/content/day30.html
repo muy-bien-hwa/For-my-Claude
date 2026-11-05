@@ -1,0 +1,124 @@
+<ul class="goals">
+  <li>실험 계획에 따라 체계적으로 모델을 개선하고 결과를 기록한다.</li>
+  <li>테스트 세트로 최종 평가하고, 오류 분석으로 모델의 한계를 이해한다.</li>
+  <li>프로젝트 보고서(README)를 작성하고 결과를 공유한다.</li>
+  <li>30일을 회고하고, 다음 학습 로드맵을 세운다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 마지막 날</span>
+오늘은 어제 만든 베이스라인을 개선하고, 결과를 정리하고, 지난 30일을 돌아봅니다. 그리고 이 강의가 끝난 뒤에도 계속 성장할 수 있도록 다음 길을 안내합니다.</div>
+
+<h2>1. 개선 루프</h2>
+<p>어제 세운 실험 계획을 하나씩 실행합니다. 각 실험마다 아래 표를 채우세요.</p>
+<table>
+<tr><th>#</th><th>변경</th><th>학습 지표</th><th>검증 지표</th><th>결론</th></tr>
+<tr><td>0</td><td>베이스라인</td><td></td><td></td><td>기준</td></tr>
+<tr><td>1</td><td>lr 3e-4 → 1e-3</td><td></td><td></td><td>채택 / 기각</td></tr>
+<tr><td>2</td><td>+ 데이터 증강</td><td></td><td></td><td></td></tr>
+</table>
+<div class="callout key"><span class="ct">🔑 개선의 우선순위 (경험칙)</span>
+<ol style="margin:0">
+<li><b>데이터</b>: 레이블 오류 수정, 데이터 추가, 증강. 대부분 가장 효과가 큽니다.</li>
+<li><b>사전학습 모델</b>: 처음부터 학습하는 대신 미세조정.</li>
+<li><b>학습률과 스케줄</b>.</li>
+<li><b>규제</b>: 학습-검증 격차가 크다면.</li>
+<li><b>모델 크기·구조</b>: 학습 성능부터 낮다면(과소적합).</li>
+<li><b>앙상블</b>: 마지막에 몇 % 더 짜낼 때. 서로 다른 시드나 구조의 모델 예측을 평균.</li>
+</ol></div>
+<p>과적합인지 과소적합인지 먼저 판단하세요(학습 vs 검증 곡선). 과소적합인데 규제를 추가하거나, 과적합인데 모델을 키우면 시간만 낭비합니다.</p>
+
+<h2>2. 최종 평가와 오류 분석</h2>
+<ol>
+<li>검증 세트 기준 최고 모델을 고릅니다. <b>여기까지가 모든 결정입니다.</b></li>
+<li>봉인했던 <b>테스트 세트로 단 한 번</b> 평가합니다.</li>
+<li><b>혼동 행렬</b>과 클래스별 지표를 봅니다(Day 11).</li>
+<li><b>가장 확신하며 틀린 샘플</b> 20개를 직접 봅니다. 패턴이 있나요? (레이블 오류? 모호한 샘플? 특정 조건에서 실패?)</li>
+<li>모델이 <b>무엇을 보고</b> 판단하는지 확인해 보세요. 이미지라면 Grad-CAM 같은 시각화로 엉뚱한 곳(배경, 워터마크)을 보고 있지 않은지 점검합니다.</li>
+</ol>
+<pre><code class="language-python">@torch.no_grad()
+def most_confident_errors(model, loader, k=20):
+    model.eval(); errs = []
+    for xb, yb in loader:
+        p = F.softmax(model(xb.to(device)), -1).cpu()
+        conf, pred = p.max(-1)
+        for x, y, c, pr in zip(xb, yb, conf, pred):
+            if pr != y: errs.append((c.item(), x, y.item(), pr.item()))
+    return sorted(errs, key=lambda e: -e[0])[:k]       # 확신도가 높은 오류부터
+</code></pre>
+
+<h2>3. 결과 보고서 (README) 템플릿</h2>
+<div class="card" style="margin:16px 0">
+<ol style="margin:0">
+<li><b>문제</b>: 무엇을, 왜 풀었나 (2~3문장)</li>
+<li><b>데이터</b>: 출처, 크기, 분할, 전처리, 특이사항</li>
+<li><b>방법</b>: 최종 모델 구조, 손실, 옵티마이저, 주요 하이퍼파라미터</li>
+<li><b>결과</b>: 베이스라인 사다리 표 + 실험 표 + 최종 테스트 점수</li>
+<li><b>분석</b>: 학습 곡선, 혼동 행렬, 대표적 오류 사례와 원인 추정</li>
+<li><b>한계와 다음 단계</b>: 무엇이 부족하고, 시간이 더 있다면 무엇을 할지</li>
+<li><b>재현 방법</b>: 실행 명령, 환경, 시드</li>
+</ol></div>
+<p>노트북과 README를 GitHub에 올리면 그 자체로 훌륭한 포트폴리오가 됩니다. 이미지 분류기라면 Gradio로 간단한 데모 웹앱을 만들어 Hugging Face Spaces에 무료로 배포할 수도 있습니다.</p>
+<pre><code class="language-python">import gradio as gr
+def predict(img):
+    x = val_tf(img).unsqueeze(0).to(device)
+    with torch.no_grad(): p = F.softmax(model.eval()(x), -1)[0]
+    return {cls: float(p[i]) for i, cls in enumerate(class_names)}
+gr.Interface(fn=predict, inputs=gr.Image(type="pil"), outputs=gr.Label(num_top_classes=3)).launch()
+</code></pre>
+
+<h2>4. 30일 회고</h2>
+<p>대시보드의 <b>📒 내 기록</b>에서 지난 30일간의 노트를 모아 보세요. 그리고 아래 질문에 답해 보세요.</p>
+<ul>
+<li>Day 1에 "학습이란 무엇인가"에 대해 쓴 답과 지금의 답은 어떻게 다른가요?</li>
+<li>가장 어려웠던 날은? 지금 다시 보면 이해가 되나요?</li>
+<li>아래 문장을 아무것도 보지 않고 설명할 수 있나요?</li>
+</ul>
+<div class="callout key"><span class="ct">🧠 최종 자기 점검: 설명할 수 있으면 체크</span>
+<ul style="margin:0;list-style:none;padding-left:0">
+<li>☐ 경사하강법이 왜 손실을 줄이는가 (그래디언트의 의미)</li>
+<li>☐ 역전파 = 계산 그래프 위의 연쇄법칙, 상류 × 국소 기울기</li>
+<li>☐ 교차 엔트로피가 최대우도추정에서 나오는 이유</li>
+<li>☐ 활성화 함수가 없으면 깊은 망이 무의미한 이유</li>
+<li>☐ He 초기화, BatchNorm, 잔차 연결이 각각 해결하는 문제</li>
+<li>☐ Adam = 모멘텀 + RMSProp + 편향 보정</li>
+<li>☐ 과적합 진단과 대처법 5가지</li>
+<li>☐ 합성곱의 지역성과 가중치 공유, 출력 크기 공식</li>
+<li>☐ LSTM이 기울기 소실을 완화하는 원리</li>
+<li>☐ softmax(QKᵀ/√d)V의 각 부분의 의미와 √d의 이유</li>
+<li>☐ Transformer 블록의 구조와 각 부품의 역할</li>
+<li>☐ GPT가 학습하고 생성하는 방법 (causal 마스크, 자기회귀)</li>
+<li>☐ VAE의 ELBO, 확산 모델의 노이즈 예측 목표</li>
+<li>☐ 학습이 안 될 때의 디버깅 순서</li>
+</ul></div>
+
+<h2>5. 다음 로드맵</h2>
+<p>30일은 시작입니다. 관심 분야에 따라 다음 길을 고르세요.</p>
+<table>
+<tr><th>방향</th><th>다음에 배울 것</th><th>추천 자료</th></tr>
+<tr><td><b>기초 심화</b></td><td>확률론적 관점, 최적화 이론, 일반화 이론</td><td>『Deep Learning』(Goodfellow 외), 『Dive into Deep Learning』(d2l.ai, 무료, 한국어판 있음)</td></tr>
+<tr><td><b>LLM</b></td><td>토크나이저, 사전학습 파이프라인, RLHF/DPO, 추론 최적화, 에이전트</td><td>Karpathy "Neural Networks: Zero to Hero" 시리즈, nanoGPT, Hugging Face 코스</td></tr>
+<tr><td><b>컴퓨터 비전</b></td><td>객체 검출(YOLO, DETR), 분할(U-Net, SAM), ViT, 자기지도학습(CLIP, DINO)</td><td>Stanford CS231n</td></tr>
+<tr><td><b>생성 모델</b></td><td>스코어 기반 모델, Flow Matching, 잠재 확산, 영상 생성</td><td>Lilian Weng 블로그, Hugging Face Diffusers 코스</td></tr>
+<tr><td><b>강화학습</b></td><td>MDP, 정책 경사, PPO, LLM의 RL</td><td>Sutton &amp; Barto 『Reinforcement Learning』, OpenAI Spinning Up</td></tr>
+<tr><td><b>그래프 신경망</b></td><td>메시지 패싱, GCN, GAT. 분자·소셜 네트워크</td><td>Stanford CS224W</td></tr>
+<tr><td><b>실무 / MLOps</b></td><td>실험 관리, 데이터 버전 관리, 모델 서빙, 모니터링</td><td>Full Stack Deep Learning</td></tr>
+<tr><td><b>논문 읽기</b></td><td>매주 논문 한 편: 초록 → 그림 → 결론 → 방법 순서로</td><td>Papers with Code, arXiv</td></tr>
+</table>
+<div class="callout tip"><span class="ct">💡 계속 성장하는 가장 좋은 방법</span>
+<b>만들기 → 막히기 → 찾아보기 → 설명하기.</b> 작은 프로젝트를 계속 만들고, 배운 것을 블로그나 노트에 남에게 설명하듯 쓰세요. 그리고 이 강의의 Day 10(역전파)과 Day 22(어텐션)는 몇 달에 한 번씩 다시 읽어 보세요. 읽을 때마다 새로운 것이 보일 겁니다.</div>
+
+<h2>6. 수료</h2>
+<div class="callout prof"><span class="ct">🎓 30일 과정을 마치며</span>
+30일 전 여러분은 "딥러닝이 무엇인가"에서 시작했습니다. 지금 여러분은 NumPy로 역전파를 짜고, ResNet과 GPT를 처음부터 구현하고, 확산 모델이 노이즈에서 데이터를 조각하는 원리를 설명할 수 있습니다. 그리고 무엇보다, 빈 노트북에서 자신의 문제를 정의하고 모델을 학습시켜 결과를 냈습니다.<br><br>
+처음의 목표였던 <b>"혼자서 딥러닝 모델을 만드는 것"</b>을 이뤘습니다. 정말 수고 많으셨습니다. 이제 여러분은 이 분야에서 무엇이든 스스로 배워 나갈 수 있는 기초를 갖췄습니다. 계속 만드세요. 👏</div>
+<p>아래 <b>✅ 완료로 표시</b>를 누르면 30일 과정이 완료됩니다.</p>
+
+<h2>7. 최종 종합 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"학습 정확도 70%, 검증 정확도 69%. 먼저 시도할 것은?","o":["드롭아웃 강화","모델 키우기/더 오래 학습/학습률 조정(과소적합 대처)","데이터 증강 강화","조기 종료"],"a":1,"e":"학습 성능부터 낮고 격차가 작으면 과소적합입니다."},
+ {"q":"역전파에서 한 노드가 하는 일은?","o":["전체 그래프의 미분을 계산","상류 기울기에 자신의 국소 기울기를 곱해 입력 쪽으로 전달","손실을 계산","파라미터를 업데이트"],"a":1,"e":"이 국소성이 자동 미분의 핵심입니다."},
+ {"q":"다음 중 Transformer에 없는 것은?","o":["잔차 연결","층 정규화","순환(recurrent) 연결","멀티헤드 어텐션"],"a":2,"e":"Transformer는 순환 없이 어텐션으로 시퀀스를 처리합니다."},
+ {"q":"사전학습 모델 미세조정의 올바른 습관은?","o":["큰 학습률로 전체를 바로 학습","사전학습과 같은 전처리 + 작은 학습률 + (필요시) 분류기 먼저","전처리는 아무거나","BN 통계를 무시"],"a":1,"e":"Day 19의 3대 주의사항입니다."},
+ {"q":"확산 모델이 GAN보다 학습이 안정적인 근본 이유는?","o":["파라미터가 적어서","적대적 게임 대신 노이즈 예측이라는 단순한 회귀 목표를 최소화하므로","GPU를 덜 써서","데이터가 적게 필요해서"],"a":1,"e":"단일 모델의 MSE 최소화는 잘 정의된 최적화 문제입니다."},
+ {"q":"이 강의의 대전제: 딥러닝 학습이란?","o":["데이터 저장","손실을 최소화하는 파라미터를 경사하강법으로 찾는 것","규칙 작성","데이터 증강"],"a":1,"e":"30일 전 Day 1의 그 문장입니다. 이제 이 문장의 모든 단어를 설명할 수 있습니다."}
+]</script>

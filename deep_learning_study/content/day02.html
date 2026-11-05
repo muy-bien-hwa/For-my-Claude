@@ -1,0 +1,187 @@
+<ul class="goals">
+  <li>스칼라·벡터·행렬·텐서를 구분하고 각 텐서의 <b>형상(shape)</b>을 읽을 수 있다.</li>
+  <li>NumPy 배열을 만들고, 인덱싱·슬라이싱·reshape를 자유롭게 한다.</li>
+  <li><b>벡터화(vectorization)</b>가 왜 for 문보다 수십~수백 배 빠른지 이해한다.</li>
+  <li><b>브로드캐스팅 규칙</b>을 정확히 적용하고, 축(axis) 단위 집계를 할 수 있다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 왜 NumPy부터인가</span>
+PyTorch의 <code>torch.Tensor</code>는 사실상 "GPU에서 돌아가고 미분이 되는 NumPy 배열"입니다. 문법도 거의 같습니다. 오늘 배열을 다루는 감각을 확실히 익혀 두면 3주차에 PyTorch로 넘어가는 데 하루면 충분합니다. 반대로 오늘을 대충 넘기면, 앞으로 만날 버그의 80%를 차지하는 <b>형상(shape) 오류</b>에 계속 시달리게 됩니다.</div>
+
+<h2>1. 텐서: 딥러닝의 기본 자료형</h2>
+<table>
+<tr><th>차원(ndim)</th><th>이름</th><th>예시</th><th>shape 예</th></tr>
+<tr><td>0</td><td>스칼라</td><td>손실값 하나</td><td><code>()</code></td></tr>
+<tr><td>1</td><td>벡터</td><td>단어 하나의 임베딩</td><td><code>(512,)</code></td></tr>
+<tr><td>2</td><td>행렬</td><td>표 데이터 배치, 가중치 행렬</td><td><code>(batch, features)</code></td></tr>
+<tr><td>3</td><td>3D 텐서</td><td>문장 배치 (토큰 시퀀스)</td><td><code>(batch, seq_len, d_model)</code></td></tr>
+<tr><td>4</td><td>4D 텐서</td><td>컬러 이미지 배치</td><td><code>(batch, channels, H, W)</code></td></tr>
+</table>
+<div class="callout key"><span class="ct">🔑 형상을 소리 내어 읽는 습관</span>
+<code>(32, 3, 224, 224)</code>를 보면 "224×224 크기의 RGB 이미지 32장"이라고 바로 읽혀야 합니다. 딥러닝 코드를 읽을 때 각 줄 옆에 형상을 주석으로 적는 습관을 들이세요. 실력 있는 연구자들도 모두 그렇게 합니다.</div>
+
+<h2>2. 배열 만들기와 기본 속성</h2>
+<pre class="run"><code>import numpy as np
+
+a = np.array([1, 2, 3])                 # 리스트에서 생성
+B = np.array([[1, 2, 3], [4, 5, 6]])
+print("a:", a, "| shape", a.shape, "| ndim", a.ndim, "| dtype", a.dtype)
+print("B shape:", B.shape)             # (2, 3): 2행 3열
+
+print(np.zeros((2, 3)))                  # 0으로 채운 2x3
+print(np.ones(4))
+print(np.arange(0, 10, 2))               # [0 2 4 6 8]
+print(np.linspace(0, 1, 5))              # 0~1을 5등분
+
+rng = np.random.default_rng(0)           # 재현 가능한 난수 생성기
+X = rng.normal(0, 1, size=(3, 4))        # 표준정규분포 3x4
+print(X.round(2))
+print("float32로:", X.astype(np.float32).dtype)
+</code></pre>
+<p><code>dtype</code>도 중요합니다. 딥러닝은 보통 <code>float32</code>를 씁니다(NumPy 기본값은 <code>float64</code>). 메모리가 절반이고 GPU에서 훨씬 빠릅니다.</p>
+
+<h2>3. 인덱싱, 슬라이싱, reshape</h2>
+<pre class="run"><code>M = np.arange(12).reshape(3, 4)
+print(M)
+print("M[1, 2] =", M[1, 2])        # 1행 2열 (0부터 셈)
+print("1행 전체:", M[1])            # = M[1, :]
+print("2열 전체:", M[:, 2])
+print("부분 행렬:\n", M[0:2, 1:3])  # 0~1행, 1~2열
+
+# 불리언 마스킹: 조건을 만족하는 원소만
+print("짝수만:", M[M % 2 == 0])
+
+# reshape: 원소 수만 같으면 모양을 바꿀 수 있다. -1은 '알아서 계산'
+print(M.reshape(4, 3).shape, M.reshape(-1).shape, M.reshape(2, -1).shape)
+
+# 전치 (transpose)
+print("M.T shape:", M.T.shape)
+
+# 축 추가: None 또는 np.newaxis
+v = np.array([1, 2, 3])
+print(v[:, None].shape, v[None, :].shape)   # (3,1) 열벡터, (1,3) 행벡터
+</code></pre>
+<div class="callout warn"><span class="ct">⚠️ 뷰(view)와 복사(copy)</span>
+슬라이싱 결과는 원본의 <b>뷰</b>입니다. <code>s = M[0]; s[0] = 999</code>를 하면 원본 <code>M</code>도 바뀝니다. 독립적인 사본이 필요하면 <code>M[0].copy()</code>를 쓰세요. PyTorch에서도 같은 함정이 있습니다.</div>
+
+<h2>4. 벡터화: for 문을 버려라</h2>
+<p>신경망은 수백만 개의 숫자를 다룹니다. 파이썬 for 문은 원소 하나마다 인터프리터를 거치기 때문에 느립니다. NumPy 연산은 C로 구현된 루프를 한 번에 실행합니다(SIMD, 캐시 최적화까지).</p>
+<pre class="run"><code>import time
+x = np.random.rand(1_000_000)
+y = np.random.rand(1_000_000)
+
+t = time.perf_counter()
+s = 0.0
+for i in range(len(x)):
+    s += x[i] * y[i]
+t_loop = time.perf_counter() - t
+
+t = time.perf_counter()
+s2 = np.dot(x, y)            # 또는 (x * y).sum(), x @ y
+t_vec = time.perf_counter() - t
+
+print(f"for 문:   {t_loop*1000:8.1f} ms  결과 {s:.4f}")
+print(f"벡터화:   {t_vec*1000:8.2f} ms  결과 {s2:.4f}")
+print(f"속도 차이: 약 {t_loop/t_vec:.0f}배")
+</code></pre>
+<p>원소별(element-wise) 연산은 그냥 산술 연산자를 쓰면 됩니다: <code>x + y</code>, <code>x * y</code>, <code>np.exp(x)</code>, <code>np.maximum(x, 0)</code>(= ReLU!).</p>
+
+<h2>5. 브로드캐스팅 — 가장 강력하고 가장 위험한 규칙</h2>
+<p>형상이 다른 두 배열을 연산하면 NumPy는 다음 규칙으로 맞춥니다.</p>
+<ol>
+  <li>두 형상을 <b>오른쪽 끝부터</b> 나란히 맞춘다. 차원 수가 적은 쪽은 왼쪽에 1을 채운다.</li>
+  <li>각 축에서 크기가 <b>같거나</b>, 둘 중 하나가 <b>1</b>이면 호환된다. 1인 쪽이 늘어난다.</li>
+  <li>그 외에는 에러.</li>
+</ol>
+<table>
+<tr><th>A</th><th>B</th><th>결과</th><th>설명</th></tr>
+<tr><td>(32, 10)</td><td>(10,)</td><td>(32, 10)</td><td>모든 행에 같은 편향 벡터를 더함 ← 신경망 층의 <code>XW + b</code></td></tr>
+<tr><td>(3, 1)</td><td>(1, 4)</td><td>(3, 4)</td><td>외적(outer)처럼 펼쳐짐</td></tr>
+<tr><td>(32, 10)</td><td>(32,)</td><td>❌ 에러</td><td>오른쪽 끝 10 vs 32</td></tr>
+<tr><td>(32, 10)</td><td>(32, 1)</td><td>(32, 10)</td><td>각 행마다 다른 값을 더함</td></tr>
+</table>
+<pre class="run"><code>X = np.arange(6).reshape(2, 3).astype(float)   # (2,3)
+b = np.array([10., 20., 30.])                     # (3,)
+print("X + b =\n", X + b)
+
+# 각 행을 그 행의 평균으로 빼기: keepdims로 (2,1) 유지가 핵심
+row_mean = X.mean(axis=1, keepdims=True)          # (2,1)
+print("행 평균:", row_mean.ravel())
+print("행 중심화:\n", X - row_mean)
+
+# 실수하기 쉬운 예: keepdims 없이
+try:
+    print(X - X.mean(axis=1))                     # (2,3) - (2,) → 오른쪽 맞춤 3 vs 2
+except ValueError as e:
+    print("에러!", e)
+
+# 외적 만들기
+a = np.array([1, 2, 3])[:, None]   # (3,1)
+c = np.array([1, 10, 100, 1000])[None, :]   # (1,4)
+print(a * c)
+</code></pre>
+<div class="callout warn"><span class="ct">⚠️ 조용한 버그</span>
+브로드캐스팅의 진짜 위험은 에러가 <b>나지 않는</b> 경우입니다. 예측값 <code>y_hat</code>의 shape이 <code>(N, 1)</code>이고 정답 <code>y</code>가 <code>(N,)</code>이면, <code>y_hat - y</code>는 <code>(N, N)</code> 행렬이 됩니다! 손실이 이상한 값이 나오는데 에러는 없습니다. 손실 계산 직전에 항상 두 shape이 같은지 확인하세요.</div>
+<pre class="run"><code>N = 4
+y_hat = np.array([[1.], [2.], [3.], [4.]])  # (4,1)
+y = np.array([1., 2., 3., 4.])              # (4,)
+print("잘못된 MSE:", ((y_hat - y) ** 2).mean(), " shape:", (y_hat - y).shape)
+print("올바른 MSE:", ((y_hat.ravel() - y) ** 2).mean())
+</code></pre>
+
+<h2>6. 축(axis)을 따라 집계하기</h2>
+<p><code>axis=k</code>는 "k번 축을 <b>없애면서</b> 집계한다"고 기억하세요.</p>
+<pre class="run"><code>scores = np.array([[90, 80, 70],
+                   [60, 85, 95]])   # (학생 2명, 과목 3개)
+print("전체 평균:", scores.mean())
+print("과목별 평균 (axis=0, 학생 축 제거):", scores.mean(axis=0))
+print("학생별 평균 (axis=1, 과목 축 제거):", scores.mean(axis=1))
+print("학생별 최고 과목 인덱스:", scores.argmax(axis=1))
+
+# 이미지 배치 예: (N, C, H, W)에서 채널별 평균 → 정규화에 사용
+imgs = np.random.rand(8, 3, 32, 32)
+ch_mean = imgs.mean(axis=(0, 2, 3))
+print("채널별 평균 shape:", ch_mean.shape)
+</code></pre>
+
+<h2>7. 행렬곱 미리 보기</h2>
+<p>원소별 곱 <code>*</code>와 행렬곱 <code>@</code>는 완전히 다릅니다. 행렬곱은 내일 깊이 다루지만, 신경망 한 층이 결국 아래 한 줄이라는 것만 기억해 두세요.</p>
+<pre class="run"><code>X = np.random.randn(32, 784)    # 배치 32개, 입력 특성 784개 (28x28 이미지)
+W = np.random.randn(784, 128)   # 가중치
+b = np.zeros(128)               # 편향
+H = np.maximum(0, X @ W + b)    # 선형변환 + 브로드캐스팅 + ReLU = 신경망 한 층!
+print("H shape:", H.shape)      # (32, 128)
+</code></pre>
+
+<h2>8. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"shape (64, 3, 28, 28)인 텐서가 의미하는 것은?","o":["28장의 64×3 이미지","64장의 28×28 RGB(3채널) 이미지","3장의 64×28 이미지","64개의 3차원 벡터"],"a":1,"e":"PyTorch 관례는 (N, C, H, W)입니다. 배치 64, 채널 3, 높이·너비 28."},
+ {"q":"A.shape=(5, 1, 4), B.shape=(3, 1)일 때 A + B의 shape은?","o":["에러","(5, 3, 4)","(5, 1, 4)","(3, 4)"],"a":1,"e":"B를 (1, 3, 1)로 보고 오른쪽부터 비교합니다. 4 vs 1 → 4, 1 vs 3 → 3, 5 vs 1 → 5. 결과는 (5, 3, 4)."},
+ {"q":"X.shape=(100, 20)에서 각 특성(열)의 평균을 구하는 코드는?","o":["X.mean(axis=1)","X.mean(axis=0)","X.mean()","X.mean(axis=(0,1))"],"a":1,"e":"axis=0(샘플 축)을 없애면서 평균내야 특성별 평균 (20,)이 나옵니다."},
+ {"q":"y_hat.shape=(N,1), y.shape=(N,)일 때 ((y_hat - y)**2).mean()의 문제는?","o":["에러가 난다","(N,N) 행렬이 만들어져 잘못된 손실이 조용히 계산된다","정상 동작한다","dtype 에러"],"a":1,"e":"브로드캐스팅으로 (N,N)이 되어 에러 없이 틀린 값을 냅니다. 가장 흔한 조용한 버그입니다."},
+ {"q":"np.maximum(0, x)는 신경망에서 무엇에 해당하는가?","o":["소프트맥스","ReLU 활성화 함수","정규화","드롭아웃"],"a":1,"e":"ReLU(x) = max(0, x)입니다."}
+]</script>
+
+<h2>9. 연습 문제</h2>
+<ol>
+<li><b>표준화</b>: <code>X = np.random.rand(100, 5) * [1, 10, 100, 1000, 10000]</code>의 각 열을 평균 0, 표준편차 1로 만드세요(for 문 금지).</li>
+<li><b>원-핫 인코딩</b>: 레이블 <code>y = np.array([2, 0, 1, 2])</code>를 shape <code>(4, 3)</code>의 원-핫 행렬로 바꾸세요. 힌트: <code>np.eye(3)[y]</code>.</li>
+<li><b>거리 행렬</b>: 점 10개 <code>P</code> (shape (10,2))의 모든 쌍 사이 유클리드 거리 행렬 (10,10)을 브로드캐스팅으로 구하세요.</li>
+</ol>
+<pre class="run"><code># 여기서 직접 풀어 보세요
+X = np.random.rand(100, 5) * [1, 10, 100, 1000, 10000]
+# 1)
+Z = None
+# 2)
+y = np.array([2, 0, 1, 2])
+# 3)
+P = np.random.rand(10, 2)
+</code></pre>
+<details class="answer"><summary>정답 보기</summary>
+<pre><code>Z = (X - X.mean(axis=0)) / X.std(axis=0)
+print(Z.mean(axis=0).round(6), Z.std(axis=0))
+
+onehot = np.eye(3)[y]          # 정수 배열 인덱싱: 단위행렬의 y번째 행들
+
+D = np.sqrt(((P[:, None, :] - P[None, :, :]) ** 2).sum(axis=-1))   # (10,1,2)-(1,10,2) → (10,10,2) → (10,10)
+</code></pre></details>

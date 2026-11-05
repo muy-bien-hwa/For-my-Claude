@@ -1,0 +1,155 @@
+<ul class="goals">
+  <li>학습이 안 될 때 따라가는 <b>체계적인 디버깅 절차</b>를 익힌다.</li>
+  <li>학습률 찾기, 워밍업, 코사인 감쇠 등 <b>학습률 스케줄</b>의 원리를 이해한다.</li>
+  <li>하이퍼파라미터 탐색 우선순위와 방법(무작위 탐색 등)을 안다.</li>
+  <li>혼합 정밀도, 기울기 누적, 체크포인팅 등 <b>메모리·속도 최적화</b>를 사용한다.</li>
+  <li>실험 관리와 모델 평가·배포의 기본을 안다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 교과서에 없는 것들</span>
+논문은 성공한 결과만 보여 줍니다. 그 뒤에는 NaN, 꿈쩍 않는 손실, 이유 모를 성능 저하와 씨름한 수백 번의 실험이 있습니다. 오늘은 그 "숨은 노동"을 줄이는 노하우를 모았습니다. 캡스톤을 시작하기 전에 꼭 읽고, 캡스톤 중에 막히면 다시 돌아오세요.</div>
+
+<h2>1. 디버깅 레시피: 작게 시작해서 키워라</h2>
+<p>Karpathy의 "A Recipe for Training Neural Networks"를 바탕으로 한 순서입니다. <b>한 번에 하나씩만 바꾸세요.</b></p>
+<ol>
+<li><b>데이터부터 본다</b>: 학습 전에 샘플 수십 개를 눈으로 보세요. 레이블이 맞는지, 전처리 후 이미지가 이상하지 않은지(정규화, 채널 순서, 회전), 클래스 분포는 어떤지.</li>
+<li><b>바보 같은 베이스라인</b>: 항상 최빈 클래스를 예측하는 모델, 선형 모델. 내 신경망은 최소한 이것보다 좋아야 합니다.</li>
+<li><b>초기 손실 확인</b>: 분류면 $\ln K$ 근처여야 합니다(Day 9). 출력층 편향을 클래스 사전확률로 초기화하면 더 좋습니다.</li>
+<li><b>배치 하나 과적합</b>: 샘플 몇 개(배치 하나)로만 학습시켜 손실이 거의 0이 되는지 확인하세요. 이것도 안 되면 <b>버그</b>입니다(모델이 데이터를 볼 수 없거나, 손실·레이블이 잘못됨).</li>
+<li><b>전체 데이터로 과적합</b>: 규제 없이 충분히 큰 모델로 학습 정확도를 높일 수 있는지 확인.</li>
+<li><b>규제</b>: 그다음에 검증 성능을 위해 증강, 드롭아웃, 가중치 감쇠, 조기 종료를 추가.</li>
+<li><b>튜닝</b>: 학습률 → 스케줄 → 배치 크기 → 모델 크기 순.</li>
+</ol>
+<pre><code class="language-python"># "배치 하나 과적합" 테스트: 모든 새 프로젝트의 첫 실험
+xb, yb = next(iter(train_dl))
+xb, yb = xb[:16].to(device), yb[:16].to(device)
+model.train()
+for i in range(300):
+    loss = loss_fn(model(xb), yb)
+    opt.zero_grad(); loss.backward(); opt.step()
+    if i % 50 == 0: print(i, loss.item())
+# 손실이 0 근처로 가야 정상. 안 가면: 학습률? 모델이 입력을 무시? 레이블 형식? model.eval() 상태?
+</code></pre>
+
+<h2>2. 증상별 진단표</h2>
+<table>
+<tr><th>증상</th><th>흔한 원인</th><th>대처</th></tr>
+<tr><td>손실이 처음부터 NaN/inf</td><td>log(0), 0으로 나누기, 너무 큰 학습률, 정규화 안 된 입력</td><td>eps 추가, 안정 함수(<code>log_softmax</code>, <code>BCEWithLogits</code>), 학습률 ↓, 입력 정규화. <code>torch.autograd.set_detect_anomaly(True)</code></td></tr>
+<tr><td>중간에 갑자기 NaN</td><td>기울기 폭발, fp16 오버플로</td><td>기울기 클리핑, bf16 사용, 학습률 ↓, 워밍업</td></tr>
+<tr><td>손실이 전혀 안 줄어듦</td><td>학습률 너무 작음/큼, <code>zero_grad</code> 누락, 파라미터가 옵티마이저에 없음, 동결 실수, 데이터-레이블 불일치</td><td>배치 하나 과적합 테스트, 기울기 노름 출력</td></tr>
+<tr><td>손실이 줄다가 정체</td><td>학습률이 너무 커서 바닥 근처에서 진동, 용량 부족</td><td>학습률 감쇠 스케줄, 모델 키우기</td></tr>
+<tr><td>학습 ↑, 검증 정체/↓</td><td>과적합</td><td>Day 14의 규제들, 데이터 늘리기</td></tr>
+<tr><td>검증 성능이 학습보다 이상하게 높음</td><td>드롭아웃 효과(정상일 수 있음), 데이터 누수, 검증 세트가 너무 쉬움</td><td>분할 점검</td></tr>
+<tr><td>평가 결과가 실행마다 들쭉날쭉</td><td><code>model.eval()</code> 누락, 작은 검증 세트</td><td>eval 모드 확인, 검증 세트 키우기</td></tr>
+<tr><td>GPU 사용률 낮음</td><td>데이터 로딩 병목</td><td><code>num_workers</code>, <code>pin_memory</code>, 전처리 캐싱</td></tr>
+</table>
+<div class="callout tip"><span class="ct">💡 모니터링해야 할 숫자들</span>
+손실과 정확도 외에 <b>기울기 노름</b>, <b>학습률</b>, <b>층별 활성화·가중치 통계</b>, <b>업데이트/가중치 비율</b>(약 1e-3이 건강한 수준)을 기록하면 문제를 훨씬 빨리 찾습니다.</div>
+
+<h2>3. 학습률: 가장 중요한 하이퍼파라미터</h2>
+<h3>학습률 찾기 (LR range test)</h3>
+<p>학습률을 아주 작은 값(1e-7)에서 큰 값(10)까지 지수적으로 키우며 몇백 스텝 학습하고 손실을 기록합니다. 손실이 가장 가파르게 떨어지는 구간의 학습률, 혹은 손실이 최소인 지점의 약 1/10을 고릅니다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(0)
+# 간단한 로지스틱 회귀로 LR range test 시연
+X = rng.normal(size=(2000, 20)); w_true = rng.normal(size=20); y = (X @ w_true + rng.normal(0, .5, 2000) > 0).astype(float)
+w = np.zeros(20); lrs = np.logspace(-4, 1.5, 300); losses = []
+for i, lr in enumerate(lrs):
+    bi = rng.integers(0, 2000, 64); p = 1 / (1 + np.exp(-np.clip(X[bi] @ w, -30, 30)))
+    losses.append(-np.mean(y[bi] * np.log(p + 1e-9) + (1 - y[bi]) * np.log(1 - p + 1e-9)))
+    w -= lr * X[bi].T @ (p - y[bi]) / 64
+sm = np.convolve(losses, np.ones(10) / 10, mode='same')
+plt.figure(figsize=(7, 3.3)); plt.semilogx(lrs, sm); plt.ylim(0, 2)
+plt.xlabel('학습률'); plt.ylabel('손실(평활)'); plt.title('LR range test: 손실이 폭발하기 직전보다 한참 작은 값을 고른다'); plt.show()
+</code></pre>
+<h3>스케줄</h3>
+<ul>
+<li><b>워밍업</b>: 처음 몇 백~몇 천 스텝 동안 학습률을 0에서 목표값까지 선형으로 올립니다. 초기에는 Adam의 2차 모멘트 추정이 부정확하고 가중치가 무작위라 큰 업데이트가 위험합니다. Transformer 학습에 거의 필수입니다.</li>
+<li><b>코사인 감쇠</b>: 이후 코사인 곡선을 따라 서서히 줄입니다. 후반의 작은 학습률이 손실 지형의 좁은 골짜기 바닥으로 들어가게 해 줍니다.</li>
+<li><b>Step decay</b>: 특정 에폭마다 1/10. 고전적인 CNN 방식.</li>
+<li><b>ReduceLROnPlateau</b>: 검증 손실이 정체되면 줄임.</li>
+</ul>
+<pre class="run"><code>steps = np.arange(5000); warm = 300; lr_max, lr_min = 3e-4, 3e-5
+def warmup_cosine(s):
+    if s < warm: return lr_max * (s + 1) / warm
+    r = (s - warm) / (len(steps) - warm); return lr_min + 0.5 * (lr_max - lr_min) * (1 + np.cos(np.pi * r))
+step_decay = lambda s: lr_max * (0.1 ** (s // 2000))
+plt.figure(figsize=(7, 3)); plt.plot([warmup_cosine(s) for s in steps], label='워밍업 + 코사인'); plt.plot([step_decay(s) for s in steps], label='step decay')
+plt.xlabel('step'); plt.ylabel('lr'); plt.legend(); plt.show()
+</code></pre>
+<p><b>배치 크기와 학습률</b>: 배치를 $k$배 키우면 학습률도 대략 $k$배(SGD) 또는 $\sqrt k$배(Adam) 키우는 것이 출발점입니다(선형 스케일링 규칙). 단, 아주 큰 배치는 일반화가 약간 나빠질 수 있습니다.</p>
+
+<h2>4. 하이퍼파라미터 탐색</h2>
+<table>
+<tr><th>우선순위</th><th>하이퍼파라미터</th></tr>
+<tr><td>1 (가장 중요)</td><td>학습률</td></tr>
+<tr><td>2</td><td>학습률 스케줄, 학습 길이(에폭/스텝)</td></tr>
+<tr><td>3</td><td>가중치 감쇠, 드롭아웃, 증강 강도</td></tr>
+<tr><td>4</td><td>배치 크기, 모델 크기(깊이/너비)</td></tr>
+<tr><td>5</td><td>Adam β, ε, 초기화 세부</td></tr>
+</table>
+<ul>
+<li><b>격자 탐색보다 무작위 탐색</b>: 중요한 하이퍼파라미터는 소수이므로, 무작위로 뽑으면 중요한 축을 더 다양하게 탐색합니다(Bergstra & Bengio, 2012).</li>
+<li>학습률·가중치 감쇠는 <b>로그 스케일</b>로 뽑으세요(1e-5 ~ 1e-2).</li>
+<li>처음엔 넓게, 짧게(몇 에폭) 탐색하고, 좋은 구간에서 좁게, 길게.</li>
+<li>도구: Optuna(베이지안 최적화 + 조기 중단), W&amp;B Sweeps.</li>
+</ul>
+
+<h2>5. 메모리와 속도</h2>
+<h3>혼합 정밀도 (Mixed precision)</h3>
+<p>대부분의 연산을 16비트로 하면 메모리가 절반, 최신 GPU에서 속도가 2~3배입니다. <b>bf16</b>은 fp32와 지수 범위가 같아 오버플로 걱정이 거의 없고(A100 이상, 최근 GPU), <b>fp16</b>은 범위가 좁아 손실 스케일링이 필요합니다(T4 등).</p>
+<pre><code class="language-python">scaler = torch.amp.GradScaler("cuda")                  # fp16일 때만 필요
+for xb, yb in train_dl:
+    with torch.autocast(device_type="cuda", dtype=torch.float16):   # bf16 가능하면 torch.bfloat16
+        loss = loss_fn(model(xb), yb)
+    opt.zero_grad()
+    scaler.scale(loss).backward()                       # 작은 기울기가 0으로 사라지지 않게 키워서 역전파
+    scaler.unscale_(opt); torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    scaler.step(opt); scaler.update()
+</code></pre>
+<h3>기울기 누적 (Gradient accumulation)</h3>
+<p>GPU 메모리에 배치 256이 안 들어가면, 배치 64로 4번 순전파·역전파해서 기울기를 <b>누적</b>한 뒤 한 번 업데이트합니다. Day 10의 "기울기는 누적된다"를 이용하는 것입니다.</p>
+<pre><code class="language-python">accum = 4
+for i, (xb, yb) in enumerate(train_dl):
+    loss = loss_fn(model(xb), yb) / accum               # 평균을 맞추기 위해 나눔
+    loss.backward()                                      # 기울기가 .grad에 누적
+    if (i + 1) % accum == 0:
+        opt.step(); opt.zero_grad()
+</code></pre>
+<h3>기타</h3>
+<ul>
+<li><b>활성화 체크포인팅</b>: 순전파 때 일부 활성화를 저장하지 않고 역전파 때 다시 계산. 메모리 ↓, 시간 약 30% ↑.</li>
+<li><b><code>torch.compile(model)</code></b>: 그래프 최적화로 속도 향상(PyTorch 2.x).</li>
+<li><b>FlashAttention</b>: <code>F.scaled_dot_product_attention</code>이 자동으로 사용(Day 24).</li>
+<li><b>분산 학습</b>: 여러 GPU면 DDP(데이터 병렬), 모델이 GPU 하나에 안 들어가면 FSDP/ZeRO(파라미터 분할).</li>
+</ul>
+
+<h2>6. 평가와 배포의 기본</h2>
+<ul>
+<li><b>평가 지표를 먼저 정하라</b>: 정확도? F1? AUC? 상위 5개 정확도? 비즈니스 목표와 맞아야 합니다.</li>
+<li><b>오류 분석</b>: 틀린 샘플을 직접 보고 유형을 분류하세요. 레이블 오류가 생각보다 많습니다.</li>
+<li><b>보정(Calibration)</b>: 모델이 90% 확신한 예측이 실제로 90% 맞는지. 신경망은 과신하는 경향이 있습니다(온도 스케일링으로 보정).</li>
+<li><b>추론 최적화</b>: <code>model.eval()</code> + <code>torch.inference_mode()</code>, 양자화(int8), ONNX/TorchScript 내보내기.</li>
+<li><b>재현성 기록</b>: 코드 버전(git 커밋), 데이터 버전, 하이퍼파라미터, 시드, 환경(라이브러리 버전).</li>
+</ul>
+
+<h2>7. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"새 프로젝트에서 '배치 하나 과적합' 테스트가 실패했다(손실이 안 줄어듦). 가장 가능성 높은 것은?","o":["데이터가 부족하다","코드 버그(레이블 불일치, zero_grad 누락, 옵티마이저 등록 누락 등)","규제가 부족하다","모델이 너무 크다"],"a":1,"e":"작은 배치 하나는 어떤 모델이든 외울 수 있어야 정상입니다."},
+ {"q":"Transformer 학습에서 워밍업이 중요한 이유는?","o":["속도 향상","학습 초기 무작위 가중치와 부정확한 Adam 통계 상태에서 큰 업데이트로 학습이 불안정해지는 것을 막기 위해","메모리 절약","정확도 측정"],"a":1,"e":"작은 학습률로 시작해 서서히 올립니다."},
+ {"q":"학습률을 탐색할 때 적절한 방식은?","o":["0.001, 0.002, 0.003… 선형 간격","1e-5 ~ 1e-1을 로그 스케일로","1, 2, 3","고정"],"a":1,"e":"학습률의 효과는 배수 단위로 달라집니다."},
+ {"q":"GPU 메모리 부족으로 원하는 배치를 못 쓸 때 같은 효과를 내는 방법은?","o":["학습률 증가","기울기 누적","드롭아웃","에폭 증가"],"a":1,"e":"여러 미니배치의 기울기를 누적한 뒤 한 번 업데이트합니다."},
+ {"q":"fp16 혼합 정밀도에서 GradScaler가 필요한 이유는?","o":["속도","fp16의 좁은 표현 범위 때문에 작은 기울기가 0으로 언더플로되는 것을 막기 위해","정확도 향상","메모리 증가"],"a":1,"e":"손실을 크게 키워 역전파하고 업데이트 전에 되돌립니다. bf16은 보통 필요 없습니다."},
+ {"q":"학습 중 손실이 잘 줄다가 갑자기 NaN이 되었다. 우선 시도할 것은?","o":["모델 크기 증가","기울기 클리핑 + 학습률 감소(+ bf16)","드롭아웃 제거","데이터 증강"],"a":1,"e":"기울기 폭발이나 수치 오버플로가 흔한 원인입니다."}
+]</script>
+
+<h2>8. 4주차 정리와 캡스톤 준비</h2>
+<div class="callout key"><span class="ct">📚 4주차 요약</span>
+<ul style="margin:0"><li><b>어텐션</b>: softmax(QKᵀ/√d)V. 부드러운 사전 검색, 병렬, 경로 길이 1.</li>
+<li><b>Transformer</b>: (LN → MHA → 잔차) + (LN → FFN → 잔차) × N, 위치 인코딩.</li>
+<li><b>GPT</b>: causal 마스크 + 다음 토큰 예측 + 자기회귀 생성.</li>
+<li><b>LLM</b>: 스케일링 법칙, SFT → RLHF/DPO, LoRA, RAG.</li>
+<li><b>생성 모델</b>: VAE(ELBO), GAN(적대적), 확산(노이즈 예측 MSE).</li>
+<li><b>실전</b>: 작게 시작, 배치 하나 과적합, 학습률이 왕, 워밍업 + 코사인, 혼합 정밀도.</li></ul></div>
+<p>내일부터 캡스톤입니다. Day 1에 적어 둔 "풀고 싶은 문제" 목록을 다시 꺼내 오세요.</p>

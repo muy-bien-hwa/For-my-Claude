@@ -1,0 +1,219 @@
+<ul class="goals">
+  <li>Day 9의 층 클래스에 <code>backward</code>를 추가해 <b>완전한 MLP를 NumPy로</b> 구현한다.</li>
+  <li><b>기울기 검증(gradient checking)</b>으로 구현이 정확한지 증명한다.</li>
+  <li>미니배치 학습 루프를 작성하고 손글씨 숫자를 분류한다.</li>
+  <li>학습/검증 정확도를 추적하고 학습 곡선을 해석한다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 프레임워크 없이 만드는 마지막 모델</span>
+오늘 여러분은 딥러닝 프레임워크의 핵심을 직접 만듭니다. 오늘 이후 PyTorch를 쓸 때 <code>loss.backward()</code> 한 줄 뒤에서 무슨 일이 일어나는지 정확히 알게 됩니다. 이 페이지의 코드 상자는 <b>위에서부터 순서대로</b> 실행해야 합니다.</div>
+
+<h2>1. 설계: 모든 층은 forward와 backward를 가진다</h2>
+<ul>
+<li><code>forward(x)</code>: 출력 계산, 역전파에 필요한 값 캐시.</li>
+<li><code>backward(grad_out)</code>: 상류 기울기를 받아 (1) 자기 파라미터의 기울기를 저장하고 (2) 입력에 대한 기울기를 반환.</li>
+<li>모델의 <code>backward</code>는 층을 <b>역순으로</b> 돌며 기울기를 전달.</li>
+</ul>
+
+<h2>2. 층 구현</h2>
+<pre class="run"><code>import numpy as np
+rng = np.random.default_rng(0)
+
+class Linear:
+    def __init__(self, d_in, d_out):
+        self.W = rng.normal(0, np.sqrt(2 / d_in), (d_in, d_out))   # He 초기화
+        self.b = np.zeros(d_out)
+        self.dW = np.zeros_like(self.W); self.db = np.zeros_like(self.b)
+    def forward(self, x):
+        self.x = x
+        return x @ self.W + self.b
+    def backward(self, g):              # g: (N, d_out)
+        self.dW = self.x.T @ g          # (d_in, N) @ (N, d_out)
+        self.db = g.sum(axis=0)         # 배치 축으로 합
+        return g @ self.W.T             # (N, d_in)
+    def params(self): return [(self.W, self.dW), (self.b, self.db)]
+
+class ReLU:
+    def forward(self, x):
+        self.mask = x > 0
+        return x * self.mask
+    def backward(self, g): return g * self.mask
+    def params(self): return []
+
+class Tanh:
+    def forward(self, x):
+        self.out = np.tanh(x); return self.out
+    def backward(self, g): return g * (1 - self.out ** 2)
+    def params(self): return []
+
+class SoftmaxCrossEntropy:
+    """로짓과 정수 레이블을 받아 평균 CE 손실 계산. backward는 (P - onehot)/N"""
+    def forward(self, logits, y):
+        z = logits - logits.max(axis=1, keepdims=True)
+        self.P = np.exp(z) / np.exp(z).sum(axis=1, keepdims=True)
+        self.y = y
+        return -np.log(self.P[np.arange(len(y)), y] + 1e-12).mean()
+    def backward(self):
+        g = self.P.copy()
+        g[np.arange(len(self.y)), self.y] -= 1
+        return g / len(self.y)
+
+class Sequential:
+    def __init__(self, *layers): self.layers = list(layers)
+    def forward(self, x):
+        for l in self.layers: x = l.forward(x)
+        return x
+    def backward(self, g):
+        for l in reversed(self.layers): g = l.backward(g)
+        return g
+    def params(self): return [p for l in self.layers for p in l.params()]
+
+print("층 정의 완료 ✅")
+</code></pre>
+<div class="callout warn"><span class="ct">⚠️ 미묘한 함정: params()가 반환하는 dW</span>
+위 <code>params()</code>는 호출 시점의 <code>self.dW</code> 객체를 반환합니다. <code>backward</code>에서 <code>self.dW = ...</code>로 <b>새 배열을 대입</b>하므로, 업데이트할 때는 반드시 backward 이후에 <code>params()</code>를 다시 호출해야 합니다. 아래 옵티마이저는 매번 다시 호출합니다. (PyTorch는 <code>.grad</code> 속성으로 이 문제를 깔끔하게 해결합니다.)</div>
+
+<h2>3. 기울기 검증 — 내 역전파는 맞는가?</h2>
+<p>모든 파라미터에 대해 수치 미분과 비교합니다. <b>상대 오차</b>가 $10^{-6}$ 이하면 거의 확실히 맞고, $10^{-2}$ 이상이면 버그입니다.</p>
+$$\text{rel\_err} = \frac{|g_{\text{analytic}} - g_{\text{numeric}}|}{\max(|g_{\text{analytic}}|,|g_{\text{numeric}}|, 10^{-8})}$$
+<pre class="run"><code>def grad_check(model, loss_fn, X, y, n_checks=8, h=1e-5):
+    loss_fn.forward(model.forward(X), y)
+    model.backward(loss_fn.backward())
+    worst = 0
+    for (p, dp) in model.params():
+        for _ in range(n_checks):
+            idx = tuple(rng.integers(0, s) for s in p.shape)
+            old = p[idx]
+            p[idx] = old + h; lp = loss_fn.forward(model.forward(X), y)
+            p[idx] = old - h; lm = loss_fn.forward(model.forward(X), y)
+            p[idx] = old
+            num = (lp - lm) / (2 * h); ana = dp[idx]
+            rel = abs(num - ana) / max(abs(num), abs(ana), 1e-8)
+            worst = max(worst, rel)
+    return worst
+
+Xg = rng.normal(size=(5, 6)); yg = rng.integers(0, 3, 5)
+m = Sequential(Linear(6, 8), Tanh(), Linear(8, 7), ReLU(), Linear(7, 3))
+loss_fn = SoftmaxCrossEntropy()
+err = grad_check(m, loss_fn, Xg, yg)
+print(f"최대 상대 오차: {err:.2e}", "✅ 역전파 구현 정확!" if err < 1e-5 else "❌ 버그가 있습니다")
+</code></pre>
+<div class="callout tip"><span class="ct">💡 일부러 버그를 넣어 보세요</span>
+<code>Linear.backward</code>에서 <code>self.db = g.sum(axis=0)</code>을 <code>g.mean(axis=0)</code>로 바꾸고 다시 실행해 보세요. 기울기 검증이 즉시 잡아냅니다. 새 층을 직접 구현할 때마다 이 검사를 통과시키는 습관을 들이세요.</div>
+<p>참고: ReLU의 꺾이는 점(0) 근처에서는 수치 미분이 부정확해 오차가 가끔 크게 나올 수 있습니다. 여러 번 실행해서 대부분 작으면 괜찮습니다.</p>
+
+<h2>4. 옵티마이저와 학습 루프</h2>
+<pre class="run"><code>class SGD:
+    def __init__(self, model, lr): self.model, self.lr = model, lr
+    def step(self):
+        for p, dp in self.model.params():
+            p -= self.lr * dp            # 제자리(in-place) 업데이트: 객체를 유지해야 함!
+
+def make_digits(n_per=150, seed=0):
+    T = {0:["..####..",".##..##.",".##..##.",".##..##.",".##..##.",".##..##.",".##..##.","..####.."],
+         1:["...##...","..###...",".####...","...##...","...##...","...##...","...##...",".######."],
+         2:["..####..",".##..##.",".....##.","....##..","...##...","..##....",".##.....",".######."],
+         3:["..####..",".##..##.",".....##.","...###..",".....##.",".....##.",".##..##.","..####.."],
+         4:["....##..","...###..","..####..",".##.##..","##..##..","#######.","....##..","....##.."],
+         5:[".######.",".##.....",".#####..",".....##.",".....##.",".....##.",".##..##.","..####.."],
+         6:["..####..",".##.....",".##.....",".#####..",".##..##.",".##..##.",".##..##.","..####.."],
+         7:[".######.",".....##.","....##..","....##..","...##...","...##...","..##....","..##...."],
+         8:["..####..",".##..##.",".##..##.","..####..",".##..##.",".##..##.",".##..##.","..####.."],
+         9:["..####..",".##..##.",".##..##.","..#####.",".....##.",".....##.","....##..","..###..."]}
+    r = np.random.default_rng(seed); X, Y = [], []
+    for d, rows in T.items():
+        base = np.array([[c == '#' for c in row] for row in rows], float)
+        for _ in range(n_per):
+            img = np.roll(base, (r.integers(-1, 2), r.integers(-1, 2)), axis=(0, 1))
+            img = np.clip(img * r.uniform(0.5, 1.0) + r.normal(0, 0.25, (8, 8)), 0, 1)
+            X.append(img.ravel()); Y.append(d)
+    X, Y = np.array(X), np.array(Y); idx = r.permutation(len(Y))
+    return X[idx], Y[idx]
+
+X, y = make_digits()
+# 학습 / 검증 분할 (80 / 20)
+n_tr = int(0.8 * len(y))
+Xtr, ytr, Xva, yva = X[:n_tr], y[:n_tr], X[n_tr:], y[n_tr:]
+mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-8          # 정규화 통계는 학습 데이터로만!
+Xtr, Xva = (Xtr - mu) / sd, (Xva - mu) / sd
+print("학습:", Xtr.shape, " 검증:", Xva.shape)
+
+def accuracy(model, X, y): return (model.forward(X).argmax(1) == y).mean()
+
+model = Sequential(Linear(64, 64), ReLU(), Linear(64, 32), ReLU(), Linear(32, 10))
+loss_fn = SoftmaxCrossEntropy(); opt = SGD(model, lr=0.1)
+hist = {"loss": [], "tr": [], "va": []}
+B = 32
+for epoch in range(30):
+    idx = rng.permutation(n_tr); ep_loss = 0
+    for s in range(0, n_tr, B):
+        bi = idx[s:s + B]
+        loss = loss_fn.forward(model.forward(Xtr[bi]), ytr[bi])   # 1. 순전파 + 2. 손실
+        model.backward(loss_fn.backward())                         # 3. 역전파
+        opt.step()                                                 # 4. 업데이트
+        ep_loss += loss * len(bi)
+    hist["loss"].append(ep_loss / n_tr); hist["tr"].append(accuracy(model, Xtr, ytr)); hist["va"].append(accuracy(model, Xva, yva))
+    if epoch % 5 == 0 or epoch == 29:
+        print(f"epoch {epoch:2d}  loss {hist['loss'][-1]:.4f}  train acc {hist['tr'][-1]:.3f}  val acc {hist['va'][-1]:.3f}")
+</code></pre>
+<div class="callout key"><span class="ct">🔑 in-place 업데이트가 중요한 이유</span>
+<code>p -= lr * dp</code>는 배열 <code>p</code>를 제자리에서 수정합니다. 만약 <code>p = p - lr * dp</code>라고 쓰면 새 배열이 만들어져 지역 변수 <code>p</code>만 바뀌고 층 안의 <code>self.W</code>는 그대로입니다. 학습이 전혀 안 되는데 에러도 없는, 찾기 어려운 버그입니다.</div>
+
+<h2>5. 학습 곡선 읽기</h2>
+<pre class="run"><code>import matplotlib.pyplot as plt
+fig, ax = plt.subplots(1, 2, figsize=(11, 3.5))
+ax[0].plot(hist["loss"]); ax[0].set_title("학습 손실"); ax[0].set_xlabel("epoch")
+ax[1].plot(hist["tr"], label="train"); ax[1].plot(hist["va"], label="validation")
+ax[1].set_title("정확도"); ax[1].set_xlabel("epoch"); ax[1].legend(); plt.tight_layout(); plt.show()
+
+# 틀린 예시 보기
+pred = model.forward(Xva).argmax(1); wrong = np.where(pred != yva)[0][:10]
+if len(wrong):
+    fig, axs = plt.subplots(1, len(wrong), figsize=(1.3 * len(wrong), 1.8))
+    for a, i in zip(np.atleast_1d(axs), wrong):
+        a.imshow((Xva[i] * sd + mu).reshape(8, 8), cmap='gray_r'); a.set_title(f"{yva[i]}→{pred[i]}", fontsize=10); a.axis('off')
+    plt.suptitle("검증 데이터에서 틀린 예 (정답→예측)"); plt.show()
+</code></pre>
+<ul>
+<li><b>학습·검증 정확도가 함께 오름</b>: 잘 학습되는 중.</li>
+<li><b>학습은 오르는데 검증은 정체·하락</b>: 과적합 시작(Day 14).</li>
+<li><b>둘 다 낮음</b>: 과소적합. 모델을 키우거나, 더 오래 학습하거나, 학습률을 조정.</li>
+<li><b>손실이 요동</b>: 학습률이 크거나 배치가 너무 작음.</li>
+</ul>
+
+<h2>6. 혼동 행렬</h2>
+<pre class="run"><code>cm = np.zeros((10, 10), int)
+for t, p in zip(yva, model.forward(Xva).argmax(1)): cm[t, p] += 1
+plt.figure(figsize=(5, 4.3)); plt.imshow(cm, cmap='Blues'); plt.colorbar()
+for i in range(10):
+    for j in range(10):
+        if cm[i, j]: plt.text(j, i, cm[i, j], ha='center', va='center', fontsize=8, color='white' if cm[i, j] > cm.max()/2 else 'black')
+plt.xlabel("예측"); plt.ylabel("정답"); plt.xticks(range(10)); plt.yticks(range(10)); plt.title("혼동 행렬"); plt.show()
+</code></pre>
+<p>어떤 숫자끼리 자주 헷갈리나요? 3과 8, 5와 6처럼 모양이 비슷한 쌍일 겁니다.</p>
+
+<h2>7. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"기울기 검증 결과 상대 오차가 0.3이 나왔다. 해석은?","o":["정상","역전파 구현에 버그가 있을 가능성이 높다","학습률이 크다","데이터가 부족하다"],"a":1,"e":"1e-6 이하가 정상, 1e-2 이상이면 거의 확실히 버그입니다."},
+ {"q":"정규화(mean/std)를 계산할 때 검증 데이터를 포함하면 안 되는 이유는?","o":["계산이 느려져서","검증 데이터의 정보가 학습에 새어 들어가(데이터 누수) 성능을 과대평가하게 되므로","메모리 부족","상관없다"],"a":1,"e":"검증·테스트 데이터는 '미래의 처음 보는 데이터'를 흉내 내야 합니다."},
+ {"q":"p = p - lr * dp 로 업데이트하면 생기는 문제는?","o":["더 빠르다","지역 변수만 바뀌고 모델의 실제 가중치는 업데이트되지 않는다","NaN이 생긴다","문제없다"],"a":1,"e":"새 배열을 만들어 이름만 다시 연결하므로 원본 배열은 그대로입니다."},
+ {"q":"Linear 층 backward에서 db = g.sum(axis=0)인 이유는?","o":["관례","편향이 배치의 모든 샘플에 더해지므로(분기) 각 샘플의 기울기를 합산","평균이 더 정확해서","g가 스칼라라서"],"a":1,"e":"평균 손실의 1/N은 이미 손실 쪽 기울기(P−Y)/N에 들어 있습니다."}
+]</script>
+
+<h2>8. 연습 문제</h2>
+<ol>
+<li>은닉층 크기를 16, 128로 바꾸고 학습/검증 정확도를 비교하세요.</li>
+<li>학습률을 0.01, 0.5, 2.0으로 바꿔 보세요. 각각 어떤 곡선이 나오나요?</li>
+<li>도전: <code>Sigmoid</code> 층을 추가하고, ReLU 대신 Sigmoid로 5층짜리 깊은 망을 만들어 학습시켜 보세요. 학습이 잘 되나요? 각 Linear 층의 <code>dW</code> 크기(<code>np.abs(dW).mean()</code>)를 출력해 보면 기울기 소실을 직접 볼 수 있습니다.</li>
+</ol>
+<pre class="run"><code># 연습 공간: 3번 힌트
+class Sigmoid:
+    def forward(self, x): self.out = 1 / (1 + np.exp(-x)); return self.out
+    def backward(self, g): return g * self.out * (1 - self.out)
+    def params(self): return []
+
+deep = Sequential(Linear(64, 32), Sigmoid(), Linear(32, 32), Sigmoid(), Linear(32, 32), Sigmoid(), Linear(32, 32), Sigmoid(), Linear(32, 10))
+loss_fn.forward(deep.forward(Xtr[:64]), ytr[:64]); deep.backward(loss_fn.backward())
+for i, l in enumerate(deep.layers):
+    if isinstance(l, Linear): print(f"Linear {i}: 평균 |dW| = {np.abs(l.dW).mean():.2e}")
+</code></pre>

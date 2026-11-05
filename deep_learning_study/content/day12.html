@@ -1,0 +1,175 @@
+<ul class="goals">
+  <li>바닐라 SGD의 세 가지 문제(지그재그, 안장점, 파라미터별 스케일 차이)를 이해한다.</li>
+  <li><b>모멘텀</b>, <b>RMSProp</b>, <b>Adam</b>의 업데이트 식을 유도하고 직관을 설명한다.</li>
+  <li>지수 이동 평균(EMA)과 편향 보정의 의미를 안다.</li>
+  <li>AdamW와 가중치 감쇠의 차이, 실무 기본 하이퍼파라미터를 안다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 같은 산, 다른 등산가</span>
+어제까지 우리는 가장 단순한 등산법, "발밑이 가장 가파른 쪽으로 한 걸음"(SGD)만 썼습니다. 오늘은 관성을 이용하는 등산가(모멘텀), 지형에 따라 보폭을 조절하는 등산가(RMSProp), 둘 다 하는 등산가(Adam)를 만납니다. 오늘날 거의 모든 대형 모델이 Adam 계열로 학습됩니다.</div>
+
+<h2>1. SGD의 문제점</h2>
+<ol>
+<li><b>길쭉한 골짜기</b>: 한 방향은 가파르고 다른 방향은 완만하면, 가파른 방향으로 진동하느라 완만한 방향으로 거의 못 갑니다. 학습률을 키우면 발산하고, 줄이면 너무 느립니다.</li>
+<li><b>안장점과 평탄 지대</b>: 기울기가 거의 0인 곳에서 멈춥니다. 고차원에서는 국소 최소점보다 안장점이 훨씬 흔합니다.</li>
+<li><b>모든 파라미터에 같은 학습률</b>: 자주 업데이트되는 파라미터와 드물게 업데이트되는 파라미터(예: 희귀 단어의 임베딩)에 같은 보폭을 쓰는 것은 비효율적입니다.</li>
+</ol>
+
+<h2>2. 모멘텀: 관성을 더하자</h2>
+<p>공이 언덕을 굴러 내려가듯, 이전 이동 방향을 기억합니다.</p>
+$$\mathbf v_t = \beta\mathbf v_{t-1} + \mathbf g_t,\qquad \theta_t = \theta_{t-1} - \eta\mathbf v_t\qquad(\beta\approx0.9)$$
+<ul>
+<li>진동하는 방향: 기울기 부호가 계속 바뀌므로 $\mathbf v$에서 서로 <b>상쇄</b>됩니다.</li>
+<li>일관된 방향: 기울기가 계속 같은 쪽이므로 <b>누적</b>되어 가속합니다(최대 약 $1/(1-\beta) = 10$배).</li>
+<li>작은 언덕이나 평탄 지대를 관성으로 넘어갈 수 있습니다.</li>
+</ul>
+<p><b>네스테로프 모멘텀</b>은 "관성으로 갈 위치에서 미리 기울기를 본다"는 개선판입니다. 실무에서는 <code>SGD(momentum=0.9, nesterov=True)</code>로 씁니다.</p>
+
+<h2>3. 지수 이동 평균 (EMA)</h2>
+<p>모멘텀과 Adam의 핵심 도구입니다.</p>
+$$m_t = \beta m_{t-1} + (1-\beta)x_t$$
+<p>최근 약 $1/(1-\beta)$개 값의 평균처럼 동작합니다. $\beta=0.9$면 최근 10개, $0.999$면 최근 1000개. 메모리 없이 이동 평균을 구할 수 있어서 딥러닝 곳곳(BatchNorm 통계, 모델 가중치 EMA 등)에 쓰입니다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(0)
+t = np.arange(200); x = np.sin(t / 20) + rng.normal(0, 0.4, 200)
+
+def ema(x, beta, bias_correct=False):
+    m, out = 0.0, []
+    for i, v in enumerate(x, 1):
+        m = beta * m + (1 - beta) * v
+        out.append(m / (1 - beta ** i) if bias_correct else m)
+    return np.array(out)
+
+plt.figure(figsize=(9, 3.2)); plt.plot(x, '.', alpha=.3, label='원본(노이즈)')
+plt.plot(ema(x, 0.9), label='EMA β=0.9'); plt.plot(ema(x, 0.98), label='EMA β=0.98 (보정 없음)')
+plt.plot(ema(x, 0.98, True), '--', label='EMA β=0.98 + 편향 보정'); plt.legend(fontsize=8); plt.show()
+</code></pre>
+<p>초기값 0에서 시작하기 때문에 처음 몇 스텝의 EMA는 0 쪽으로 <b>편향</b>됩니다(β=0.98 곡선의 앞부분). $1-\beta^t$로 나눠 주면 보정됩니다. Adam이 이 보정을 합니다.</p>
+
+<h2>4. RMSProp: 파라미터마다 보폭 조절</h2>
+$$\mathbf s_t = \rho\mathbf s_{t-1} + (1-\rho)\mathbf g_t^2,\qquad \theta_t = \theta_{t-1} - \frac{\eta}{\sqrt{\mathbf s_t}+\epsilon}\mathbf g_t$$
+<p>(제곱과 나눗셈은 원소별.) 최근 기울기가 <b>컸던</b> 방향은 보폭을 줄이고, <b>작았던</b> 방향은 키웁니다. 길쭉한 골짜기를 둥근 그릇처럼 바꿔 주는 효과입니다. 대략 "기울기의 부호 방향으로, 크기는 정규화해서" 움직이는 셈입니다.</p>
+
+<h2>5. Adam = 모멘텀 + RMSProp + 편향 보정</h2>
+$$\begin{aligned}
+\mathbf m_t &= \beta_1\mathbf m_{t-1} + (1-\beta_1)\mathbf g_t &&\text{(1차 모멘트: 방향)}\\
+\mathbf v_t &= \beta_2\mathbf v_{t-1} + (1-\beta_2)\mathbf g_t^2 &&\text{(2차 모멘트: 크기)}\\
+\hat{\mathbf m}_t &= \mathbf m_t/(1-\beta_1^t),\quad \hat{\mathbf v}_t = \mathbf v_t/(1-\beta_2^t) &&\text{(편향 보정)}\\
+\theta_t &= \theta_{t-1} - \eta\,\frac{\hat{\mathbf m}_t}{\sqrt{\hat{\mathbf v}_t}+\epsilon}
+\end{aligned}$$
+<p>기본값: $\beta_1 = 0.9$, $\beta_2 = 0.999$, $\epsilon = 10^{-8}$, $\eta = 10^{-3}$. 이 기본값이 놀랍도록 많은 문제에서 잘 동작합니다.</p>
+<div class="viz-mount" data-viz="optim"></div>
+<div class="callout prof"><span class="ct">👨‍🏫 관찰 포인트</span>
+<ul style="margin:0"><li><b>길쭉한 골짜기</b>: SGD는 세로로 진동하며 거의 전진하지 못합니다. 모멘텀은 진동하지만 가속하고, RMSProp·Adam은 거의 직선으로 갑니다.</li>
+<li><b>로젠브록</b>: 휘어진 좁은 골짜기. 모멘텀은 크게 휘어 오버슈트합니다.</li>
+<li><b>국소 최소점</b>: 시작점을 바꿔 가며 누가 더 깊은 골짜기에 도달하는지 보세요. 정답은 상황마다 다릅니다.</li></ul></div>
+
+<h2>6. NumPy로 구현하기</h2>
+<p>Day 11의 <code>(파라미터, 기울기)</code> 인터페이스에 맞춘 옵티마이저입니다. 상태(<code>v</code>, <code>m</code>)를 파라미터마다 따로 가져야 합니다.</p>
+<pre class="run"><code>class Momentum:
+    def __init__(self, params_fn, lr=0.01, beta=0.9):
+        self.params_fn, self.lr, self.beta, self.v = params_fn, lr, beta, None
+    def step(self):
+        ps = self.params_fn()
+        if self.v is None: self.v = [np.zeros_like(p) for p, _ in ps]
+        for (p, g), v in zip(ps, self.v):
+            v *= self.beta; v += g
+            p -= self.lr * v
+
+class Adam:
+    def __init__(self, params_fn, lr=1e-3, b1=0.9, b2=0.999, eps=1e-8):
+        self.params_fn, self.lr, self.b1, self.b2, self.eps = params_fn, lr, b1, b2, eps
+        self.m = self.v = None; self.t = 0
+    def step(self):
+        ps = self.params_fn(); self.t += 1
+        if self.m is None:
+            self.m = [np.zeros_like(p) for p, _ in ps]; self.v = [np.zeros_like(p) for p, _ in ps]
+        for (p, g), m, v in zip(ps, self.m, self.v):
+            m *= self.b1; m += (1 - self.b1) * g
+            v *= self.b2; v += (1 - self.b2) * g * g
+            mh = m / (1 - self.b1 ** self.t); vh = v / (1 - self.b2 ** self.t)
+            p -= self.lr * mh / (np.sqrt(vh) + self.eps)
+
+# 테스트: 나쁜 조건수의 이차 함수 f = 0.5*(x^2 + 100 y^2)
+def run(opt_cls, steps=200, **kw):
+    theta = np.array([-5.0, 1.0]); grad = np.zeros(2)
+    def params_fn():
+        grad[:] = [theta[0], 100 * theta[1]]       # 현재 위치의 기울기
+        return [(theta, grad)]
+    opt = opt_cls(params_fn, **kw); traj = [theta.copy()]
+    for _ in range(steps): opt.step(); traj.append(theta.copy())
+    return np.array(traj)
+
+class SGDp:
+    def __init__(self, params_fn, lr): self.params_fn, self.lr = params_fn, lr
+    def step(self):
+        for p, g in self.params_fn(): p -= self.lr * g
+
+for name, cls, kw in [("SGD", SGDp, dict(lr=0.009)), ("Momentum", Momentum, dict(lr=0.009)), ("Adam", Adam, dict(lr=0.3))]:
+    tr = run(cls, **kw)
+    f = 0.5 * (tr[:, 0]**2 + 100 * tr[:, 1]**2)
+    print(f"{name:9s} 50스텝 후 f={f[50]:.2e}   200스텝 후 f={f[-1]:.2e}")
+</code></pre>
+
+<h2>7. Day 11 모델에 Adam 적용</h2>
+<p>Day 11을 이 세션에서 실행했다면 아래 코드로 SGD와 Adam을 비교할 수 있습니다. (실행하지 않았다면 Day 11의 코드 상자들을 먼저 실행하세요.)</p>
+<pre class="run"><code>try:
+    results = {}
+    for name in ["SGD", "Momentum", "Adam"]:
+        rng = np.random.default_rng(0)
+        m = Sequential(Linear(64, 64), ReLU(), Linear(64, 32), ReLU(), Linear(32, 10))
+        lf = SoftmaxCrossEntropy()
+        opt = {"SGD": lambda: SGD(m, 0.05), "Momentum": lambda: Momentum(m.params, lr=0.02), "Adam": lambda: Adam(m.params, lr=2e-3)}[name]()
+        curve = []
+        for ep in range(10):
+            idx = rng.permutation(len(ytr))
+            for s in range(0, len(ytr), 32):
+                bi = idx[s:s+32]; lf.forward(m.forward(Xtr[bi]), ytr[bi]); m.backward(lf.backward()); opt.step()
+            curve.append(lf.forward(m.forward(Xtr), ytr))
+        results[name] = curve
+        print(f"{name:9s} 최종 학습 손실 {curve[-1]:.4f}  검증 정확도 {(m.forward(Xva).argmax(1) == yva).mean():.3f}")
+    plt.figure(figsize=(6, 3.2))
+    for k, v in results.items(): plt.plot(v, label=k)
+    plt.yscale('log'); plt.xlabel('epoch'); plt.ylabel('train loss'); plt.legend(); plt.show()
+except NameError as e:
+    print("Day 11의 코드를 먼저 실행하세요:", e)
+</code></pre>
+
+<h2>8. AdamW와 실무 가이드</h2>
+<p>L2 규제(Day 14)를 Adam에 그냥 손실로 더하면, 그 기울기도 $\sqrt{\hat v}$로 나눠져 규제 효과가 파라미터마다 왜곡됩니다. <b>AdamW</b>는 가중치 감쇠를 업데이트에서 분리합니다: $\theta \leftarrow \theta - \eta(\text{Adam 업데이트} + \lambda\theta)$. 현재 Transformer 학습의 표준입니다.</p>
+<table>
+<tr><th>상황</th><th>추천</th></tr>
+<tr><td>처음 시도 / 대부분의 경우</td><td><b>AdamW</b>, lr = 1e-3 ~ 3e-4, weight_decay = 0.01 ~ 0.1</td></tr>
+<tr><td>Transformer / LLM</td><td>AdamW (β₂ = 0.95~0.999) + 워밍업 + 코사인 감쇠</td></tr>
+<tr><td>CNN 이미지 분류 (최고 성능을 노릴 때)</td><td>SGD + 모멘텀 0.9 + 스케줄. 일반화가 약간 더 좋은 경우가 많음</td></tr>
+<tr><td>미세조정(Fine-tuning)</td><td>AdamW, 작은 lr (1e-5 ~ 5e-5)</td></tr>
+</table>
+<div class="callout tip"><span class="ct">💡 "Adam의 마법 학습률" 3e-4</span>
+Karpathy의 농담 섞인 트윗 "3e-4 is the best learning rate for Adam, hands down"이 유명합니다. 농담이지만, 처음 시도할 때 꽤 좋은 출발점인 것은 사실입니다.</div>
+
+<h2>9. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"모멘텀이 길쭉한 골짜기에서 도움이 되는 이유는?","o":["학습률을 자동으로 줄여서","진동 방향의 기울기는 상쇄되고 일관된 방향은 누적되어서","기울기를 정확히 계산해서","파라미터 수를 줄여서"],"a":1,"e":"부호가 바뀌는 성분은 평균이 0에 가깝고, 같은 부호 성분은 쌓입니다."},
+ {"q":"Adam에서 v(2차 모멘트)의 역할은?","o":["방향 결정","파라미터별로 최근 기울기 크기에 반비례하게 보폭을 조절","학습률 감쇠","정규화"],"a":1,"e":"√v로 나누어 기울기가 큰 방향은 작게, 작은 방향은 크게 움직입니다."},
+ {"q":"Adam의 편향 보정이 필요한 이유는?","o":["m, v를 0으로 초기화해서 초기 스텝의 추정치가 0 쪽으로 치우치기 때문","수치 오버플로 방지","학습률 스케줄","과적합 방지"],"a":0,"e":"1−β^t로 나누어 초기 편향을 보정합니다. t가 커지면 보정 계수는 1에 가까워집니다."},
+ {"q":"EMA에서 β=0.99는 대략 최근 몇 개 값의 평균인가?","o":["10","100","1000","99"],"a":1,"e":"1/(1−β) = 100"},
+ {"q":"AdamW가 Adam + L2 손실과 다른 점은?","o":["학습률이 다르다","가중치 감쇠를 적응형 스케일링과 분리해 모든 파라미터에 일관되게 적용한다","모멘텀이 없다","차이 없다"],"a":1,"e":"L2 기울기가 √v로 나눠지는 왜곡을 없앤 것이 AdamW입니다."}
+]</script>
+
+<h2>10. 연습 문제</h2>
+<ol>
+<li>RMSProp 클래스를 직접 구현해 위 테스트(<code>run</code>)에 추가하세요.</li>
+<li>실험실의 옵티마이저 경주에서 학습률을 0.2로 올렸을 때 각 옵티마이저의 거동을 관찰하고 노트에 기록하세요.</li>
+</ol>
+<details class="answer"><summary>RMSProp 정답</summary>
+<pre><code>class RMSProp:
+    def __init__(self, params_fn, lr=1e-2, rho=0.9, eps=1e-8):
+        self.params_fn, self.lr, self.rho, self.eps, self.s = params_fn, lr, rho, eps, None
+    def step(self):
+        ps = self.params_fn()
+        if self.s is None: self.s = [np.zeros_like(p) for p, _ in ps]
+        for (p, g), s in zip(ps, self.s):
+            s *= self.rho; s += (1 - self.rho) * g * g
+            p -= self.lr * g / (np.sqrt(s) + self.eps)
+</code></pre></details>

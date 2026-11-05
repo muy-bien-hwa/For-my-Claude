@@ -1,0 +1,157 @@
+<ul class="goals">
+  <li>선형회귀 모델 $\hat y = wx + b$와 MSE 손실을 정의한다.</li>
+  <li>손실의 그래디언트를 직접 유도하고 <b>경사하강법</b>으로 학습시킨다.</li>
+  <li>학습률이 너무 크거나 작을 때 무슨 일이 생기는지 눈으로 확인한다.</li>
+  <li>배치 GD, <b>확률적 GD(SGD)</b>, 미니배치 GD의 차이와 에폭 개념을 이해한다.</li>
+  <li>여러 특성을 가진 선형회귀를 행렬식으로 벡터화한다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 오늘이 진짜 첫 '학습'입니다</span>
+지난 나흘간 모은 재료(텐서, 내적, 미분, 최대우도)가 오늘 하나로 합쳐집니다. 오늘 짤 20줄짜리 학습 루프는 GPT를 학습시키는 루프와 <b>구조가 완전히 같습니다</b>. 모델이 크고, 데이터가 많고, 미분을 자동으로 할 뿐입니다. 이 사실을 꼭 기억하세요.</div>
+
+<h2>1. 문제 설정</h2>
+<p>공부 시간 $x$로 시험 점수 $y$를 예측하고 싶습니다. 가장 단순한 가설은 직선입니다.</p>
+$$\hat y = w x + b$$
+<p>파라미터는 $\theta = (w, b)$ 두 개입니다. 좋은 직선이란 예측 $\hat y_i$와 정답 $y_i$의 차이가 작은 직선이고, 어제 배웠듯이 가우시안 노이즈를 가정하면 손실은 MSE입니다.</p>
+$$L(w,b) = \frac1N\sum_{i=1}^N (\hat y_i - y_i)^2 = \frac1N\sum_{i=1}^N (wx_i + b - y_i)^2$$
+
+<h2>2. 그래디언트 유도</h2>
+<p>잔차 $r_i = wx_i + b - y_i$라 두고 연쇄법칙을 쓰면</p>
+$$\frac{\partial L}{\partial w} = \frac{2}{N}\sum_i r_i\,x_i,\qquad \frac{\partial L}{\partial b} = \frac{2}{N}\sum_i r_i$$
+<p>해석해 봅시다. 예측이 너무 크면($r_i&gt;0$) 기울기가 양수가 되고, 경사하강법은 $w$, $b$를 <b>줄입니다</b>. 맞는 방향이죠. 그리고 $w$에 대한 기울기에는 $x_i$가 곱해집니다. 입력이 큰 샘플일수록 $w$의 책임이 크다는 뜻입니다.</p>
+
+<h2>3. 경사하강법</h2>
+$$w \leftarrow w - \eta\frac{\partial L}{\partial w},\qquad b \leftarrow b - \eta\frac{\partial L}{\partial b}$$
+<p>$\eta$는 <b>학습률</b>(보폭)입니다. 산에서 안개 속에 갇혔을 때, 발밑의 경사만 느끼면서 가장 가파른 내리막으로 한 걸음씩 내려가는 것과 같습니다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(42)
+
+# 가짜 데이터: 진짜 관계 y = 3x + 2 + 노이즈
+N = 100
+x = rng.uniform(0, 5, N)
+y = 3 * x + 2 + rng.normal(0, 1.0, N)
+
+w, b = 0.0, 0.0      # 초기값
+lr = 0.02            # 학습률
+history = []
+for step in range(500):
+    y_hat = w * x + b                    # 1) 순전파: 예측
+    r = y_hat - y
+    loss = (r ** 2).mean()               # 2) 손실 계산
+    dw = 2 * (r * x).mean()              # 3) 그래디언트 계산
+    db = 2 * r.mean()
+    w -= lr * dw                         # 4) 파라미터 업데이트
+    b -= lr * db
+    history.append(loss)
+    if step % 100 == 0:
+        print(f"step {step:3d}  loss {loss:8.4f}  w {w:.3f}  b {b:.3f}")
+print(f"최종: w={w:.3f}, b={b:.3f}  (정답 w=3, b=2)")
+
+fig, ax = plt.subplots(1, 2, figsize=(11, 3.5))
+ax[0].scatter(x, y, s=10, alpha=.6); xs = np.linspace(0, 5, 10)
+ax[0].plot(xs, w*xs + b, 'r', lw=2, label=f'ŷ = {w:.2f}x + {b:.2f}'); ax[0].legend(); ax[0].set_title('학습된 직선')
+ax[1].plot(history); ax[1].set_yscale('log'); ax[1].set_title('손실 곡선'); ax[1].set_xlabel('step')
+plt.tight_layout(); plt.show()
+</code></pre>
+<div class="callout key"><span class="ct">🔑 모든 딥러닝 학습 루프의 4단계</span>
+<ol style="margin:0"><li><b>순전파</b>: 예측 계산</li><li><b>손실</b>: 정답과 비교</li><li><b>역전파</b>: 그래디언트 계산</li><li><b>업데이트</b>: 파라미터를 그래디언트 반대로 이동</li></ol>
+PyTorch에서는 이 4단계가 <code>y_hat = model(x)</code> → <code>loss = loss_fn(y_hat, y)</code> → <code>loss.backward()</code> → <code>optimizer.step()</code>입니다.</div>
+
+<h2>4. 손실 지형과 학습률</h2>
+<p>파라미터 두 개짜리 손실 $L(w_1, w_2)$는 산과 골짜기가 있는 지형으로 그릴 수 있습니다. 시작점을 클릭하고 학습률을 바꿔 가며 실행해 보세요.</p>
+<div class="viz-mount" data-viz="gd"></div>
+<ul>
+<li><b>학습률이 너무 작으면</b>: 거의 움직이지 않습니다. 학습이 끝나지 않습니다.</li>
+<li><b>적당하면</b>: 빠르게 바닥에 도달합니다.</li>
+<li><b>너무 크면</b>: 골짜기 양쪽 벽을 오가며 진동하다가 <b>발산</b>합니다(손실이 NaN이 됨).</li>
+<li><b>길쭉한 골짜기</b>에서는 가파른 방향으로 지그재그하며 완만한 방향으로는 느리게 갑니다. 이 문제를 해결하는 것이 Day 12의 모멘텀과 Adam입니다.</li>
+</ul>
+<pre class="run"><code># 학습률 비교 실험
+def train(lr, steps=100):
+    w, b = 0.0, 0.0; hist = []
+    for _ in range(steps):
+        r = w * x + b - y
+        hist.append((r**2).mean())
+        w -= lr * 2 * (r * x).mean(); b -= lr * 2 * r.mean()
+        if not np.isfinite(hist[-1]) or hist[-1] > 1e6: break
+    return hist
+plt.figure(figsize=(7, 3.5))
+for lr in [0.001, 0.01, 0.05, 0.08]:
+    h = train(lr); plt.plot(h, label=f'lr={lr}' + (' (발산)' if h[-1] > 1e3 else ''))
+plt.yscale('log'); plt.ylim(0.5, 1e4); plt.legend(); plt.xlabel('step'); plt.ylabel('loss'); plt.show()
+</code></pre>
+<div class="callout tip"><span class="ct">💡 왜 특정 학습률에서 발산할까?</span>
+손실의 '곡률'(2차 미분)이 클수록 허용되는 학습률이 작아집니다. 이 문제에서 $w$ 방향의 곡률은 $\frac{2}{N}\sum x_i^2$ (약 17)이고, 학습률이 대략 $2/\text{곡률} \approx 0.12$를 넘으면 발산합니다. 입력의 스케일이 크면 곡률이 커지므로 <b>입력 정규화</b>(평균 0, 분산 1)가 학습을 안정시키는 이유이기도 합니다.</div>
+
+<h2>5. 배치 GD vs SGD vs 미니배치</h2>
+<p>위 코드는 매 스텝 <b>전체 데이터</b>로 그래디언트를 계산했습니다(배치 GD). 데이터가 100만 개라면 한 걸음에 100만 개를 다 봐야 합니다.</p>
+<table>
+<tr><th>방식</th><th>한 스텝에 쓰는 샘플</th><th>특징</th></tr>
+<tr><td>배치 GD</td><td>전체 N개</td><td>정확하지만 느림, 메모리 부족</td></tr>
+<tr><td>SGD</td><td>1개</td><td>매우 빠르지만 노이즈가 큼</td></tr>
+<tr><td><b>미니배치 SGD</b></td><td>B개 (32~1024)</td><td><b>표준</b>. GPU 병렬성 활용 + 적당한 노이즈</td></tr>
+</table>
+<p>미니배치의 그래디언트는 전체 그래디언트의 <b>불편 추정량</b>입니다(평균적으로 같음). 약간의 노이즈는 오히려 날카로운 국소 최소점을 빠져나오게 도와 일반화에 좋다는 연구도 있습니다.</p>
+<p><b>에폭(epoch)</b>: 데이터 전체를 한 바퀴 도는 것. N=1000, B=100이면 1에폭 = 10스텝입니다. 매 에폭마다 데이터를 <b>섞어야(shuffle)</b> 합니다.</p>
+<pre class="run"><code>def train_minibatch(batch_size, epochs=20, lr=0.02):
+    w, b = 0.0, 0.0; hist = []
+    for ep in range(epochs):
+        idx = rng.permutation(N)                    # 매 에폭 섞기
+        for s in range(0, N, batch_size):
+            bi = idx[s:s+batch_size]
+            xb, yb = x[bi], y[bi]
+            r = w * xb + b - yb
+            w -= lr * 2 * (r * xb).mean(); b -= lr * 2 * r.mean()
+            hist.append(((w * x + b - y)**2).mean())   # 기록용: 전체 손실
+    return hist, w, b
+plt.figure(figsize=(7, 3.5))
+for bs in [1, 10, 100]:
+    h, w_, b_ = train_minibatch(bs)
+    plt.plot(np.linspace(0, 20, len(h)), h, label=f'batch={bs} → w={w_:.2f}, b={b_:.2f}', alpha=.8)
+plt.yscale('log'); plt.xlabel('epoch'); plt.legend(); plt.show()
+</code></pre>
+<p>배치 크기 1은 같은 에폭 동안 100배 많은 업데이트를 하지만 경로가 요동칩니다. 배치 100은 매끄럽지만 업데이트 횟수가 적습니다.</p>
+
+<h2>6. 다변수 선형회귀: 행렬로</h2>
+<p>특성이 $d$개면 $\hat y = \mathbf w\cdot\mathbf x + b$. 데이터 전체로는 $\hat{\mathbf y} = X\mathbf w + b$ ($X$: $N\times d$). 그래디언트도 행렬로 씁니다.</p>
+$$\nabla_{\mathbf w} L = \frac{2}{N}X^\top(\hat{\mathbf y} - \mathbf y),\qquad \frac{\partial L}{\partial b} = \frac2N\sum_i(\hat y_i - y_i)$$
+<p>Day 4에서 본 "$\partial L/\partial W = X^\top G$" 공식 그대로입니다.</p>
+<pre class="run"><code>d = 5
+true_w = np.array([2., -1., 0.5, 0., 3.])
+X = rng.normal(size=(500, d))
+Y = X @ true_w + 1.0 + rng.normal(0, 0.1, 500)
+
+w = np.zeros(d); b = 0.0; lr = 0.1
+for step in range(200):
+    r = X @ w + b - Y                  # (500,)
+    w -= lr * 2 * X.T @ r / len(Y)     # (5,500)@(500,) → (5,)
+    b -= lr * 2 * r.mean()
+print("학습된 w:", w.round(3), " b:", round(b, 3))
+print("정답   w:", true_w, " b: 1.0")
+
+# 참고: 선형회귀는 닫힌 해(정규방정식)가 있다. 신경망은 없기 때문에 경사하강법이 필요하다.
+Xb = np.c_[X, np.ones(len(X))]
+print("정규방정식 해:", np.linalg.lstsq(Xb, Y, rcond=None)[0].round(3))
+</code></pre>
+
+<h2>7. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"학습 중 손실이 갑자기 NaN이 되었다. 가장 먼저 의심할 것은?","o":["학습률이 너무 작다","학습률이 너무 크다(발산)","데이터가 너무 많다","에폭이 부족하다"],"a":1,"e":"학습률이 크면 파라미터가 폭발해 오버플로 → NaN이 됩니다."},
+ {"q":"데이터 10,000개, 배치 크기 50으로 3에폭 학습하면 업데이트 횟수는?","o":["150","600","30,000","3"],"a":1,"e":"1에폭 = 10000/50 = 200스텝, 3에폭 = 600스텝."},
+ {"q":"선형회귀에서 예측이 정답보다 체계적으로 작을 때(잔차 r<0), b에 대한 그래디언트의 부호와 업데이트 방향은?","o":["양수, b 감소","음수, b 증가","0, 변화 없음","양수, b 증가"],"a":1,"e":"∂L/∂b = 2·mean(r) < 0 → b ← b − η·(음수) → b 증가."},
+ {"q":"미니배치 SGD를 쓰는 이유로 가장 적절한 것은?","o":["정확한 그래디언트를 얻기 위해","계산 효율(GPU 병렬)과 업데이트 빈도의 균형, 적당한 노이즈","메모리를 더 쓰기 위해","학습률이 필요 없어서"],"a":1,"e":"전체 배치는 느리고, 1개는 비효율적입니다. 미니배치가 실무 표준입니다."},
+ {"q":"매 에폭마다 데이터를 섞는(shuffle) 이유는?","o":["속도 향상","미니배치 구성이 매번 달라져 그래디언트 추정의 편향과 순서 의존성을 줄인다","메모리 절약","필수는 아니고 미관상"],"a":1,"e":"정렬된 데이터를 그대로 쓰면 특정 배치가 한쪽 클래스만 담아 학습이 요동칩니다."}
+]</script>
+
+<h2>8. 연습 문제</h2>
+<ol>
+<li>위 단변수 문제에서 $x$에 100을 곱한 데이터(<code>x*100</code>)로 학습해 보세요. 같은 학습률로는 어떻게 되나요? 입력을 표준화(<code>(x - x.mean())/x.std()</code>)하면?</li>
+<li>손실을 MSE 대신 MAE($|r|$의 평균)로 바꿔 경사하강법을 구현해 보세요. 그래디언트는 $\mathrm{sign}(r)$입니다. 이상치(outlier)를 몇 개 추가했을 때 두 손실의 결과를 비교하세요.</li>
+</ol>
+<pre class="run"><code># 연습 공간
+
+</code></pre>
+<details class="answer"><summary>힌트 / 해설</summary>
+<p>1) 스케일이 100배면 곡률이 10,000배가 되어 즉시 발산합니다. 표준화하면 학습률 0.1 정도로도 안정적으로 수렴합니다. → <b>입력 정규화는 선택이 아니라 필수</b>.</p>
+<p>2) <code>w -= lr * (np.sign(r) * x).mean(); b -= lr * np.sign(r).mean()</code>. MAE는 이상치에 덜 민감합니다(제곱하지 않으므로). 대신 0 근처에서 그래디언트 크기가 일정해 미세 조정이 어렵습니다. 둘을 섞은 것이 Huber 손실입니다.</p></details>
