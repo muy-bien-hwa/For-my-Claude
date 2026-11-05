@@ -1,0 +1,304 @@
+<ul class="goals">
+  <li>SGD가 느려지는 세 가지 상황(나쁜 조건수, 안장점·평탄 지역, 잡음)을 설명할 수 있다.</li>
+  <li>지수 이동 평균과 편향 보정을 계산할 수 있다.</li>
+  <li>모멘텀, 네스테로프, AdaGrad, RMSProp, Adam의 갱신식을 쓰고 각각이 어떤 문제를 푸는지 설명할 수 있다.</li>
+  <li>AdamW가 L2 규제를 넣은 Adam과 어떻게 다른지 설명할 수 있다.</li>
+  <li>옵티마이저를 직접 구현하고 학습 곡선과 학습률 민감도로 비교할 수 있다.</li>
+</ul>
+
+<h2 data-min="12" data-kind="concept">SGD의 한계</h2>
+<p>그래디언트로 파라미터를 갱신하는 규칙을 <dfn data-t="optimizer">옵티마이저</dfn>라 한다. 지금까지 쓴 것은 가장 단순한 SGD $\boldsymbol\theta \leftarrow \boldsymbol\theta - \eta\mathbf g$였다. SGD는 세 가지 상황에서 느려진다.</p>
+<table>
+  <thead><tr><th>상황</th><th>무슨 일이 일어나는가</th><th>해결의 실마리</th></tr></thead>
+  <tbody>
+    <tr><td>나쁜 조건수 (9일차)</td><td>가파른 방향으로 진동하고 완만한 방향으로 느리게 간다</td><td>일관된 방향의 속도를 누적 (모멘텀)</td></tr>
+    <tr><td>안장점·평탄 지역</td><td>그래디언트가 작아 거의 멈춘다</td><td>관성으로 통과 (모멘텀), 작은 그래디언트를 키움 (적응형)</td></tr>
+    <tr><td>파라미터마다 다른 규모</td><td>하나의 학습률이 어떤 파라미터에는 크고 어떤 것에는 작다</td><td>파라미터별 학습률 (AdaGrad, RMSProp, Adam)</td></tr>
+  </tbody>
+</table>
+<p>미니배치 그래디언트의 잡음은 이 문제들을 더 복잡하게 만든다. 오늘 배울 옵티마이저는 모두 "과거 그래디언트의 평균"을 기억해 이 문제들에 대응한다. 그 평균을 내는 도구부터 본다.</p>
+
+<h2 data-min="15" data-kind="concept">지수 이동 평균</h2>
+<p>값이 하나씩 들어올 때 최근 값에 더 큰 가중치를 두는 평균이 <dfn data-t="ema">지수 이동 평균</dfn>(EMA)이다.</p>
+$$m_t = \beta\,m_{t-1} + (1 - \beta)\,x_t, \qquad m_0 = 0$$
+<p>풀어 쓰면 $m_t = (1-\beta)(x_t + \beta x_{t-1} + \beta^2x_{t-2} + \cdots)$로, 과거 값의 가중치가 $\beta$배씩 지수적으로 줄어든다. 가중치의 대부분이 최근 약 $1/(1-\beta)$개에 몰려 있으므로 "창 크기 $1/(1-\beta)$의 평균"처럼 동작한다. $\beta = 0.9$면 약 10개, $0.999$면 약 1000개다. 메모리는 숫자 하나뿐이다.</p>
+<div class="box ex" data-title="초반의 편향"><p>$x_t = 1$이 계속 들어오고 $\beta = 0.9$일 때 $m_1 = 0.1$, $m_2 = 0.19$, $m_3 = 0.271$. 실제 평균은 1인데 처음 몇 걸음은 0에서 출발한 탓에 크게 작다. 일반적으로 $m_t = 1 - \beta^t$이므로, $m_t$를 $1 - \beta^t$로 나누면 정확히 1이 된다. 이것이 <dfn data-t="bias-correction">편향 보정</dfn>이다: $\hat m_t = m_t/(1 - \beta^t)$. $t$가 커지면 $\beta^t \to 0$이라 보정은 저절로 사라진다.</p></div>
+<div class="viz-mount" data-viz="ema"></div>
+
+<h2 data-min="20" data-kind="concept">모멘텀</h2>
+<p>공이 비탈을 굴러 내려가는 모습을 떠올린다. 공은 현재 기울기뿐 아니라 그동안 쌓인 속도로도 움직인다. <dfn data-t="momentum">모멘텀</dfn>은 그래디언트를 속도에 누적하고 속도로 이동한다.</p>
+$$\mathbf v \leftarrow \beta\mathbf v + \mathbf g, \qquad \boldsymbol\theta \leftarrow \boldsymbol\theta - \eta\,\mathbf v \qquad (\beta = 0.9\text{가 기본})$$
+<ul>
+<li>그래디언트가 매번 같은 방향이면 속도가 $\mathbf g/(1 - \beta)$까지 커진다. $\beta = 0.9$면 실질 학습률이 10배가 되어 완만한 골짜기를 빠르게 내려간다.</li>
+<li>그래디언트 부호가 매번 바뀌는 방향(골짜기 벽 사이의 진동)에서는 속도가 서로 상쇄되어 진동이 줄어든다.</li>
+<li>안장점과 작은 언덕을 관성으로 통과할 수 있다.</li>
+</ul>
+<div class="box ex" data-title="같은 방향의 가속"><p>그래디언트가 계속 $g = 1$이면 $v$는 $1, 1.9, 2.71, 3.44, \dots \to 10$이 된다. SGD가 한 걸음에 $\eta$만큼 갈 때 모멘텀은 결국 $10\eta$만큼 간다. 반대로 그래디언트가 $+1, -1, +1, -1$로 번갈아 오면 $v$는 $1, -0.1, 0.91, -0.18, \dots$로 작은 값에 머문다.</p></div>
+<p><dfn data-t="nesterov">네스테로프 모멘텀</dfn>은 "어차피 속도만큼 갈 테니, 거기서 그래디언트를 미리 보자"는 개선이다. $\boldsymbol\theta - \eta\beta\mathbf v$ 위치에서 그래디언트를 계산해 속도에 더한다. 목표를 지나치기 전에 미리 감속하므로 진동이 조금 더 줄어든다.</p>
+<div class="viz-mount" data-viz="optim"></div>
+
+<h2 data-min="18" data-kind="concept">적응형 학습률: AdaGrad와 RMSProp</h2>
+<p>파라미터마다 그래디언트의 크기가 매우 다를 수 있다. 자주 큰 그래디언트를 받는 파라미터는 학습률을 줄이고, 드물게 작은 그래디언트를 받는 파라미터는 키우고 싶다. <dfn data-t="adagrad">AdaGrad</dfn>는 그래디언트 제곱을 원소별로 누적해 그 제곱근으로 나눈다.</p>
+$$\mathbf s \leftarrow \mathbf s + \mathbf g\odot\mathbf g, \qquad \boldsymbol\theta \leftarrow \boldsymbol\theta - \eta\,\frac{\mathbf g}{\sqrt{\mathbf s} + \epsilon}$$
+<p>문제는 $\mathbf s$가 계속 커져 학습률이 결국 0에 가까워진다는 것이다. 긴 신경망 학습에서는 너무 일찍 멈춘다. <dfn data-t="rmsprop">RMSProp</dfn>(힌턴, 2012)은 누적 대신 지수 이동 평균을 써서 최근 그래디언트의 크기만 반영한다.</p>
+$$\mathbf s \leftarrow \rho\,\mathbf s + (1 - \rho)\,\mathbf g\odot\mathbf g, \qquad \boldsymbol\theta \leftarrow \boldsymbol\theta - \eta\,\frac{\mathbf g}{\sqrt{\mathbf s} + \epsilon} \qquad (\rho = 0.9)$$
+<p>$\mathbf g/\sqrt{\mathbf s}$는 그래디언트를 "최근의 전형적인 크기"로 나눈 값이라 대략 $\pm1$ 근처다. 따라서 걸음 크기가 그래디언트의 크기와 거의 무관하게 약 $\eta$가 된다. 길쭉한 골짜기에서 가파른 축과 완만한 축의 보폭이 비슷해지는 이유다. $\epsilon$($10^{-8}$)은 0으로 나누기를 막는다.</p>
+
+<h2 data-min="20" data-kind="concept">Adam</h2>
+<p><dfn data-t="adam">Adam</dfn>(Kingma &amp; Ba, 2014)은 모멘텀(그래디언트의 EMA, 1차 모멘트)과 RMSProp(그래디언트 제곱의 EMA, 2차 모멘트)을 합치고 둘 다 편향을 보정한다.</p>
+<ol class="steps">
+<li>$\mathbf m \leftarrow \beta_1\mathbf m + (1 - \beta_1)\,\mathbf g$ (방향의 평균)</li>
+<li>$\mathbf v \leftarrow \beta_2\mathbf v + (1 - \beta_2)\,\mathbf g\odot\mathbf g$ (크기의 평균)</li>
+<li>$\hat{\mathbf m} = \mathbf m/(1 - \beta_1^t)$, $\hat{\mathbf v} = \mathbf v/(1 - \beta_2^t)$ (편향 보정)</li>
+<li>$\boldsymbol\theta \leftarrow \boldsymbol\theta - \eta\,\hat{\mathbf m}/(\sqrt{\hat{\mathbf v}} + \epsilon)$</li>
+</ol>
+<p>기본값 $\beta_1 = 0.9$, $\beta_2 = 0.999$, $\epsilon = 10^{-8}$, $\eta = 10^{-3}$이 놀랄 만큼 많은 문제에서 잘 동작해 딥러닝의 기본 옵티마이저가 되었다.</p>
+<div class="box ex" data-title="편향 보정이 없으면"><p>첫 걸음 $t = 1$에서 그래디언트가 $g$이면 $m = 0.1g$, $v = 0.001g^2$. 보정 없이 쓰면 $m/\sqrt v = 0.1g/(0.0316|g|) \approx 3.16\,\mathrm{sign}(g)$로, 첫 걸음이 의도보다 3배 이상 크다. 보정하면 $\hat m = g$, $\hat v = g^2$이라 $\hat m/\sqrt{\hat v} = \mathrm{sign}(g)$로 정확히 $\eta$만큼 간다. $\beta_2 = 0.999$는 창이 1000걸음이라, 보정이 없으면 초반 수백 걸음이 왜곡된다.</p></div>
+
+<h2 data-min="10" data-kind="concept">AdamW: 가중치 감쇠를 따로</h2>
+<p>12일차의 L2 규제는 손실에 $\lambda\|\mathbf w\|^2$을 더해 그래디언트에 $2\lambda\mathbf w$가 들어가게 한다. SGD에서는 이것이 "매 걸음 가중치를 조금씩 줄이는" 가중치 감쇠와 같다. 그런데 Adam에서는 이 항도 $\sqrt{\hat{\mathbf v}}$로 나뉘어, 그래디언트가 큰 파라미터는 덜 줄고 작은 파라미터는 더 줄어드는 왜곡이 생긴다. <dfn data-t="adamw">AdamW</dfn>(Loshchilov &amp; Hutter, 2019)는 감쇠를 적응형 갱신과 분리해 따로 적용한다.</p>
+$$\boldsymbol\theta \leftarrow \boldsymbol\theta - \eta\left(\frac{\hat{\mathbf m}}{\sqrt{\hat{\mathbf v}} + \epsilon} + \lambda\boldsymbol\theta\right)$$
+<p>트랜스포머와 대형 언어 모델 학습의 표준이며, PyTorch에서는 <code>torch.optim.AdamW(params, lr=3e-4, weight_decay=0.01)</code>처럼 쓴다.</p>
+
+<h2 data-min="8" data-kind="concept">옵티마이저 고르기</h2>
+<table>
+  <thead><tr><th>옵티마이저</th><th>대표 학습률</th><th>특징과 쓰임</th></tr></thead>
+  <tbody>
+    <tr><td>SGD + 모멘텀 (0.9)</td><td>0.01~0.1</td><td>학습률·스케줄을 잘 맞추면 일반화가 좋다. 이미지 분류 CNN의 전통적 선택.</td></tr>
+    <tr><td>Adam</td><td>$10^{-4}$~$3\times10^{-3}$</td><td>학습률에 덜 민감하고 빠르다. 처음 시도하는 기본값.</td></tr>
+    <tr><td>AdamW</td><td>$10^{-4}$~$10^{-3}$, 감쇠 0.01~0.1</td><td>트랜스포머, 사전학습 모델 미세조정의 표준.</td></tr>
+  </tbody>
+</table>
+<p>옵티마이저를 바꾸면 적당한 학습률의 범위도 완전히 달라진다. 옵티마이저를 비교할 때는 각자 학습률을 따로 맞춘 뒤 비교해야 공정하다(미니 프로젝트).</p>
+
+<h2 data-min="22" data-kind="practice">코드 실습: 로젠브록 함수 위의 경주</h2>
+<p>로젠브록 함수 $f(x, y) = (1 - x)^2 + 100(y - x^2)^2$은 최솟값 $(1, 1)$이 휘어진 좁은 골짜기 바닥에 있어 옵티마이저 시험에 자주 쓰인다. 네 옵티마이저를 같은 출발점 $(-1.2, 1)$에서 출발시켜 $f &lt; 10^{-6}$에 도달하는 걸음 수를 잰다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+f = lambda p: (1 - p[0]) ** 2 + 100 * (p[1] - p[0] ** 2) ** 2
+grad = lambda p: np.array([-2 * (1 - p[0]) - 400 * p[0] * (p[1] - p[0] ** 2),
+                           200 * (p[1] - p[0] ** 2)])
+
+def run(kind, lr, steps=20000):
+    p = np.array([-1.2, 1.0])
+    v = np.zeros(2)
+    s = np.zeros(2)
+    m = np.zeros(2)
+    path = [p.copy()]
+    for t in range(1, steps + 1):
+        g = grad(p)
+        if kind == "SGD":
+            p = p - lr * g
+        elif kind == "모멘텀":
+            v = 0.9 * v + g; p = p - lr * v
+        elif kind == "RMSProp":
+            s = 0.9 * s + 0.1 * g ** 2; p = p - lr * g / (np.sqrt(s) + 1e-8)
+        else:                                                   # Adam
+            m = 0.9 * m + 0.1 * g; s = 0.999 * s + 0.001 * g ** 2
+            p = p - lr * (m / (1 - 0.9 ** t)) / (np.sqrt(s / (1 - 0.999 ** t)) + 1e-8)
+        path.append(p.copy())
+        if f(p) &lt; 1e-6:
+            return t, np.array(path)
+    return None, np.array(path)
+
+xs, ys = np.meshgrid(np.linspace(-1.6, 1.4, 200), np.linspace(-0.4, 1.6, 200))
+plt.figure(figsize=(6, 4.2))
+plt.contour(xs, ys, f([xs, ys]), levels=np.logspace(-1, 3, 12), cmap="Blues_r",
+            linewidths=.8)
+for kind, lr in [("SGD", 0.002), ("모멘텀", 0.0005), ("RMSProp", 0.001),
+                 ("Adam", 0.1)]:
+    n, path = run(kind, lr)
+    reach = f"{n}걸음" if n else "20000걸음 안에 도달 못함"
+    print(f"{kind:7s} (η = {lr}): {reach}, 마지막 f = {f(path[-1]):.2e}")
+    plt.plot(path[:, 0], path[:, 1], lw=1.2, label=f"{kind} ({n if n else '실패'})")
+plt.plot(1, 1, "k*", ms=12)
+plt.legend(fontsize=8)
+plt.xlabel("x")
+plt.ylabel("y")
+plt.show()
+</code></pre>
+<p>SGD는 7천 걸음 넘게 걸리고, 모멘텀은 그 절반 이하, Adam은 약 1100걸음에 도착한다. RMSProp은 골짜기 바닥 근처에서 보폭이 거의 일정해(약 $\eta$) 정확히 수렴하지 못하고 맴돈다. 학습률을 줄이며 가야 하는데, 이것이 23일차 학습률 스케줄의 주제다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>EMA $m_t = \beta m_{t-1} + (1-\beta)x_t$: 창 크기 약 $1/(1-\beta)$. 편향 보정 $m_t/(1-\beta^t)$.</li>
+  <li>모멘텀: $\mathbf v \leftarrow \beta\mathbf v + \mathbf g$. 일관된 방향은 최대 $1/(1-\beta)$배 가속, 진동은 상쇄. 네스테로프는 앞을 미리 봄.</li>
+  <li>AdaGrad: 제곱 누적으로 나눔(학습률이 0으로). RMSProp: 제곱의 EMA로 나눔. 보폭이 그래디언트 크기와 거의 무관해진다.</li>
+  <li>Adam = 모멘텀 + RMSProp + 편향 보정. 기본값 $(0.9, 0.999, 10^{-8})$, $\eta = 10^{-3}$.</li>
+  <li>AdamW: 가중치 감쇠를 적응형 갱신과 분리. 옵티마이저마다 학습률을 따로 맞춰 비교한다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"β = 0.95인 지수 이동 평균의 대략적인 창 크기는?","o":["5","20","95","0.05"],"a":1,"e":"$1/(1-0.95) = 20$."},
+ {"q":"β = 0.9, x가 항상 2일 때 m₁(m₀ = 0)과 편향 보정한 값은?","o":["0.2, 2","2, 2","0.2, 0.2","1.8, 2"],"a":0,"e":"$m_1 = 0.1\\times2 = 0.2$, 보정 $0.2/(1-0.9) = 2$."},
+ {"q":"그래디언트가 계속 같은 방향일 때 모멘텀(β = 0.9)의 실질 학습률은 SGD의 약 몇 배가 되는가?","o":["0.9배","같다","10배","100배"],"a":2,"e":"속도가 $g/(1-\\beta) = 10g$까지 커진다."},
+ {"q":"AdaGrad의 단점은?","o":["학습률이 계속 커진다","제곱 그래디언트를 누적해 학습률이 결국 0에 가까워진다","메모리를 쓰지 않는다","모멘텀이 없다"],"a":1,"e":"RMSProp이 EMA로 바꿔 해결했다."},
+ {"q":"RMSProp이 길쭉한 골짜기에서 SGD보다 나은 이유는?","o":["학습률이 더 커서","그래디언트를 최근 크기로 나눠 가파른 축과 완만한 축의 보폭을 비슷하게 맞춰서","관성이 있어서","랜덤성이 있어서"],"a":1,"e":"$g/\\sqrt s$는 대략 ±1 크기라 축마다 보폭이 비슷해진다."},
+ {"q":"Adam에서 편향 보정이 없으면 첫 걸음의 크기는?","o":["의도와 같다","의도보다 약 3배 크다","0이다","의도의 절반이다"],"a":1,"e":"$0.1g/\\sqrt{0.001g^2} \\approx 3.16$."},
+ {"q":"AdamW와 'L2 규제를 손실에 더한 Adam'의 차이는?","o":["같다","AdamW는 가중치 감쇠를 √v̂로 나누지 않고 따로 적용한다","AdamW는 모멘텀이 없다","AdamW는 학습률이 없다"],"a":1,"e":"L2 그래디언트가 적응형 분모로 나뉘는 왜곡을 없앤다."},
+ {"q":"SGD(학습률 0.1)와 Adam(학습률 0.001)을 비교하는 공정한 방법은?","o":["둘 다 0.01로 맞춘다","각 옵티마이저의 학습률을 따로 탐색한 뒤 가장 좋은 값끼리 비교한다","에폭만 같으면 된다","Adam이 항상 낫다"],"a":1,"e":"학습률의 의미가 달라 같은 숫자는 공정하지 않다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>$\beta = 0.9$의 EMA에서 $t$걸음 전 값의 가중치는 $0.1\times0.9^t$다. 가중치의 합이 처음 $1/2$, 그리고 $1 - 1/e$을 넘는 것은 각각 최근 몇 개까지인가?
+    <details class="sol"><summary>풀이</summary><p>최근 $k$개의 가중치 합은 $1 - 0.9^k$. $0.9^k = 0.5$에서 $k \approx 6.6$, $0.9^k = 1/e$에서 $k \approx 9.5$. 창 크기 $1/(1-\beta) = 10$은 "가중치의 약 63%가 들어 있는 길이"다.</p></details></li>
+  <li>그래디언트가 $+1, -1$로 번갈아 들어올 때 모멘텀 속도 $v$의 극한 진동 폭을 구하라($\beta = 0.9$).
+    <details class="sol"><summary>풀이</summary><p>정상 상태에서 $v_+ = 0.9v_- + 1$, $v_- = 0.9v_+ - 1$. 풀면 $v_+ = 1/1.9 \approx 0.526$, $v_- = -0.526$. 진폭이 1에서 약 0.53으로 줄어든다. 같은 방향일 때(10배)와 비교하면 약 19배 차이가 난다.</p></details></li>
+  <li>그래디언트의 크기가 모든 걸음에서 정확히 $c$배가 되었다(손실을 $c$배 한 경우). SGD와 Adam의 갱신은 각각 어떻게 변하는가?
+    <details class="sol"><summary>풀이</summary><p>SGD는 걸음이 $c$배가 된다. Adam은 $\hat m$이 $c$배, $\sqrt{\hat v}$도 $c$배라 비율이 같아 걸음이 거의 변하지 않는다($\epsilon$ 무시). Adam이 손실의 규모와 학습률 설정에 덜 민감한 이유다.</p></details></li>
+</ol>
+
+<h2 data-min="35" data-kind="project">미니 프로젝트: 옵티마이저 구현과 비교</h2>
+<section class="project" data-title="SGD·모멘텀·RMSProp·Adam·AdamW를 구현해 손글씨 MLP 학습 곡선과 학습률 민감도 비교" data-min="35">
+<p class="lead">21일차 프레임워크의 <code>SGD</code>와 같은 인터페이스(<code>zero_grad</code>, <code>step</code>)로 옵티마이저 네 가지를 더 구현한다. 손글씨 숫자를 64 → 128 → 128 → 10 MLP로 학습시켜 학습 곡선을 비교하고, 학습률을 바꿔 가며 각 옵티마이저가 잘 동작하는 범위가 얼마나 넓은지 잰다.</p>
+<ol class="steps">
+<li><b>프레임워크 준비.</b> 21일차의 층, 손실, 학습기를 간추려 다시 정의한다.
+<pre class="run"><code>class Linear:
+    def __init__(self, d_in, d_out, rng):
+        self.W = rng.normal(0, np.sqrt(2 / d_in), (d_in, d_out))
+        self.b = np.zeros(d_out)
+        self.dW = np.zeros_like(self.W); self.db = np.zeros_like(self.b)
+    def forward(self, X):
+        self.X = X; return X @ self.W + self.b
+    def backward(self, G):
+        self.dW[...] = self.X.T @ G; self.db[...] = G.sum(0); return G @ self.W.T
+    def params(self): return [(self.W, self.dW), (self.b, self.db)]
+class ReLU:
+    def forward(self, X):
+        self.m = X &gt; 0; return X * self.m
+    def backward(self, G): return G * self.m
+    def params(self): return []
+class Net:
+    def __init__(self, sizes, seed):
+        r = np.random.default_rng(seed); self.layers = []
+        for i, (a, b) in enumerate(zip(sizes[:-1], sizes[1:])):
+            self.layers.append(Linear(a, b, r))
+            if i &lt; len(sizes) - 2: self.layers.append(ReLU())
+    def forward(self, X):
+        for l in self.layers: X = l.forward(X)
+        return X
+    def backward(self, G):
+        for l in reversed(self.layers): G = l.backward(G)
+    def params(self): return [pg for l in self.layers for pg in l.params()]
+def ce(Z, y):
+    Z = Z - Z.max(1, keepdims=True); P = np.exp(Z) / np.exp(Z).sum(1, keepdims=True)
+    G = P.copy(); G[np.arange(len(y)), y] -= 1
+    return -np.log(P[np.arange(len(y)), y]).mean(), G / len(y)
+d = load_data("digits"); X, y = d["X"].astype(float) / 16, d["y"]
+rng = np.random.default_rng(0); tr, te = [], []
+for k in range(10):
+    idx = rng.permutation(np.where(y == k)[0])
+    cut = int(0.8 * len(idx))
+    tr += list(idx[:cut])
+    te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+def train(make_opt, epochs=10, seed=1):
+    net = Net([64, 128, 128, 10], seed)
+    opt = make_opt(net.params())
+    r = np.random.default_rng(seed)
+    hist = []
+    for ep in range(epochs):
+        order = r.permutation(len(tr)); tot = 0.0
+        for s in range(0, len(order), 32):
+            i = tr[order[s:s + 32]]
+            L, G = ce(net.forward(X[i]), y[i])
+            opt.zero_grad()
+            net.backward(G)
+            opt.step()
+            tot += L * len(i)
+        hist.append(tot / len(tr))
+    acc = (net.forward(X[te]).argmax(1) == y[te]).mean()
+    return np.array(hist), acc
+print("준비 완료")
+</code></pre></li>
+<li><b>옵티마이저 구현.</b> 공통 부모 클래스를 두고 상태(속도, 제곱 평균)를 파라미터마다 하나씩 만든다. 모든 갱신은 제자리 연산으로 한다.
+<pre class="run"><code>class Optimizer:
+    def __init__(self, params, lr):
+        self.params, self.lr, self.t = params, lr, 0
+    def zero_grad(self):
+        for _, g in self.params: g[...] = 0
+class SGD(Optimizer):
+    def step(self):
+        for p, g in self.params: p -= self.lr * g
+class Momentum(Optimizer):
+    def __init__(self, params, lr, beta=0.9):
+        super().__init__(params, lr)
+        self.beta = beta
+        self.v = [np.zeros_like(p) for p, _ in params]
+    def step(self):
+        for (p, g), v in zip(self.params, self.v):
+            v *= self.beta; v += g                      # TODO 확인: v ← βv + g
+            p -= self.lr * v
+class RMSProp(Optimizer):
+    def __init__(self, params, lr, rho=0.9, eps=1e-8):
+        super().__init__(params, lr)
+        self.rho, self.eps = rho, eps
+        self.s = [np.zeros_like(p) for p, _ in params]
+    def step(self):
+        for (p, g), s in zip(self.params, self.s):
+            s *= self.rho; s += (1 - self.rho) * g * g
+            p -= self.lr * g / (np.sqrt(s) + self.eps)
+class Adam(Optimizer):
+    def __init__(self, params, lr, b1=0.9, b2=0.999, eps=1e-8, weight_decay=0.0):
+        super().__init__(params, lr)
+        self.b1, self.b2, self.eps, self.wd = b1, b2, eps, weight_decay
+        self.m = [np.zeros_like(p) for p, _ in params]
+        self.v = [np.zeros_like(p) for p, _ in params]
+    def step(self):
+        self.t += 1
+        for (p, g), m, v in zip(self.params, self.m, self.v):
+            m *= self.b1; m += (1 - self.b1) * g
+            v *= self.b2; v += (1 - self.b2) * g * g
+            # TODO 확인: 편향 보정
+            m_hat = m / (1 - self.b1 ** self.t); v_hat = v / (1 - self.b2 ** self.t)
+            # wd &gt; 0이면 AdamW
+            p -= self.lr * (m_hat / (np.sqrt(v_hat) + self.eps) + self.wd * p)
+print("옵티마이저 준비 완료")
+</code></pre></li>
+<li><b>학습 곡선 비교.</b> 각 옵티마이저의 흔한 학습률로 10에폭 학습한다.
+<pre class="run"><code>configs = [("SGD η=0.1", lambda p: SGD(p, 0.1)), ("모멘텀 η=0.05",
+                                                  lambda p: Momentum(p, 0.05)),
+           ("RMSProp η=1e-3", lambda p: RMSProp(p, 1e-3)), ("Adam η=1e-3",
+                                                            lambda p: Adam(p, 1e-3)),
+           ("AdamW η=1e-3, λ=0.01", lambda p: Adam(p, 1e-3, weight_decay=0.01))]
+plt.figure(figsize=(6, 3.6))
+for name, mk in configs:
+    h, acc = train(mk)
+    plt.semilogy(range(1, 11), h, "o-", ms=3, label=name)
+    print(f"{name:22s} 마지막 학습 손실 {h[-1]:.4f}, 테스트 정확도 {acc:.3f}")
+plt.xlabel("에폭")
+plt.ylabel("학습 손실 (로그)")
+plt.legend(fontsize=8)
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+<li><b>학습률 민감도.</b> 학습률을 $10^{-4}$부터 1까지 로그 간격 9개로 바꿔 5에폭 뒤 학습 손실을 그린다. 손실이 0.2 이하인 학습률 범위가 각 옵티마이저에서 몇 배 넓이인지 비교하라. 학습을 27번 하므로 브라우저에서 수십 초 걸린다.
+<pre class="run"><code>lrs = np.logspace(-4, 0, 9)
+plt.figure(figsize=(6, 3.6))
+for name, mk in [("SGD", SGD), ("모멘텀", Momentum), ("Adam", Adam)]:
+    final = []
+    for lr in lrs:
+        with np.errstate(all="ignore"):
+            h, _ = train(lambda p: mk(p, lr), epochs=5)
+        final.append(h[-1] if np.isfinite(h[-1]) else 10.0)
+    final = np.array(final); good = lrs[final &lt; 0.2]
+    plt.loglog(lrs, np.clip(final, 1e-3, 10), "o-", label=name)
+    print(f"{name:4s} 손실 &lt; 0.2인 학습률: {good.min():.0e} ~ {good.max():.0e} (약 "
+          f"{good.max() / good.min():.0f}배 범위)" if len(good) else f"{name}: 없음")
+plt.axhline(0.2, color="gray", ls=":")
+plt.xlabel("학습률")
+plt.ylabel("5에폭 뒤 학습 손실")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>3단계: 이 설정에서는 모멘텀이 가장 빨리 손실을 낮추고(10에폭 뒤 약 0.02) 테스트 정확도도 가장 높다(약 98%). RMSProp, Adam, AdamW는 비슷하고(약 0.05), SGD가 가장 느리다(약 0.08). 순위는 학습률 설정에 따라 바뀔 수 있으므로 한 번의 비교로 결론 내지 않는다. 10에폭은 짧아 AdamW의 감쇠 효과는 거의 보이지 않는다.</li>
+<li>4단계: 손실 0.2 이하를 내는 학습률이 SGD는 0.1~0.3(약 3배)의 좁은 범위, 모멘텀은 0.01~0.1(약 10배), Adam은 0.001~0.03(약 30배)으로 가장 넓다. 넓은 범위는 학습률을 대충 정해도 잘 된다는 뜻이고, Adam이 기본 옵티마이저로 인기 있는 주된 이유다. 또 모멘텀의 최적 학습률이 SGD의 약 1/10인 것은 실질 학습률이 $1/(1-\beta) = 10$배이기 때문이다.</li>
+<li>공정한 비교의 원칙: 옵티마이저마다 학습률을 탐색하고, 여러 시드로 반복하고, 같은 계산 예산(에폭 수)에서 비교한다.</li>
+</ul></details>
+</section>

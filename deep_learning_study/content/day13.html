@@ -159,7 +159,8 @@ r = np.random.default_rng(0)
 for dim in [2, 10, 100, 1000]:
     P = r.random((500, dim)); q = r.random(dim)
     dist = np.sqrt(((P - q) ** 2).sum(axis=1))
-    print(f"{dim:5d}차원: 가장 가까운 거리 / 가장 먼 거리 = {dist.min() / dist.max():.3f}")
+    print(f"{dim:5d}차원: 가장 가까운 거리 / 가장 먼 거리 = "
+          f"{dist.min() / dist.max():.3f}")
 </code></pre>
 <p>다음은 지니 불순도로 결정 트리를 만든다. 특징마다 값을 정렬해 두면 모든 임계값의 불순도를 누적합으로 한 번에 계산할 수 있다.</p>
 <pre class="run"><code>d = load_data("breast_cancer")
@@ -179,7 +180,8 @@ def best_split(X_, y_):
         o = np.argsort(X_[:, j]); xs, ys = X_[o, j], y_[o]
         nl = np.arange(1, n); nr = n - nl                    # 왼쪽에 1~n−1개를 둘 때
         pl = np.cumsum(ys)[:-1] / nl; pr = (ys.sum() - np.cumsum(ys)[:-1]) / nr
-        g = (nl * (1 - pl ** 2 - (1 - pl) ** 2) + nr * (1 - pr ** 2 - (1 - pr) ** 2)) / n
+        g = (nl * (1 - pl ** 2 - (1 - pl) ** 2)
+             + nr * (1 - pr ** 2 - (1 - pr) ** 2)) / n
         # 같은 값 사이는 자를 수 없다
         g = np.where(xs[1:] &gt; xs[:-1], g, np.inf)
         i = np.argmin(g)
@@ -201,7 +203,8 @@ def accuracy(T, X_, y_):
     return np.mean([predict_one(T, x) == t_ for x, t_ in zip(X_, y_)])
 for md in [1, 2, 3, 4, 6, 10]:
     T = build(X[tr], y[tr], 0, md)
-    print(f"깊이 {md:2d}: 학습 {accuracy(T, X[tr], y[tr]):.3f}  테스트 {accuracy(T, X[te], y[te]):.3f}")
+    print(f"깊이 {md:2d}: 학습 {accuracy(T, X[tr], y[tr]):.3f}  테스트 "
+          f"{accuracy(T, X[te], y[te]):.3f}")
 def show(node, ind="", tag=""):
     if isinstance(node, tuple):
         print(f"{ind}{tag}{names[node[0]]} ≤ {node[1]:.3f} ?")
@@ -218,7 +221,8 @@ def kmeans(X_, k, seed=0, iters=100):
         # 2. 할당
         lab = ((X_[:, None, :] - C[None, :, :]) ** 2).sum(-1).argmin(axis=1)
         # 3. 갱신
-        C_new = np.array([X_[lab == j].mean(axis=0) if np.any(lab == j) else C[j] for j in range(k)])
+        C_new = np.array([X_[lab == j].mean(axis=0) if np.any(lab == j) else C[j]
+                          for j in range(k)])
         if np.allclose(C_new, C): break
         C = C_new
     return C, lab, ((X_ - C[lab]) ** 2).sum()
@@ -362,7 +366,8 @@ k_best = ks[int(np.argmax(results[kind_best]))]
 T = scaler(kind_best, Xtr)
 acc_best = (knn_predict(T(Xtr), ytr, T(X[te]), k_best) == y[te]).mean()
 acc_raw = (knn_predict(Xtr, ytr, X[te], k_best) == y[te]).mean()
-print(f"선택: {kind_best}, k = {k_best} → 테스트 정확도 {acc_best:.3f}  (원래 단위 같은 k: {acc_raw:.3f})")
+print(f"선택: {kind_best}, k = {k_best} → 테스트 정확도 {acc_best:.3f}  (원래 단위 "
+      f"같은 k: {acc_raw:.3f})")
 </code></pre></li>
 </ol>
 <details class="sol"><summary>참고 답안과 해설</summary>

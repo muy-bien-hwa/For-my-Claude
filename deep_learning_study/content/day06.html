@@ -185,13 +185,16 @@ $$P(\text{스팸}\mid w_1,\dots,w_n) \;\propto\; P(\text{스팸})\prod_{i=1}^{n}
 <li><b>데이터 만들기.</b> 스팸과 정상 메시지에서 단어가 나오는 확률이 다르도록 메시지 600개를 만든다. 공통 단어는 양쪽에 비슷하게 나온다.
 <pre class="run"><code>import numpy as np
 rng = np.random.default_rng(3)
-spam_w = ["무료", "당첨", "대출", "클릭", "이벤트", "쿠폰", "광고", "수익", "지금", "혜택", "할인", "링크"]
-ham_w = ["회의", "내일", "저녁", "과제", "수업", "엄마", "친구", "확인", "도착", "사진", "시간", "부탁"]
+spam_w = ["무료", "당첨", "대출", "클릭", "이벤트", "쿠폰", "광고", "수익", "지금",
+          "혜택", "할인", "링크"]
+ham_w = ["회의", "내일", "저녁", "과제", "수업", "엄마", "친구", "확인", "도착",
+         "사진", "시간", "부탁"]
 common = ["오늘", "정말", "그리고", "우리", "연락", "주세요", "감사", "보기"]
 vocab = spam_w + ham_w + common
 def make_msg(is_spam):
     n = rng.integers(4, 9)
-    probs = np.array([3.0 if (w in spam_w) == is_spam and w not in common else 0.4 for w in vocab])
+    probs = np.array([3.0 if (w in spam_w) == is_spam and w not in common else 0.4
+                      for w in vocab])
     probs[[vocab.index(c) for c in common]] = 1.5
     return list(rng.choice(vocab, size=n, p=probs / probs.sum()))
 y = (rng.random(600) &lt; 0.35).astype(int)                     # 1 = 스팸 (약 35%)

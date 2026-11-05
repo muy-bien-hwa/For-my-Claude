@@ -151,11 +151,13 @@ def grad_check(layers, crit, Xb, yb, h=1e-5):
                 p[idx] = old - h; Lm = crit.forward(forward(layers, Xb), yb)
                 p[idx] = old
                 num = (Lp - Lm) / (2 * h)
-                worst = max(worst, abs(num - g_bp[idx]) / max(abs(num), abs(g_bp[idx]), 1e-12))
+                rel = abs(num - g_bp[idx]) / max(abs(num), abs(g_bp[idx]), 1e-12)
+                worst = max(worst, rel)
     return worst
 small = build([64, 16, 10], seed=3)
 n_params = sum(p.size for l in small for p, _ in l.params())
-print(f"파라미터 {n_params}개, 최대 상대 오차 {grad_check(small, SoftmaxCE(), X[:8], y[:8]):.2e}")
+print(f"파라미터 {n_params}개, 최대 상대 오차 "
+      f"{grad_check(small, SoftmaxCE(), X[:8], y[:8]):.2e}")
 </code></pre>
 <p>최대 상대 오차가 $10^{-6}$ 이하이므로 통과다. 0이 아닌 것은 수치 미분 자체의 오차와 ReLU의 꺾인 점 때문이다. 검증을 통과했으니 학습한다. 7일차와 같은 층화 분할(테스트 364개)에서 64 → 64 → 10 신경망을 학습률 0.1, 배치 32로 30에폭 학습한다.</p>
 <pre class="run"><code>rng = np.random.default_rng(0); tr, te = [], []
@@ -271,7 +273,8 @@ print("학습", len(trn), " 검증", len(val), " 테스트", len(te),
 for lr in [0.01, 0.1, 0.5, 1.0]:
     _, h = train([64, 64, 10], Xa, ya, Xv, yv, lr=lr, epochs=20)
     axs[0].semilogy(h[:, 0], label=f"lr {lr}"); axs[1].plot(h[:, 3], label=f"lr {lr}")
-    print(f"lr {lr:&lt;5} 학습 손실 {h[-1, 0]:.4f}  검증 정확도 {h[-1, 3]:.3f}  (최고 {h[:, 3].max():.3f})")
+    print(f"lr {lr:&lt;5} 학습 손실 {h[-1, 0]:.4f}  검증 정확도 {h[-1, 3]:.3f}  (최고 "
+          f"{h[:, 3].max():.3f})")
 axs[0].set_ylabel("학습 손실 (로그)")
 axs[1].set_ylabel("검증 정확도")
 axs[1].set_ylim(.85, 1)
@@ -279,20 +282,24 @@ for ax in axs: ax.set_xlabel("에폭"); ax.legend(); ax.grid(alpha=.3)
 plt.tight_layout(); plt.show()
 </code></pre></li>
 <li><b>크기와 깊이.</b> 은닉 크기 16, 64, 256과 은닉층 1~3개를 비교한다. 파라미터 수도 함께 적는다.
-<pre class="run"><code>for sizes in [[64, 16, 10], [64, 64, 10], [64, 256, 10], [64, 64, 64, 10], [64, 64, 64, 64, 10]]:
+<pre class="run"><code>for sizes in [[64, 16, 10], [64, 64, 10], [64, 256, 10], [64, 64, 64, 10],
+              [64, 64, 64, 64, 10]]:
     layers, h = train(sizes, Xa, ya, Xv, yv, lr=0.1, epochs=20)
     n_p = sum(p.size for l in layers for p, _ in l.params())
-    print(f"{str(sizes):22s} 파라미터 {n_p:6,}  학습 정확도 {h[-1, 2]:.3f}  검증 정확도 {h[-1, 3]:.3f}")
+    print(f"{str(sizes):22s} 파라미터 {n_p:6,}  학습 정확도 {h[-1, 2]:.3f}  검증 "
+          f"정확도 {h[-1, 3]:.3f}")
 </code></pre></li>
 <li><b>배치 크기와 초기화.</b> 배치 8, 32, 128(같은 20에폭)과, 가중치 표준편차 0.001, 0.01, He($\sqrt{2/d}$), 1.0을 비교한다. 초기화는 첫 에폭 뒤의 학습 손실도 본다.
 <pre class="run"><code>import time
 for B in [8, 32, 128]:
     t0 = time.perf_counter()
     _, h = train([64, 64, 10], Xa, ya, Xv, yv, lr=0.1, B=B, epochs=20)
-    print(f"배치 {B:3d}: 검증 정확도 {h[-1, 3]:.3f}, 시간 {time.perf_counter() - t0:.2f}초")
+    print(f"배치 {B:3d}: 검증 정확도 {h[-1, 3]:.3f}, 시간 "
+          f"{time.perf_counter() - t0:.2f}초")
 for sc in [0.001, 0.01, None, 1.0]:
     _, h = train([64, 64, 10], Xa, ya, Xv, yv, lr=0.1, epochs=20, scale=sc)
-    print(f"초기화 {('He' if sc is None else sc)!s:6s}: 1에폭 뒤 학습 손실 {h[0, 0]:.3f}, 검증 정확도 {h[-1, 3]:.3f}")
+    print(f"초기화 {('He' if sc is None else sc)!s:6s}: 1에폭 뒤 학습 손실 "
+          f"{h[0, 0]:.3f}, 검증 정확도 {h[-1, 3]:.3f}")
 </code></pre></li>
 <li><b>최종 모델.</b> 위 결과로 설정을 하나 고르고(예: 64 → 64 → 10, 학습률 0.5, 배치 32, He 초기화), 학습 세트 전체(학습 + 검증)로 다시 학습한 뒤 테스트 세트로 한 번 평가한다.
 <pre class="run"><code>final, h = train([64, 64, 10], X[tr], y[tr], X[te], y[te], lr=0.5, B=32, epochs=20)

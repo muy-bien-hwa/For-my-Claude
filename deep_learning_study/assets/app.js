@@ -182,7 +182,7 @@
     const prev = dayMeta(n - 1), next = dayMeta(n + 1);
     const head = `<div class="lec-head"><div class="eyebrow">${w.id}주차 · ${esc(w.title)} · Day ${n}${d.kind === 'project' ? ' · 주간 프로젝트' : ''}</div>
       <h1>${esc(d.title)}</h1>
-      <div class="lec-meta"><span>${I.clock}${C.minutesPerDay}분</span><span>${I.code}${d.runtime === 'colab' ? 'Colab (GPU) 실습' : '브라우저 실습'}</span>${S.done[n] ? `<span style="color:var(--ok)">${I.check}${S.done[n].slice(0, 10)} 완료</span>` : ''}</div>
+      <div class="lec-meta"><span>${I.clock}${C.minutesPerDay}분</span><span>${I.code}${d.runtime === 'colab' ? 'Colab 실습' : '브라우저 실습'}</span>${S.done[n] ? `<span style="color:var(--ok)">${I.check}${S.done[n].slice(0, 10)} 완료</span>` : ''}</div>
       <p class="lead" style="margin:0">${esc(d.summary)}</p></div>`;
     if (!isReady(n)) {
       setRail(false);

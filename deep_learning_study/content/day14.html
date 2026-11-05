@@ -84,7 +84,8 @@ print("학습", Xtr.shape, " 테스트", X[te].shape, " 겹 크기", [len(f) for
 <p>모델이 넘어야 할 바닥을 정한다. 항상 양성(0)이라고 말하는 모델과, 특징 하나의 값을 그대로 점수로 쓰는 모델이다. 특징 하나의 AUC는 "그 특징의 값으로만 줄 세웠을 때의 성능"이다.</p>
 <pre class="run"><code>def auc(p, t_):
     pos, neg = p[t_ == 1], p[t_ == 0]
-    return (pos[:, None] &gt; neg[None, :]).mean() + 0.5 * (pos[:, None] == neg[None, :]).mean()
+    return ((pos[:, None] &gt; neg[None, :]).mean()
+            + 0.5 * (pos[:, None] == neg[None, :]).mean())
 print("항상 양성: 정확도 %.3f, 재현율 0, AUC 0.5" % (1 - ytr.mean()))
 single = sorted([(auc(Xtr[:, j], ytr), names[j]) for j in range(30)], reverse=True)
 for a, nm in single[:3]: print(f"특징 하나: {nm:10s} AUC {a:.4f}")
@@ -136,7 +137,8 @@ def best_split(A, t_):
         nl = np.arange(1, n)
         nr = n - nl
         pl = np.cumsum(ys)[:-1] / nl; pr = (ys.sum() - np.cumsum(ys)[:-1]) / nr
-        g = (nl * (1 - pl ** 2 - (1 - pl) ** 2) + nr * (1 - pr ** 2 - (1 - pr) ** 2)) / n
+        g = (nl * (1 - pl ** 2 - (1 - pl) ** 2)
+             + nr * (1 - pr ** 2 - (1 - pr) ** 2)) / n
         g = np.where(xs[1:] &gt; xs[:-1], g, np.inf); i = np.argmin(g)
         if g[i] &lt; best[0]: best = (g[i], j, (xs[i] + xs[i + 1]) / 2)
     return best
@@ -186,10 +188,12 @@ oof = {}
 print(f"{'후보':14s}  AUC     정확도   BCE")
 for nm, make in cands.items():
     oof[nm] = p = oof_proba(make, Xtr, ytr)
-    print(f"{nm:14s}  {auc(p, ytr):.4f}  {((p &gt;= 0.5) == ytr).mean():.4f}  {bce(p, ytr):.4f}")
+    print(f"{nm:14s}  {auc(p, ytr):.4f}  {((p &gt;= 0.5) == ytr).mean():.4f}  "
+          f"{bce(p, ytr):.4f}")
 </code></pre>
 <pre class="run"><code>labels = list(oof); aucs = [auc(oof[k], ytr) for k in labels]
-colors = ["C0" if k.startswith("로지") else "C1" if k.startswith("kNN") else "C2" for k in labels]
+colors = ["C0" if k.startswith("로지") else "C1" if k.startswith("kNN") else "C2"
+          for k in labels]
 plt.figure(figsize=(6.4, 3.6))
 plt.barh(labels[::-1], aucs[::-1], color=colors[::-1])
 plt.xlim(0.9, 1.0)
@@ -211,7 +215,8 @@ print("최종 모델:", best, " AUC %.4f" % max(aucs))
 def prec_rec(c):
     return c["TP"] / max(c["TP"] + c["FP"], 1), c["TP"] / max(c["TP"] + c["FN"], 1)
 p = oof[best]
-thr = next(t_ for t_ in np.sort(np.unique(p))[::-1] if prec_rec(confusion(p, ytr, t_))[1] &gt;= 0.98)
+thr = next(t_ for t_ in np.sort(np.unique(p))[::-1]
+           if prec_rec(confusion(p, ytr, t_))[1] &gt;= 0.98)
 for t_ in [0.5, thr]:
     P_, R_ = prec_rec(confusion(p, ytr, t_))
     print(f"겹 밖 예측, 임계값 {t_:.3f}: 정밀도 {P_:.3f}, 재현율 {R_:.3f}")

@@ -148,7 +148,8 @@ t_loop = time.perf_counter() - t
 t = time.perf_counter()
 total2 = x @ y            # 내적: (x * y).sum()과 같음
 t_vec = time.perf_counter() - t
-print(f"반복문 {t_loop * 1000:7.1f} ms   벡터화 {t_vec * 1000:6.2f} ms   약 {t_loop / t_vec:.0f}배")
+print(f"반복문 {t_loop * 1000:7.1f} ms   벡터화 {t_vec * 1000:6.2f} ms   약 "
+      f"{t_loop / t_vec:.0f}배")
 print("결과 같음:", np.isclose(total, total2))
 </code></pre>
 <p>원소별 연산은 산술 연산자와 수학 함수를 그대로 쓴다. <code>x + y</code>, <code>x * y</code>, <code>np.exp(x)</code>, <code>np.maximum(x, 0)</code>은 모두 원소마다 적용된다. 마지막 식은 3주차의 ReLU 활성화 함수다.</p>

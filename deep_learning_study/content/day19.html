@@ -179,7 +179,8 @@ s = w1 * x1 + w2 * x2 + b
 p = 1 / (1 + (-s).exp())                     # 시그모이드를 기본 연산으로 조립
 L = -p.log()
 topo = L.backward()
-print(f"L = {L.data:.4f}, ∂w1 = {w1.grad:.4f}, ∂x1 = {x1.grad:.4f}, ∂w2 = {w2.grad:.4f}, ∂x2 = {x2.grad:.4f}, ∂b = {b.grad:.4f}")
+print(f"L = {L.data:.4f}, ∂w1 = {w1.grad:.4f}, ∂x1 = {x1.grad:.4f}, ∂w2 = "
+      f"{w2.grad:.4f}, ∂x2 = {x2.grad:.4f}, ∂b = {b.grad:.4f}")
 print("그래프 노드 수:", len(topo), " 연산 순서:", [v._op for v in topo if v._op])
 </code></pre>
 <p>시그모이드를 전용 연산 없이 <code>exp</code>, 덧셈, 거듭제곱의 조합으로 만들었는데도 기울기가 정확하다. 자동 미분은 조립한 연산이 무엇이든 연쇄법칙을 기계적으로 적용한다. 마지막으로 기울기 누적과 수치 미분을 확인한다.</p>
@@ -308,7 +309,8 @@ for step in range(100):
 acc = np.mean([(s.data &gt; 0) == (yi &gt; 0) for s, yi in zip(scores, ym)])
 print(f"마지막 손실 {losses[-1]:.4f},  학습 정확도 {acc:.3f}")
 g1, g2 = np.meshgrid(np.linspace(-2.2, 2.2, 45), np.linspace(-2.2, 2.2, 45))
-S = np.array([[model([Value(a), Value(b)]).data for a, b in zip(r1, r2)] for r1, r2 in zip(g1, g2)])
+S = np.array([[model([Value(a), Value(b)]).data for a, b in zip(r1, r2)] for r1,
+              r2 in zip(g1, g2)])
 fig, axs = plt.subplots(1, 2, figsize=(9, 3.4))
 axs[0].plot(losses)
 axs[0].set_xlabel("스텝")

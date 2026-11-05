@@ -148,8 +148,10 @@ def numeric(param, idx, h=1e-5):
     param[idx] = old - h; Lm = forward(W1, b1, W2, b2)[0]
     param[idx] = old
     return (Lp - Lm) / (2 * h)
-for name, param, grad, idx in [("W1", W1, dW1, (10, 3)), ("b1", b1, db1, (5,)), ("W2", W2, dW2, (7, 2)), ("b2", b2, db2, (4,))]:
-    print(f"{name}{idx}: 역전파 {grad[idx]: .6e}, 수치 미분 {numeric(param, idx): .6e}")
+for name, param, grad, idx in [("W1", W1, dW1, (10, 3)), ("b1", b1, db1, (5,)),
+                               ("W2", W2, dW2, (7, 2)), ("b2", b2, db2, (4,))]:
+    print(f"{name}{idx}: 역전파 {grad[idx]: .6e}, 수치 미분 "
+          f"{numeric(param, idx): .6e}")
 </code></pre>
 <p>모든 쌍이 유효숫자 6자리 이상 일치한다. 역전파 코드는 이렇게 수치 미분과 비교해 검증한다(20일차에 전체 파라미터로 체계화한다).</p>
 
@@ -214,7 +216,8 @@ theta = pack(W1, b1, W2, b2); g_bp = pack(gW1, gb1, gW2, gb2)
 g_num = np.zeros_like(theta)
 for i in range(len(theta)):
     e = np.zeros_like(theta); e[i] = 1e-5
-    g_num[i] = (loss_fn(*unpack(theta + e))[0] - loss_fn(*unpack(theta - e))[0]) / 2e-5
+    lp, lm = loss_fn(*unpack(theta + e))[0], loss_fn(*unpack(theta - e))[0]
+    g_num[i] = (lp - lm) / 2e-5
 rel = np.abs(g_bp - g_num) / np.maximum(np.abs(g_bp), np.abs(g_num)).clip(1e-12)
 print("역전파:", g_bp.round(5))
 print("수치  :", g_num.round(5))

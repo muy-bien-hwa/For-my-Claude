@@ -201,5 +201,6 @@ window.GLOSSARY = [
   { k: 'double-descent', ko: '이중 하강', en: 'Double Descent', d: '모델 크기를 키우면 검증 오차가 내려갔다 올라간 뒤(고전적 과적합) 다시 내려가는 현상. 거대 신경망이 잘 일반화하는 현상과 관련된다.', rel: ['bias-variance'] },
   { k: 'random-search', ko: '무작위 탐색', en: 'Random Search', d: '하이퍼파라미터 조합을 무작위로 뽑아 시험하는 방법. 중요한 축을 더 다양하게 탐색해 격자 탐색보다 효율적이다.', rel: ['hyperparameter'] },
   { k: 'reproducibility', ko: '재현성', en: 'Reproducibility', d: '같은 코드·데이터·설정으로 같은 결과를 다시 얻을 수 있는 성질. 시드 고정, 버전 기록이 필요하다.', rel: ['seed'] },
-  { k: 'seed', ko: '시드', en: 'Random Seed', d: '난수 생성기의 시작값. 같은 시드면 같은 난수열이 나온다.', rel: ['reproducibility'] }
+  { k: 'seed', ko: '시드', en: 'Random Seed', d: '난수 생성기의 시작값. 같은 시드면 같은 난수열이 나온다.', rel: ['reproducibility'] },
+  { k: 'mnist', ko: 'MNIST', en: 'MNIST handwritten digits', d: '28×28 픽셀 흑백 손글씨 숫자 이미지 7만 장(학습 6만, 테스트 1만)으로 된 데이터셋. 딥러닝 입문과 알고리즘 비교의 표준 데이터로 쓰인다.', rel: ['data-augmentation', 'test-set'] }
 ];

@@ -302,7 +302,8 @@ print(loss(1.8, 32), loss(2.0, 30), loss(1.0, 0))
 bs = np.linspace(0, 60, 121)
 L = np.array([[loss(w, b) for w in ws] for b in bs])      # 형상 (b 개수, w 개수)
 i, j = np.unravel_index(L.argmin(), L.shape)
-print(f"계산 횟수 {L.size}회, 최적 w = {ws[j]:.3f}, b = {bs[i]:.2f}, 손실 {L[i, j]:.3f}")
+print(f"계산 횟수 {L.size}회, 최적 w = {ws[j]:.3f}, b = {bs[i]:.2f}, 손실 "
+      f"{L[i, j]:.3f}")
 </code></pre></li>
 <li><b>손실 지형 시각화.</b> 손실을 등고선으로 그린다. 등고선 하나는 손실이 같은 $(w, b)$의 모임이다(5일차에서 자세히 다룬다).
 <pre class="run"><code>plt.figure(figsize=(6, 4.2))
