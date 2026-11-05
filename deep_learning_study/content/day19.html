@@ -197,7 +197,8 @@ print("초기화 없이 두 번 backward:", a.grad, "→ 중간 노드의 grad�
 
 <h2 data-min="8" data-kind="concept">스칼라 엔진과 텐서 엔진</h2>
 <p>오늘의 엔진은 숫자 하나마다 파이썬 객체를 만들어 느리다. 64 → 32 → 10 MLP의 표본 하나만 해도 노드가 수천 개다. PyTorch는 같은 일을 텐서(배열) 단위로 한다. 노드 하나가 행렬곱 전체이고, 그 노드의 <code>_backward</code>는 18일차의 $X^\top G$, $GW^\top$ 공식을 C++/CUDA로 구현한 것이다. 원리는 같다.</p>
-<pre><code class="language-python">import torch                                   # 29일차 미리 보기 (브라우저에서는 실행되지 않음)
+<pre><code class="language-python"># 29일차 미리 보기 (브라우저에서는 실행되지 않음)
+import torch
 x = torch.tensor(-2.0, requires_grad=True)     # requires_grad: 연산을 기록하라
 y = torch.tensor(5.0, requires_grad=True); z = torch.tensor(-4.0, requires_grad=True)
 f = (x + y) * z

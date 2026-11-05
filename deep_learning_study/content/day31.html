@@ -1,0 +1,418 @@
+<ul class="goals">
+  <li>다층 퍼셉트론이 이미지를 다룰 때의 두 가지 한계(파라미터 수, 위치 구조의 무시)를 설명할 수 있다.</li>
+  <li>합성곱을 손으로 계산하고 커널, 특성 맵, 패딩, 스트라이드, 채널의 뜻과 출력 크기를 구할 수 있다.</li>
+  <li>다채널 합성곱 층의 파라미터 수와 연산량을 계산할 수 있다.</li>
+  <li>풀링의 역할과 이동 등변성·불변성을 설명할 수 있다.</li>
+  <li>NumPy로 합성곱(반복문, im2col)과 풀링, 합성곱의 역전파를 구현하고 검증할 수 있다.</li>
+</ul>
+
+<h2 data-min="15" data-kind="concept">이미지와 다층 퍼셉트론의 한계</h2>
+<p>28일차에 다층 퍼셉트론으로 MNIST 98.8%에 도달했다. 그러나 이미지가 커지면 두 가지 문제가 드러난다.</p>
+<ol class="steps">
+  <li><b>파라미터가 너무 많다.</b> 224×224 컬러 이미지는 입력이 150,528개다. 은닉 뉴런 1,000개짜리 첫 층만으로 가중치가 1억 5천만 개다. 데이터에 비해 파라미터가 많으면 과적합하고, 메모리와 계산도 감당하기 어렵다.</li>
+  <li><b>위치 구조를 모른다.</b> 이미지를 한 줄로 펼치면 "이웃한 픽셀"이라는 정보가 사라진다. 픽셀 순서를 모든 이미지에서 똑같이 뒤섞어도 다층 퍼셉트론의 성능은 같다. 숫자를 2픽셀 옮기면 입력 벡터가 크게 바뀌므로, 28일차에는 이동 증강으로 이를 따로 가르쳐야 했다.</li>
+</ol>
+<p>합성곱 층은 이미지에 대한 두 가지 가정을 구조에 넣어 이 문제를 푼다. 첫째, <b>지역 연결</b>: 출력 한 칸은 입력의 작은 영역(예: 3×3)만 본다. 경계, 모서리 같은 유용한 특징은 작은 영역 안에 있다. 둘째, <dfn data-t="weight-sharing">가중치 공유</dfn>: 모든 위치에서 같은 가중치를 쓴다. 고양이 귀를 찾는 방법은 이미지의 어느 위치에서나 같기 때문이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 230" width="640" role="img" aria-label="완전연결층과 합성곱층의 연결 비교">
+  <g font-size="12">
+  <text x="150" y="18" text-anchor="middle" class="s-tx" font-weight="700">완전연결: 모든 입력 → 모든 출력</text>
+  <text x="480" y="18" text-anchor="middle" class="s-tx" font-weight="700">합성곱: 이웃 3칸 → 출력 1칸, 같은 가중치</text>
+  <g class="s-mu" stroke-width="0.7" opacity=".8">
+    <path d="M40 180 L60 60 M40 180 L100 60 M40 180 L140 60 M40 180 L180 60 M40 180 L220 60 M40 180 L260 60"/>
+    <path d="M80 180 L60 60 M80 180 L100 60 M80 180 L140 60 M80 180 L180 60 M80 180 L220 60 M80 180 L260 60"/>
+    <path d="M120 180 L60 60 M120 180 L100 60 M120 180 L140 60 M120 180 L180 60 M120 180 L220 60 M120 180 L260 60"/>
+    <path d="M160 180 L60 60 M160 180 L100 60 M160 180 L140 60 M160 180 L180 60 M160 180 L220 60 M160 180 L260 60"/>
+    <path d="M200 180 L60 60 M200 180 L100 60 M200 180 L140 60 M200 180 L180 60 M200 180 L220 60 M200 180 L260 60"/>
+    <path d="M240 180 L60 60 M240 180 L100 60 M240 180 L140 60 M240 180 L180 60 M240 180 L220 60 M240 180 L260 60"/>
+  </g>
+  <g class="s-f" stroke-width="1">
+    <circle cx="40" cy="180" r="9"/><circle cx="80" cy="180" r="9"/><circle cx="120" cy="180" r="9"/><circle cx="160" cy="180" r="9"/><circle cx="200" cy="180" r="9"/><circle cx="240" cy="180" r="9"/>
+    <circle cx="60" cy="60" r="9"/><circle cx="100" cy="60" r="9"/><circle cx="140" cy="60" r="9"/><circle cx="180" cy="60" r="9"/><circle cx="220" cy="60" r="9"/><circle cx="260" cy="60" r="9"/>
+  </g>
+  <text x="150" y="215" text-anchor="middle" class="s-txm">가중치 6 × 6 = 36개 (모두 다름)</text>
+  <g transform="translate(330,0)">
+    <g stroke-width="2.2" fill="none">
+      <path d="M40 180 L80 60 M80 180 L80 60 M120 180 L80 60" stroke="#2c5db6"/>
+      <path d="M80 180 L120 60 M120 180 L120 60 M160 180 L120 60" stroke="#2c5db6" opacity=".55"/>
+      <path d="M120 180 L160 60 M160 180 L160 60 M200 180 L160 60" stroke="#2c5db6" opacity=".55"/>
+      <path d="M160 180 L200 60 M200 180 L200 60 M240 180 L200 60" stroke="#2c5db6" opacity=".55"/>
+    </g>
+    <g class="s-f" stroke-width="1">
+      <circle cx="40" cy="180" r="9"/><circle cx="80" cy="180" r="9"/><circle cx="120" cy="180" r="9"/><circle cx="160" cy="180" r="9"/><circle cx="200" cy="180" r="9"/><circle cx="240" cy="180" r="9"/>
+    </g>
+    <g class="s-acs" stroke-width="1"><circle cx="80" cy="60" r="9"/><circle cx="120" cy="60" r="9"/><circle cx="160" cy="60" r="9"/><circle cx="200" cy="60" r="9"/></g>
+    <g class="s-txa" font-size="11"><text x="48" y="128">a</text><text x="86" y="128">b</text><text x="108" y="128">c</text></g>
+    <text x="140" y="215" text-anchor="middle" class="s-txm">가중치 3개(a, b, c)를 모든 위치에서 공유</text>
+  </g>
+  </g>
+</svg>
+<figcaption>한 축만 그린 그림. 완전연결층은 입력 6개와 출력 6개를 모두 잇는다. 합성곱층은 출력마다 이웃 3칸만 보고, 그 3개 가중치를 모든 위치에서 같이 쓴다. 입력이 커져도 가중치 수는 그대로다.</figcaption>
+</figure>
+
+<h2 data-min="25" data-kind="concept">합성곱 연산</h2>
+<p>입력 $X$ 위에 작은 가중치 행렬 <dfn data-t="kernel">커널</dfn> $K$(필터라고도 한다)를 놓고, 겹친 원소끼리 곱해 모두 더한 값을 출력의 한 칸에 쓴다. 커널을 한 칸씩 옮기며 반복하면 출력 행렬이 만들어지는데, 이것을 <dfn data-t="feature-map">특성 맵</dfn>이라 한다. 이 연산이 <dfn data-t="convolution">합성곱</dfn>이다. $k \times k$ 커널이면</p>
+<p>$$Y[i, j] = \sum_{a=0}^{k-1} \sum_{b=0}^{k-1} X[i + a,\ j + b]\, K[a, b] + \text{편향}.$$</p>
+<div class="box ex" data-title="손으로 계산하는 합성곱"><p>4×4 입력에 세로 경계를 찾는 3×3 커널(왼쪽 열 +1, 오른쪽 열 −1)을 적용한다. 출력은 2×2다.</p>
+<figure class="fig" style="margin:12px 0">
+<svg viewBox="0 0 600 170" width="600" role="img" aria-label="4×4 입력과 3×3 커널의 합성곱 계산 예">
+  <g font-size="13" text-anchor="middle">
+  <g class="s-f" stroke-width="1">
+    <rect x="20" y="20" width="120" height="120"/>
+  </g>
+  <rect x="20" y="20" width="90" height="90" class="s-acs" stroke-width="2"/>
+  <g class="s-mu" stroke-width="0.8"><path d="M50 20 V140 M80 20 V140 M110 20 V140 M20 50 H140 M20 80 H140 M20 110 H140"/></g>
+  <g class="s-tx">
+    <text x="35" y="40">1</text><text x="65" y="40">2</text><text x="95" y="40">0</text><text x="125" y="40">1</text>
+    <text x="35" y="70">0</text><text x="65" y="70">1</text><text x="95" y="70">3</text><text x="125" y="70">1</text>
+    <text x="35" y="100">2</text><text x="65" y="100">1</text><text x="95" y="100">0</text><text x="125" y="100">0</text>
+    <text x="35" y="130">1</text><text x="65" y="130">0</text><text x="95" y="130">2</text><text x="125" y="130">1</text>
+  </g>
+  <text x="80" y="160" class="s-txm" font-size="12">입력 X (4×4)</text>
+  <text x="165" y="85" class="s-tx" font-size="18">∗</text>
+  <g transform="translate(190,35)">
+    <rect x="0" y="0" width="90" height="90" class="s-f" stroke-width="1"/>
+    <g class="s-mu" stroke-width="0.8"><path d="M30 0 V90 M60 0 V90 M0 30 H90 M0 60 H90"/></g>
+    <g class="s-tx"><text x="15" y="20">1</text><text x="45" y="20">0</text><text x="75" y="20">−1</text><text x="15" y="50">1</text><text x="45" y="50">0</text><text x="75" y="50">−1</text><text x="15" y="80">1</text><text x="45" y="80">0</text><text x="75" y="80">−1</text></g>
+    <text x="45" y="125" class="s-txm" font-size="12">커널 K (3×3)</text>
+  </g>
+  <text x="305" y="85" class="s-tx" font-size="18">=</text>
+  <g transform="translate(330,50)">
+    <rect x="0" y="0" width="60" height="60" class="s-f" stroke-width="1"/>
+    <rect x="0" y="0" width="30" height="30" class="s-acs" stroke-width="2"/>
+    <g class="s-mu" stroke-width="0.8"><path d="M30 0 V60 M0 30 H60"/></g>
+    <g class="s-tx"><text x="15" y="20">0</text><text x="45" y="20">2</text><text x="15" y="50">−2</text><text x="45" y="50">0</text></g>
+    <text x="30" y="110" class="s-txm" font-size="12">특성 맵 Y (2×2)</text>
+  </g>
+  <g text-anchor="start" font-size="12">
+    <text x="420" y="58" class="s-txa">Y[0,0] = (1 + 0 + 2)</text>
+    <text x="420" y="78" class="s-txa">      − (0 + 3 + 0) = 0</text>
+    <text x="420" y="108" class="s-txm">왼쪽 열 합 − 오른쪽 열 합.</text>
+    <text x="420" y="126" class="s-txm">밝기가 왼쪽에서 오른쪽으로</text>
+    <text x="420" y="144" class="s-txm">줄어드는 곳에서 양수다.</text>
+  </g>
+  </g>
+</svg>
+</figure>
+<p>나머지 칸도 같다: $Y[0,1] = (2+1+1) - (1+1+0) = 2$, $Y[1,0] = (0+2+1) - (3+0+2) = -2$, $Y[1,1] = (1+1+0) - (1+0+1) = 0$.</p></div>
+<p>수학의 합성곱은 커널을 180° 뒤집어 곱한다. 딥러닝 라이브러리는 뒤집지 않는 위 연산(교차상관)을 쓰면서도 합성곱이라 부른다. 커널은 학습으로 정해지므로 뒤집는지 여부는 결과에 영향이 없다.</p>
+<div class="viz-mount" data-viz="conv"></div>
+<p>커널의 값이 커널이 찾는 무늬를 정한다. 세로 경계 커널은 밝기가 가로로 바뀌는 곳에, 흐림 커널은 모든 곳에 반응해 주변을 평균한다. 1980~90년대의 영상 처리는 이런 커널을 사람이 설계했다. 합성곱 신경망은 커널 값을 데이터에서 학습한다(미니 프로젝트 4단계).</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+import time
+
+def conv2d(X, K, pad=0, stride=1):
+    """단일 채널 합성곱(교차상관). 반복문으로 정의 그대로 계산한다."""
+    if pad:
+        X = np.pad(X, pad)
+    kh, kw = K.shape
+    H = (X.shape[0] - kh) // stride + 1
+    W = (X.shape[1] - kw) // stride + 1
+    Y = np.zeros((H, W))
+    for i in range(H):
+        for j in range(W):
+            patch = X[i * stride:i * stride + kh, j * stride:j * stride + kw]
+            Y[i, j] = (patch * K).sum()
+    return Y
+
+X = np.array([[1, 2, 0, 1], [0, 1, 3, 1], [2, 1, 0, 0], [1, 0, 2, 1]], float)
+K = np.array([[1, 0, -1], [1, 0, -1], [1, 0, -1]], float)
+print(conv2d(X, K))
+print("패딩 1:", conv2d(X, K, pad=1).shape, "  패딩 1, 스트라이드 2:",
+      conv2d(X, K, pad=1, stride=2).shape)
+</code></pre>
+
+<h2 data-min="15" data-kind="concept">패딩과 스트라이드</h2>
+<p>$n \times n$ 입력에 $k \times k$ 커널을 적용하면 출력은 $(n - k + 1) \times (n - k + 1)$로 줄어든다. 층을 쌓을수록 이미지가 줄고, 가장자리 픽셀은 커널에 덜 쓰인다. <dfn data-t="padding">패딩</dfn>은 입력 둘레에 0을 $p$줄 붙여 이를 막는다. $k = 3$이면 $p = 1$, $k = 5$면 $p = 2$일 때 출력 크기가 입력과 같다("same" 패딩). <dfn data-t="stride">스트라이드</dfn> $s$는 커널을 옮기는 간격이다. $s = 2$면 출력이 가로세로 약 절반이 된다. 일반식은 다음과 같다.</p>
+<p>$$n_{\text{out}} = \left\lfloor \frac{n + 2p - k}{s} \right\rfloor + 1$$</p>
+<table>
+  <thead><tr><th>입력</th><th>커널</th><th>패딩</th><th>스트라이드</th><th>출력</th><th>쓰임</th></tr></thead>
+  <tbody>
+    <tr><td>32</td><td>3</td><td>1</td><td>1</td><td>32</td><td>크기를 유지하며 특징 추출 (가장 흔함)</td></tr>
+    <tr><td>32</td><td>3</td><td>1</td><td>2</td><td>16</td><td>해상도를 절반으로 (풀링 대신)</td></tr>
+    <tr><td>32</td><td>5</td><td>0</td><td>1</td><td>28</td><td>LeNet-5의 첫 층</td></tr>
+    <tr><td>224</td><td>7</td><td>3</td><td>2</td><td>112</td><td>ResNet의 첫 층</td></tr>
+  </tbody>
+</table>
+<div class="viz-mount" data-viz="conv-shape"></div>
+
+<h2 data-min="20" data-kind="concept">채널</h2>
+<p>컬러 이미지는 빨강·초록·파랑 세 장의 행렬로 이루어진다. 이 한 장 한 장을 <dfn data-t="channel">채널</dfn>이라 한다. 합성곱 층의 출력도 여러 장의 특성 맵, 즉 여러 채널이다. 입력 채널이 $C_{\text{in}}$개면 커널 하나는 $C_{\text{in}} \times k \times k$ 크기의 덩어리이고, 모든 입력 채널에 걸친 곱의 합이 출력 한 칸이 된다. 출력 채널마다 커널이 따로 있으므로 출력 채널이 $C_{\text{out}}$개면 커널도 $C_{\text{out}}$개다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 220" width="640" role="img" aria-label="다채널 합성곱: 입력 채널 3개, 커널 2개, 출력 채널 2개">
+  <g font-size="12">
+  <g transform="translate(30,40)">
+    <rect x="16" y="0" width="110" height="110" fill="#4f82c8" fill-opacity=".25" stroke="#2c5db6"/>
+    <rect x="8" y="8" width="110" height="110" fill="#6aa84f" fill-opacity=".25" stroke="#4d7d28"/>
+    <rect x="0" y="16" width="110" height="110" fill="#e06666" fill-opacity=".25" stroke="#c0433b"/>
+    <rect x="20" y="36" width="30" height="30" fill="none" class="s-ac" stroke-width="2.4"/>
+    <text x="63" y="150" text-anchor="middle" class="s-txm">입력 C<tspan baseline-shift="sub" font-size="9">in</tspan> × H × W (3 × 32 × 32)</text>
+  </g>
+  <text x="200" y="110" text-anchor="middle" class="s-tx" font-size="18">∗</text>
+  <g transform="translate(230,46)">
+    <g transform="translate(0,0)">
+      <rect x="8" y="0" width="30" height="30" fill="#4f82c8" fill-opacity=".3" stroke="#2c5db6"/><rect x="4" y="4" width="30" height="30" fill="#6aa84f" fill-opacity=".3" stroke="#4d7d28"/><rect x="0" y="8" width="30" height="30" fill="#e06666" fill-opacity=".3" stroke="#c0433b"/>
+      <text x="55" y="28" class="s-txa">커널 1</text>
+    </g>
+    <g transform="translate(0,60)">
+      <rect x="8" y="0" width="30" height="30" fill="#4f82c8" fill-opacity=".3" stroke="#2c5db6"/><rect x="4" y="4" width="30" height="30" fill="#6aa84f" fill-opacity=".3" stroke="#4d7d28"/><rect x="0" y="8" width="30" height="30" fill="#e06666" fill-opacity=".3" stroke="#c0433b"/>
+      <text x="55" y="28" class="s-tx">커널 2</text>
+    </g>
+    <text x="40" y="136" text-anchor="middle" class="s-txm">C<tspan baseline-shift="sub" font-size="9">out</tspan>개, 각각 C<tspan baseline-shift="sub" font-size="9">in</tspan> × k × k</text>
+  </g>
+  <text x="352" y="110" text-anchor="middle" class="s-tx" font-size="18">=</text>
+  <g transform="translate(390,46)">
+    <rect x="10" y="0" width="100" height="100" class="s-f" stroke-width="1"/>
+    <rect x="0" y="10" width="100" height="100" class="s-acs" stroke-width="1"/>
+    <rect x="20" y="30" width="12" height="12" class="s-acf"/>
+    <text x="50" y="136" text-anchor="middle" class="s-txm">출력 C<tspan baseline-shift="sub" font-size="9">out</tspan> × H′ × W′</text>
+  </g>
+  <g font-size="11.5" class="s-txm">
+    <text x="530" y="70">출력 한 칸 =</text>
+    <text x="530" y="88">커널 1과 입력의</text>
+    <text x="530" y="106">3 × 3 × 3 = 27개</text>
+    <text x="530" y="124">곱의 합 + 편향</text>
+  </g>
+  </g>
+</svg>
+<figcaption>입력 채널 3개(RGB)에 커널 2개를 적용하면 출력 채널이 2개다. 커널 하나는 입력의 모든 채널을 한꺼번에 본다(파란 틀 3×3×3).</figcaption>
+</figure>
+<div class="box key" data-title="합성곱 층의 크기"><p>입력 $C_{\text{in}} \times H \times W$, 커널 $k \times k$, 출력 $C_{\text{out}} \times H' \times W'$일 때</p><ul>
+<li>파라미터: $C_{\text{out}} \times (C_{\text{in}} k^2 + 1)$. 이미지 크기 $H, W$와 무관하다.</li>
+<li>곱셈-덧셈: $H' W' \times C_{\text{out}} \times C_{\text{in}} k^2$. 이미지 크기에 비례한다.</li>
+</ul><p>예: RGB 입력에 3×3 커널 64개면 파라미터 $64 \times (3 \cdot 9 + 1) = 1{,}792$개. 32×32 출력이면 곱셈-덧셈 $1024 \times 64 \times 27 \approx 177$만 회. 같은 입출력 크기의 완전연결층이라면 가중치가 $3072 \times 65536 \approx 2$억 개다.</p></div>
+<pre class="run"><code>def im2col(X, kh, kw, stride=1):
+    """(H, W) → (출력 칸 수, kh·kw): 커널 자리마다 입력 조각을 한 행으로 편다"""
+    H = (X.shape[0] - kh) // stride + 1
+    W = (X.shape[1] - kw) // stride + 1
+    s0, s1 = X.strides
+    shape, strides = (H, W, kh, kw), (s0 * stride, s1 * stride, s0, s1)
+    patches = np.lib.stride_tricks.as_strided(X, shape=shape, strides=strides)
+    return patches.reshape(H * W, kh * kw), (H, W)
+
+def conv2d_multi(X, K, b, pad=0, stride=1):
+    """X: (C_in, H, W), K: (C_out, C_in, kh, kw), b: (C_out,) → (C_out, H', W')"""
+    C_out, C_in, kh, kw = K.shape
+    if pad:
+        X = np.pad(X, ((0, 0), (pad, pad), (pad, pad)))
+    cols = []
+    for c in range(C_in):
+        col, (H, W) = im2col(np.ascontiguousarray(X[c]), kh, kw, stride)
+        cols.append(col)
+    cols = np.concatenate(cols, axis=1)                  # (H'W', C_in·kh·kw)
+    out = cols @ K.reshape(C_out, -1).T + b              # 행렬곱 한 번
+    return out.T.reshape(C_out, H, W)
+
+rng = np.random.default_rng(1)
+Xc = rng.random((3, 8, 8))
+Kc = rng.standard_normal((4, 3, 3, 3))
+bc = rng.standard_normal(4)
+Y = conv2d_multi(Xc, Kc, bc, pad=1)
+ref = np.zeros((4, 8, 8))                                # 정의대로 계산한 기준값
+Xp = np.pad(Xc, ((0, 0), (1, 1), (1, 1)))
+for o in range(4):
+    for i in range(8):
+        for j in range(8):
+            ref[o, i, j] = (Xp[:, i:i + 3, j:j + 3] * Kc[o]).sum() + bc[o]
+print("출력 형상", Y.shape, "  기준값과 최대 차이", np.abs(Y - ref).max())
+print("RGB → 64채널, 3×3 커널의 파라미터:", 64 * (3 * 9 + 1))
+</code></pre>
+<p><dfn data-t="im2col">im2col</dfn>은 커널이 놓이는 자리마다 입력 조각을 한 행으로 펼쳐 합성곱을 행렬곱 한 번으로 바꾸는 방법이다. 메모리를 더 쓰는 대신, 고도로 최적화된 행렬곱 루틴을 쓸 수 있다. 실제 라이브러리는 이 생각을 더 다듬은 알고리즘(FFT, Winograd 등)을 상황에 맞게 고른다.</p>
+
+<h2 data-min="15" data-kind="concept">풀링</h2>
+<p><dfn data-t="pooling">풀링</dfn>은 작은 영역을 값 하나로 요약해 특성 맵의 해상도를 줄인다. <dfn data-t="max-pooling">최대 풀링</dfn>은 영역의 최댓값을, 평균 풀링은 평균을 고른다. 2×2 영역, 스트라이드 2가 가장 흔하며 가로세로가 절반이 된다. 풀링에는 학습할 파라미터가 없다.</p>
+<figure class="fig">
+<svg viewBox="0 0 520 150" width="520" role="img" aria-label="2×2 최대 풀링 예">
+  <g font-size="13" text-anchor="middle">
+  <g transform="translate(40,15)">
+    <rect x="0" y="0" width="60" height="60" fill="#4f82c8" fill-opacity=".18"/><rect x="60" y="0" width="60" height="60" fill="#e06666" fill-opacity=".18"/>
+    <rect x="0" y="60" width="60" height="60" fill="#6aa84f" fill-opacity=".18"/><rect x="60" y="60" width="60" height="60" fill="#f2c94c" fill-opacity=".25"/>
+    <g class="s-mu" stroke-width="0.8"><path d="M30 0 V120 M90 0 V120 M0 30 H120 M0 90 H120"/></g>
+    <g class="s-ln" stroke-width="1.6"><rect x="0" y="0" width="120" height="120"/><path d="M60 0 V120 M0 60 H120"/></g>
+    <g class="s-tx"><text x="15" y="20">1</text><text x="45" y="20">3</text><text x="75" y="20">2</text><text x="105" y="20">0</text>
+    <text x="15" y="50">4</text><text x="45" y="50">2</text><text x="75" y="50">1</text><text x="105" y="50">5</text>
+    <text x="15" y="80">0</text><text x="45" y="80">1</text><text x="75" y="80">3</text><text x="105" y="80">2</text>
+    <text x="15" y="110">2</text><text x="45" y="110">6</text><text x="75" y="110">1</text><text x="105" y="110">1</text></g>
+  </g>
+  <text x="200" y="70" class="s-txa" font-size="12">최대 풀링</text>
+  <text x="200" y="88" class="s-txa" font-size="12">2×2, 스트라이드 2</text>
+  <path d="M168 100 H232" class="s-ac" stroke-width="2"/><path d="M238 100 l-8 -5 v10 z" class="s-acf"/>
+  <g transform="translate(260,35)">
+    <rect x="0" y="0" width="40" height="40" fill="#4f82c8" fill-opacity=".18"/><rect x="40" y="0" width="40" height="40" fill="#e06666" fill-opacity=".18"/>
+    <rect x="0" y="40" width="40" height="40" fill="#6aa84f" fill-opacity=".18"/><rect x="40" y="40" width="40" height="40" fill="#f2c94c" fill-opacity=".25"/>
+    <g class="s-ln" stroke-width="1.6"><rect x="0" y="0" width="80" height="80"/><path d="M40 0 V80 M0 40 H80"/></g>
+    <g class="s-tx" font-weight="700"><text x="20" y="25">4</text><text x="60" y="25">5</text><text x="20" y="65">6</text><text x="60" y="65">3</text></g>
+  </g>
+  <g font-size="12" class="s-txm" text-anchor="start"><text x="370" y="60">평균 풀링이면</text><text x="370" y="78">2.5, 2.0,</text><text x="370" y="96">2.25, 1.75</text></g>
+  </g>
+</svg>
+<figcaption>4×4 특성 맵을 2×2 영역 네 개로 나눠 각 영역의 최댓값만 남긴다. 해상도는 절반, 파라미터는 0개다.</figcaption>
+</figure>
+<p>풀링은 두 가지 일을 한다. 해상도를 줄여 다음 층의 계산을 줄이고, 다음 층의 한 칸이 입력의 더 넓은 영역을 보게 한다(수용 영역, 32일차). 또 특징의 정확한 위치가 1픽셀쯤 달라져도 최댓값은 그대로이므로 작은 이동에 덜 민감해진다. 최근 구조는 풀링 대신 스트라이드 2 합성곱으로 해상도를 줄이기도 한다.</p>
+
+<h2 data-min="10" data-kind="concept">이동 등변성과 불변성</h2>
+<p>합성곱은 <dfn data-t="equivariance">이동 등변성</dfn>을 가진다. 입력을 옮기면 출력도 똑같이 옮겨진다: $\text{conv}(\text{shift}(X)) = \text{shift}(\text{conv}(X))$. 같은 커널을 모든 위치에서 쓰기 때문이다. 고양이가 이미지의 왼쪽에 있든 오른쪽에 있든 "귀 검출기"는 같은 반응을 내고, 그 반응의 위치만 따라 움직인다.</p>
+<p>분류에서는 위치와 상관없이 같은 답이 나와야 한다(이동 불변성). 합성곱 층이 등변성으로 특징을 위치와 함께 보존하고, 풀링과 마지막의 전역 평균 풀링(32일차)이 위치 정보를 점차 버려 불변성을 만든다. 다층 퍼셉트론에는 이런 구조가 없어서 28일차에 증강으로 가르쳐야 했다.</p>
+<pre class="run"><code>def make_image(n=64):
+    """원, 사각형, 삼각형, 체크무늬가 있는 시험용 흑백 이미지 (0~1)"""
+    r, c = np.mgrid[0:n, 0:n]
+    # 약한 가로 기울기 배경
+    img = 0.15 + 0.1 * c / n
+    img[(r - 20) ** 2 + (c - 18) ** 2 &lt; 12 ** 2] = 1.0            # 원
+    img[(r &gt;= 38) &amp; (r &lt; 58) &amp; (c &gt;= 8) &amp; (c &lt; 28)] = 0.7         # 사각형
+    tri = (r &gt;= 36) &amp; (r &lt; 58) &amp; (c &gt;= 36) &amp; (c - 36 &lt;= r - 36)    # 직각삼각형
+    img[tri] = 0.85
+    chk = (r &gt;= 4) &amp; (r &lt; 24) &amp; (c &gt;= 40) &amp; (c &lt; 60)              # 체크무늬
+    img[chk] = 0.15 + 0.7 * (((r[chk] - 4) // 4 + (c[chk] - 40) // 4) % 2)
+    return img
+
+def conv_fast(X, K, pad=0, stride=1):
+    """단일 채널 합성곱을 im2col로"""
+    if pad:
+        X = np.pad(X, pad)
+    cols, (H, W) = im2col(np.ascontiguousarray(X), *K.shape, stride)
+    return (cols @ K.ravel()).reshape(H, W)
+
+img = make_image()
+SOBEL_X = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], float)
+shifted = np.zeros_like(img)
+# 아래로 3, 오른쪽으로 5
+shifted[3:, 5:] = img[:-3, :-5]
+o1, o2 = conv_fast(img, SOBEL_X, pad=1), conv_fast(shifted, SOBEL_X, pad=1)
+print("옮긴 입력의 출력 = 출력을 옮긴 것 (가장자리 제외):",
+      np.abs(o2[6:-2, 8:-2] - o1[3:-5, 3:-7]).max())
+fig, axs = plt.subplots(1, 4, figsize=(10, 2.8))
+for ax, a, t in zip(axs, [img, o1, shifted, o2],
+                    ["입력", "세로 경계 출력", "옮긴 입력", "옮긴 입력의 출력"]):
+    ax.imshow(a, cmap="gray" if "입력" in t else "RdBu_r")
+    ax.set_title(t, fontsize=9)
+    ax.axis("off")
+plt.tight_layout()
+plt.show()
+</code></pre>
+
+<h2 data-min="10" data-kind="concept">합성곱의 역전파</h2>
+<p>합성곱도 곱과 덧셈으로만 이루어졌으므로 18일차의 방법으로 역전파한다. 출력 $Y$에 대한 상류 기울기를 $G$라 하면, 스트라이드 1일 때</p>
+<ul>
+<li>커널 기울기: $\dfrac{\partial L}{\partial K[a,b]} = \sum_{i,j} X[i+a, j+b]\,G[i,j]$. 입력과 $G$의 합성곱이다. 커널이 모든 위치에서 공유되므로 위치마다의 기울기가 더해진다(18일차의 기울기 누적).</li>
+<li>입력 기울기: $G$의 둘레에 $k - 1$줄 패딩을 붙이고 180° 뒤집은 커널로 합성곱한다("완전 합성곱").</li>
+</ul>
+<pre class="run"><code>Xs = rng.standard_normal((6, 6))
+Ks = rng.standard_normal((3, 3))
+G = rng.standard_normal((4, 4))                              # 출력에 대한 상류 기울기
+# 출력에 G를 곱해 더한 손실
+L = lambda X_, K_: (conv2d(X_, K_) * G).sum()
+# 입력과 상류 기울기의 합성곱
+dK = conv2d(Xs, G)
+# 뒤집은 커널로 완전 합성곱
+dX = conv2d(np.pad(G, 2), Ks[::-1, ::-1])
+eps, numK, numX = 1e-6, np.zeros((3, 3)), np.zeros((6, 6))
+for idx in np.ndindex(3, 3):
+    E = np.zeros((3, 3)); E[idx] = eps
+    numK[idx] = (L(Xs, Ks + E) - L(Xs, Ks - E)) / (2 * eps)
+for idx in np.ndindex(6, 6):
+    E = np.zeros((6, 6)); E[idx] = eps
+    numX[idx] = (L(Xs + E, Ks) - L(Xs - E, Ks)) / (2 * eps)
+print(f"커널 기울기 최대 차이 {np.abs(dK - numK).max():.1e},  입력 기울기 최대 차이 "
+      f"{np.abs(dX - numX).max():.1e}")
+</code></pre>
+<p>두 기울기 모두 수치 미분과 $10^{-9}$ 수준으로 일치한다. 역전파에도 합성곱이 그대로 쓰이므로 합성곱 신경망의 학습은 순전파의 약 두 배의 합성곱 계산을 더 한다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>합성곱 = 커널을 옮기며 겹친 원소의 곱을 더하기. 지역 연결과 가중치 공유로 파라미터가 이미지 크기와 무관하다.</li>
+  <li>출력 크기 $\lfloor (n + 2p - k)/s \rfloor + 1$. 3×3, 패딩 1, 스트라이드 1이면 크기 유지.</li>
+  <li>채널: 커널 하나는 $C_{\text{in}} \times k \times k$, 출력 채널마다 커널 하나. 파라미터 $C_{\text{out}}(C_{\text{in}}k^2 + 1)$.</li>
+  <li>풀링: 해상도를 줄이고 작은 이동에 둔감하게. 파라미터 0개.</li>
+  <li>합성곱은 이동 등변, 풀링·전역 풀링이 불변성을 만든다. 역전파도 합성곱이다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"28×28 입력에 5×5 커널, 패딩 0, 스트라이드 1이면 출력 크기는?","o":["28","24","23","14"],"a":1,"e":"(28 − 5)/1 + 1 = 24"},
+ {"q":"64×64 입력에 3×3 커널, 패딩 1, 스트라이드 2면?","o":["64","63","32","31"],"a":2,"e":"⌊(64 + 2 − 3)/2⌋ + 1 = 31 + 1 = 32"},
+ {"q":"입력 채널 16, 출력 채널 32, 3×3 커널인 합성곱 층의 파라미터 수(편향 포함)는?","o":["288","4,608","4,640","9,248"],"a":2,"e":"32 × (16 × 9 + 1) = 32 × 145 = 4,640"},
+ {"q":"같은 합성곱 층에 입력 이미지를 32×32 대신 64×64로 넣으면 파라미터 수는?","o":["4배","2배","그대로","1/4"],"a":2,"e":"파라미터는 이미지 크기와 무관하다. 계산량은 4배가 된다."},
+ {"q":"2×2 최대 풀링(스트라이드 2)의 학습 가능한 파라미터 수는?","o":["4","1","0","입력 채널 수"],"a":2,"e":"최댓값을 고를 뿐 가중치가 없다."},
+ {"q":"이동 등변성의 뜻은?","o":["입력을 옮겨도 출력이 같다","입력을 옮기면 출력도 같은 만큼 옮겨진다","출력 크기가 같다","커널이 대칭이다"],"a":1,"e":"불변성은 출력이 같은 것이고, 등변성은 출력이 함께 옮겨지는 것이다."},
+ {"q":"합성곱 층에서 커널의 기울기를 구할 때 위치별 기울기를 더하는 이유는?","o":["평균을 내려고","같은 커널(가중치)이 모든 위치에서 쓰였으므로 각 위치의 기여가 누적된다","패딩 때문","속도 때문"],"a":1,"e":"한 변수가 여러 곳에 쓰이면 기울기를 더한다(18일차)."},
+ {"q":"im2col의 목적은?","o":["메모리 절약","합성곱을 큰 행렬곱 한 번으로 바꿔 최적화된 행렬곱 루틴을 쓰기 위해","패딩 구현","풀링 구현"],"a":1,"e":"대신 입력 조각을 복제하므로 메모리를 더 쓴다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>RGB 224×224 입력에 다음 층을 차례로 적용할 때 각 층의 출력 형상과 파라미터 수를 구하라: (a) 합성곱 64개, 7×7, 스트라이드 2, 패딩 3 (b) 최대 풀링 3×3, 스트라이드 2, 패딩 1 (c) 합성곱 64개, 3×3, 패딩 1.
+    <details class="sol"><summary>풀이</summary><p>(a) $\lfloor (224 + 6 - 7)/2 \rfloor + 1 = 112$ → 64 × 112 × 112, 파라미터 $64 \times (3 \cdot 49 + 1) = 9{,}472$. (b) $\lfloor (112 + 2 - 3)/2 \rfloor + 1 = 56$ → 64 × 56 × 56, 0개. (c) 64 × 56 × 56, $64 \times (64 \cdot 9 + 1) = 36{,}928$. ResNet의 앞부분과 같다(33일차). 편향 없이 배치 정규화를 쓰면 (a)는 9,408개다.</p></details></li>
+  <li>3×3 합성곱 두 층(채널 $C \to C \to C$)과 5×5 합성곱 한 층($C \to C$)의 파라미터 수를 비교하라(편향 제외). 두 구조의 차이를 하나 더 들라.
+    <details class="sol"><summary>풀이</summary><p>$2 \times 9C^2 = 18C^2$ 대 $25C^2$. 둘 다 입력 5×5 영역을 본다(32일차의 수용 영역). 3×3 두 층은 사이에 비선형 활성화가 하나 더 들어가 더 복잡한 함수를 표현할 수 있다. VGG가 큰 커널 대신 3×3을 쌓은 이유다.</p></details></li>
+  <li>최대 풀링의 역전파는 어떻게 되는가? 평균 풀링은?
+    <details class="sol"><summary>풀이</summary><p>최대 풀링: 각 영역에서 최댓값이었던 위치에만 상류 기울기를 그대로 보내고 나머지는 0(ReLU처럼 "선택된 길"만 통과). 평균 풀링: 상류 기울기를 영역의 칸 수로 나눠 모든 칸에 똑같이 나눠 준다.</p></details></li>
+</ol>
+
+<h2 data-min="40" data-kind="project">미니 프로젝트: NumPy 합성곱으로 이미지 필터 만들기</h2>
+<section class="project" data-title="합성곱으로 경계 검출, 흐림, 선명화 필터를 만들고, 경계 검출 커널을 데이터에서 학습하기" data-min="40">
+<p class="lead">손으로 설계한 커널로 이미지 필터를 만들고, 같은 일을 하는 커널을 경사하강법으로 학습해 본다. 합성곱 신경망이 하는 일의 축소판이다.</p>
+<ol class="steps">
+<li><b>여러 필터 적용.</b> 시험 이미지에 흐림(3×3 평균), 선명화, 세로 경계(소벨 x), 가로 경계(소벨 y) 커널을 적용하고, 두 경계 출력으로 경계의 세기 $\sqrt{g_x^2 + g_y^2}$를 그린다.
+<pre class="run"><code>KERNELS = {
+    "흐림": np.ones((3, 3)) / 9,
+    "선명화": np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], float),
+    "세로 경계 (소벨 x)": SOBEL_X,
+    "가로 경계 (소벨 y)": SOBEL_X.T,
+}
+outs = {name: conv_fast(img, K, pad=1) for name, K in KERNELS.items()}
+edge = np.hypot(outs["세로 경계 (소벨 x)"], outs["가로 경계 (소벨 y)"])
+fig, axs = plt.subplots(1, 6, figsize=(13, 2.6))
+panels = [("원본", img)] + list(outs.items()) + [("경계의 세기", edge)]
+for ax, (t, a) in zip(axs, panels):
+    ax.imshow(a, cmap="RdBu_r" if "경계 (" in t else "gray")
+    ax.set_title(t, fontsize=9)
+    ax.axis("off")
+plt.tight_layout()
+plt.show()
+print(f"경계 세기 최댓값 {edge.max():.2f},  흐림 후 값 범위 {outs['흐림'].min():.2f} "
+      f"~ {outs['흐림'].max():.2f}")
+</code></pre></li>
+<li><b>풀링.</b> 경계 세기 이미지를 2×2 최대 풀링으로 두 번 줄여 16×16을 만든다. 작아져도 도형의 윤곽이 남는지 본다.
+<pre class="run"><code>def max_pool(X, k=2):
+    H, W = X.shape[0] // k * k, X.shape[1] // k * k
+    return X[:H, :W].reshape(H // k, k, W // k, k).max(axis=(1, 3))
+
+p1 = max_pool(edge)
+p2 = max_pool(p1)
+print("풀링 전후 형상:", edge.shape, p1.shape, p2.shape)
+fig, axs = plt.subplots(1, 3, figsize=(7, 2.5))
+for ax, a, t in zip(axs, [edge, p1, p2], ["64 × 64", "32 × 32", "16 × 16"]):
+    ax.imshow(a, cmap="gray")
+    ax.set_title(t, fontsize=9)
+    ax.axis("off")
+plt.show()
+</code></pre></li>
+<li><b>속도 비교.</b> 반복문 합성곱과 im2col 합성곱의 결과가 같은지, 시간은 얼마나 다른지 128×128 이미지에서 잰다.
+<pre class="run"><code>big = rng.random((128, 128))
+t0 = time.perf_counter(); a = conv2d(big, SOBEL_X); t1 = time.perf_counter()
+b = conv_fast(big, SOBEL_X); t2 = time.perf_counter()
+print(f"결과 일치: {np.allclose(a, b)},  반복문 {(t1 - t0) * 1000:.1f} ms,  im2col "
+      f"{(t2 - t1) * 1000:.2f} ms")
+</code></pre></li>
+<li><b>커널 학습.</b> 무작위 무늬 이미지 4장과, 그 이미지에 소벨 x를 적용한 결과(목표)만 준다. 무작위로 시작한 3×3 커널을 평균제곱오차의 경사하강법으로 학습해 소벨 x를 되찾는지 본다. 커널의 기울기는 역전파 절의 공식(입력과 오차의 합성곱)을 쓴다.
+<pre class="run"><code>train_x = [rng.standard_normal((32, 32)) for _ in range(4)]
+train_t = [conv_fast(x, SOBEL_X) for x in train_x]
+K_learn = 0.1 * rng.standard_normal((3, 3))
+for step in range(61):
+    loss, gK = 0.0, np.zeros((3, 3))
+    for x, t in zip(train_x, train_t):
+        err = conv_fast(x, K_learn) - t
+        loss += (err ** 2).mean() / 4
+        # dL/dK = 입력과 오차의 합성곱
+        gK += conv_fast(x, err) * 2 / err.size / 4
+    if step in (0, 5, 10, 20, 60):
+        print(f"스텝 {step:2d}  손실 {loss:.6f}")
+    K_learn -= 0.2 * gK
+print("학습한 커널:\n", np.round(K_learn, 3))
+</code></pre>
+학습한 커널이 소벨 x와 같아진다. 합성곱 신경망은 이 일을 수천 개의 커널에 대해, 목표 출력 대신 분류 손실로 한다. 그래서 첫 층에는 경계·색 검출기 같은 커널이 저절로 생긴다(32일차).</li>
+</ol>
+<details class="sol"><summary>생각해 볼 점</summary><p>1단계에서 흐림 커널은 값의 합이 1이라 평평한 곳의 밝기를 보존하고, 경계 커널은 합이 0이라 평평한 곳에서 0을 낸다. 선명화 커널은 항등 커널에 "중심 − 이웃 평균"(라플라시안)을 더한 것으로, 합이 1이다. 4단계의 무작위 무늬는 픽셀끼리 상관이 없어 학습이 빠르다. 실제 사진처럼 이웃 픽셀이 비슷한 이미지로 학습하면 같은 문제가 훨씬 느리게 수렴한다(9일차의 조건수).</p></details>
+</section>

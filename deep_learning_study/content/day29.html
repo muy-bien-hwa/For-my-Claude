@@ -1,0 +1,336 @@
+<ul class="goals">
+  <li>PyTorch 텐서를 만들고 형상·자료형·장치를 다루며 NumPy 배열과 오갈 수 있다.</li>
+  <li>autograd가 계산 그래프를 실행하면서 기록하고 역전파하는 방식을 19일차의 Value 엔진과 비교해 설명할 수 있다.</li>
+  <li>nn.Module로 모델을 정의하고 파라미터, state_dict, 학습·평가 모드를 다룰 수 있다.</li>
+  <li>손실 함수와 옵티마이저로 표준 학습 단계(zero_grad → 순전파 → 손실 → backward → step)를 쓸 수 있다.</li>
+  <li>28일차의 NumPy MLP를 PyTorch로 옮기고, 출력과 기울기가 같음을 검증할 수 있다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="concept">왜 프레임워크인가</h2>
+<p>3, 4주차에는 순전파와 역전파를 손으로 유도해 NumPy로 구현했다. 원리를 이해하는 데는 그 방법이 가장 좋지만, 새 층을 넣을 때마다 역전파를 다시 유도하고 기울기 검증을 해야 한다. 계산도 CPU 한 대에서만 돈다. <dfn data-t="pytorch">PyTorch</dfn>는 이 일을 대신한다. 텐서 연산을 GPU에서 실행하고, 계산 그래프를 기록해 기울기를 자동으로 구하며, 층·손실·옵티마이저·데이터 도구를 제공한다.</p>
+<table>
+  <thead><tr><th>21일차 minidl</th><th>PyTorch</th><th>차이</th></tr></thead>
+  <tbody>
+    <tr><td>NumPy 배열</td><td><code>torch.Tensor</code></td><td>GPU에 올릴 수 있고 연산 기록을 남긴다</td></tr>
+    <tr><td><code>Module.backward</code>를 직접 구현</td><td><code>loss.backward()</code></td><td>역전파를 자동으로 계산한다(autograd)</td></tr>
+    <tr><td><code>Linear</code>, <code>ReLU</code>, <code>Sequential</code></td><td><code>nn.Linear</code>, <code>nn.ReLU</code>, <code>nn.Sequential</code></td><td>이름과 구조가 같다</td></tr>
+    <tr><td><code>SoftmaxCrossEntropy</code></td><td><code>nn.CrossEntropyLoss</code></td><td>로짓과 정수 레이블을 받는다</td></tr>
+    <tr><td><code>SGD</code>, 28일차의 <code>AdamW</code></td><td><code>torch.optim.SGD</code>, <code>torch.optim.AdamW</code></td><td>파라미터 그룹, 스케줄러가 붙는다</td></tr>
+    <tr><td><code>DataLoader</code>, <code>fit</code></td><td><code>torch.utils.data.DataLoader</code>, 직접 쓰는 학습 루프</td><td>30일차</td></tr>
+  </tbody>
+</table>
+<p>PyTorch는 코드가 실행되는 순간 계산 그래프를 만든다(define-by-run). 그래서 파이썬의 <code>if</code>, <code>for</code>를 그대로 모델 안에 쓸 수 있고, 디버깅도 일반 파이썬처럼 한다. 오늘 실습은 모두 Colab 노트북에서 한다. 이 페이지의 출력은 노트북을 실행한 결과다.</p>
+<p><a class="colab" data-nb="d29_pytorch_basics.ipynb">Colab에서 노트북 열기</a></p>
+
+<h2 data-min="20" data-kind="concept">텐서</h2>
+<p>PyTorch의 텐서는 NumPy 배열과 거의 같다. 속성 세 가지를 늘 확인한다: 형상(<code>shape</code>), 자료형(<code>dtype</code>), 장치(<code>device</code>). 실수의 기본 자료형은 <code>float32</code>, 정수는 <code>int64</code>다. 분류 레이블은 <code>int64</code>여야 한다.</p>
+<pre><code class="language-python">a = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+print("형상", a.shape, " 자료형", a.dtype, " 장치", a.device)
+print(torch.zeros(2, 3).dtype, torch.arange(6).dtype)
+</code></pre>
+<pre class="out"><code class="language-plaintext">형상 torch.Size([2, 3])  자료형 torch.float32  장치 cpu
+torch.float32 torch.int64</code></pre>
+<h3>이미지 텐서의 축 순서</h3>
+<figure class="fig">
+<svg viewBox="0 0 640 230" width="640" role="img" aria-label="matplotlib의 (H, W, C)와 PyTorch의 (N, C, H, W) 축 순서">
+  <g font-size="12">
+  <text x="140" y="20" text-anchor="middle" class="s-tx" font-weight="700">NumPy·matplotlib: (H, W, C)</text>
+  <rect x="80" y="40" width="120" height="120" class="s-f" stroke-width="1"/>
+  <g class="s-mu" stroke-width="0.6"><path d="M80 70 H200 M80 100 H200 M80 130 H200 M110 40 V160 M140 40 V160 M170 40 V160"/></g>
+  <rect x="140" y="70" width="30" height="30" class="s-acs" stroke-width="1.5"/>
+  <path d="M170 85 L230 70" class="s-ac" stroke-width="1.2"/>
+  <text x="234" y="66" class="s-txa">픽셀 하나 = [R, G, B]</text>
+  <text x="140" y="182" text-anchor="middle" class="s-txm">(32, 32, 3): 채널이 마지막 축</text>
+  <text x="140" y="200" text-anchor="middle" class="s-txm">plt.imshow가 받는 순서</text>
+  <g transform="translate(400,0)">
+  <text x="110" y="20" text-anchor="middle" class="s-tx" font-weight="700">PyTorch: (N, C, H, W)</text>
+  <rect x="80" y="48" width="100" height="100" class="s-f" stroke-width="1" opacity=".5"/>
+  <rect x="72" y="54" width="100" height="100" class="s-f" stroke-width="1" opacity=".7"/>
+  <rect x="44" y="70" width="100" height="100" fill="#e06666" fill-opacity=".35" stroke="#c0433b" stroke-width="1"/>
+  <rect x="54" y="62" width="100" height="100" fill="#6aa84f" fill-opacity=".35" stroke="#4d7d28" stroke-width="1"/>
+  <rect x="64" y="54" width="100" height="100" fill="#4f82c8" fill-opacity=".35" stroke="#2c5db6" stroke-width="1"/>
+  <text x="190" y="56" class="s-txm">← N장</text>
+  <text x="172" y="120" class="s-txm">C = 3</text>
+  <text x="172" y="136" class="s-txm">(R, G, B)</text>
+  <text x="110" y="192" text-anchor="middle" class="s-txm">(64, 3, 32, 32): 채널이 둘째 축</text>
+  <text x="110" y="210" text-anchor="middle" class="s-txm">nn.Conv2d가 받는 순서</text>
+  </g>
+  <path d="M262 118 H426" class="s-ac" stroke-width="2"/><path d="M432 118 l-9 -5 v10 z" class="s-acf"/>
+  <text x="346" y="108" text-anchor="middle" class="s-txa" font-size="11">permute(2, 0, 1)</text>
+  <text x="346" y="136" text-anchor="middle" class="s-txa" font-size="11">.unsqueeze(0)</text>
+  </g>
+</svg>
+<figcaption>같은 이미지라도 라이브러리마다 축 순서가 다르다. PyTorch의 합성곱 층은 (배치, 채널, 높이, 너비) 순서를 받는다. 그림으로 그릴 때는 다시 (H, W, C)로 바꾼다.</figcaption>
+</figure>
+<table>
+  <thead><tr><th>하는 일</th><th>PyTorch</th><th>NumPy</th></tr></thead>
+  <tbody>
+    <tr><td>형상 바꾸기</td><td><code>x.reshape(2, 3, 4)</code>, <code>x.view(4, 6)</code></td><td><code>x.reshape</code></td></tr>
+    <tr><td>축 순서 바꾸기</td><td><code>x.permute(2, 0, 1)</code></td><td><code>x.transpose(2, 0, 1)</code></td></tr>
+    <tr><td>크기 1인 축 추가·제거</td><td><code>x.unsqueeze(0)</code>, <code>x.squeeze(0)</code></td><td><code>x[None]</code>, <code>x.squeeze(0)</code></td></tr>
+    <tr><td>이어 붙이기 / 새 축으로 쌓기</td><td><code>torch.cat</code>, <code>torch.stack</code></td><td><code>np.concatenate</code>, <code>np.stack</code></td></tr>
+    <tr><td>축을 따라 합</td><td><code>x.sum(dim=0)</code></td><td><code>x.sum(axis=0)</code></td></tr>
+    <tr><td>제자리 연산</td><td><code>x.add_(1)</code> (이름 끝 밑줄)</td><td><code>x += 1</code></td></tr>
+  </tbody>
+</table>
+<p>브로드캐스팅 규칙은 NumPy와 같다(2일차). <code>view</code>는 메모리를 복사하지 않고 형상만 다시 해석하므로, <code>permute</code>처럼 메모리 순서를 바꾼 텐서에는 쓸 수 없다. 그럴 때는 <code>reshape</code>를 쓴다(필요하면 복사한다).</p>
+<h3>NumPy와 오가기</h3>
+<p><code>torch.from_numpy(배열)</code>과 <code>텐서.numpy()</code>는 메모리를 공유한다. 한쪽을 바꾸면 다른 쪽도 바뀐다. <code>torch.tensor(배열)</code>은 복사한다. NumPy의 기본 실수형은 <code>float64</code>이므로, 신경망에 넣기 전에 <code>.float()</code>로 <code>float32</code>를 만든다.</p>
+<pre><code class="language-python">n = np.ones(3)
+t = torch.from_numpy(n)      # 공유
+n[0] = 100
+t2 = torch.tensor(n)         # 복사
+n[1] = 200
+print("공유:", t, " 복사:", t2)
+</code></pre>
+<pre class="out"><code class="language-plaintext">공유: tensor([100., 200.,   1.], dtype=torch.float64)  복사: tensor([100.,   1.,   1.], dtype=torch.float64)</code></pre>
+
+<h2 data-min="10" data-kind="concept">GPU</h2>
+<p><dfn data-t="gpu">GPU</dfn>는 단순한 연산기 수천 개를 동시에 돌린다. 행렬곱처럼 같은 연산을 많은 원소에 반복하는 계산에 강하다. Colab의 T4 GPU는 32비트 연산 기준 최대 초당 약 8조 번(8 TFLOP/s), 16비트 텐서 코어로는 약 65 TFLOP/s를 처리한다. Colab의 CPU 2개는 초당 수십억~수백억 번 수준이다.</p>
+<ol class="steps">
+  <li><b>장치를 정한다.</b> <code>device = torch.device("cuda" if torch.cuda.is_available() else "cpu")</code></li>
+  <li><b>모델과 데이터를 같은 장치로 옮긴다.</b> <code>model.to(device)</code>, <code>xb.to(device)</code>. 장치가 다른 텐서끼리 연산하면 오류가 난다.</li>
+  <li><b>옮기는 횟수를 줄인다.</b> CPU와 GPU 사이의 복사는 연산보다 느리다. 손실 값을 매 스텝 <code>.item()</code>으로 꺼내는 것도 복사다.</li>
+  <li><b>시간을 잴 때는 기다린다.</b> GPU 연산은 비동기로 실행된다. 명령을 보내고 바로 다음 줄로 넘어가므로, <code>torch.cuda.synchronize()</code>로 끝나기를 기다린 뒤 시간을 잰다.</li>
+</ol>
+<p>노트북 2절은 2048 × 2048 행렬곱을 CPU와 GPU에서 재어 비교한다. 런타임을 T4 GPU로 바꾸고 직접 재어 본다.</p>
+
+<h2 data-min="25" data-kind="concept">자동 미분</h2>
+<p><code>requires_grad=True</code>인 텐서로 계산하면, PyTorch는 각 연산의 결과에 그 연산을 거꾸로 계산하는 함수(<code>grad_fn</code>)를 붙여 계산 그래프를 기록한다. <code>backward()</code>를 부르면 그래프를 거꾸로 따라가며 연쇄법칙을 적용하고, 결과를 잎 텐서의 <code>.grad</code>에 <b>더한다</b>. 19일차에 만든 <code>Value</code> 엔진과 같은 알고리즘이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 220" width="640" role="img" aria-label="선형 회귀 손실의 계산 그래프와 역전파 방향">
+  <g font-size="12">
+  <g class="s-f" stroke-width="1"><rect x="14" y="52" width="40" height="28" rx="5"/><rect x="246" y="160" width="40" height="28" rx="5"/></g>
+  <g class="s-acs" stroke-width="1.5"><rect x="14" y="108" width="40" height="28" rx="5"/><rect x="140" y="160" width="40" height="28" rx="5"/></g>
+  <g class="s-tx" text-anchor="middle"><text x="34" y="70">X</text><text x="34" y="126" font-weight="700">w</text><text x="160" y="178" font-weight="700">b</text><text x="266" y="178">Y</text></g>
+  <g class="s-f2" stroke-width="1"><rect x="86" y="82" width="96" height="30" rx="15"/><rect x="192" y="82" width="96" height="30" rx="15"/><rect x="298" y="82" width="96" height="30" rx="15"/><rect x="404" y="82" width="96" height="30" rx="15"/><rect x="510" y="82" width="96" height="30" rx="15"/></g>
+  <g class="s-tx" text-anchor="middle" font-size="10.5"><text x="134" y="101">MulBackward0</text><text x="240" y="101">AddBackward0</text><text x="346" y="101">SubBackward0</text><text x="452" y="101">PowBackward0</text><text x="558" y="101">MeanBackward0</text></g>
+  <g class="s-ln" stroke-width="1.4" fill="none"><path d="M54 66 L86 90"/><path d="M54 122 L86 104"/><path d="M182 97 H192"/><path d="M160 160 L218 112"/><path d="M288 97 H298"/><path d="M266 160 L322 112"/><path d="M394 97 H404"/><path d="M500 97 H510"/></g>
+  <path d="M558 112 V136" class="s-ln" stroke-width="1.4"/><text x="558" y="152" text-anchor="middle" class="s-tx" font-weight="700">loss</text>
+  <path d="M600 80 C 540 30, 170 26, 58 106" class="s-ac" stroke-width="2" stroke-dasharray="6 4" fill="none"/>
+  <path d="M55 110 l1 -10 l7 6 z" class="s-acf"/>
+  <text x="330" y="30" text-anchor="middle" class="s-txa">loss.backward(): 그래프를 거꾸로 따라가며 w.grad, b.grad를 채운다</text>
+  <text x="320" y="212" text-anchor="middle" class="s-txm">실선: 순전파에서 기록된 연산. 파란 상자: requires_grad = True인 잎 텐서(파라미터)</text>
+  </g>
+</svg>
+<figcaption>$\text{loss} = \mathrm{mean}((Xw + b - Y)^2)$의 계산 그래프. 각 연산 결과의 <code>grad_fn</code>이 역방향 계산을 맡는다. 그래프는 순전파를 실행할 때마다 새로 만들어지고, backward가 끝나면 버려진다.</figcaption>
+</figure>
+<p>19일차의 뉴런 예제($s = w_1x_1 + w_2x_2 + b$, $L = -\log\sigma(s)$)를 PyTorch로 계산하면 <code>Value</code> 엔진과 같은 값이 나온다.</p>
+<pre><code class="language-python">vals = (2.0, -1.0, -3.0, -2.0, -3.0)
+w1, x1, w2, x2, b = (torch.tensor(v, requires_grad=True) for v in vals)
+s = w1 * x1 + w2 * x2 + b
+L = -torch.log(torch.sigmoid(s))
+L.backward()
+</code></pre>
+<pre class="out"><code class="language-plaintext">L = 0.3133, ∂w1 = 0.2689, ∂x1 = -0.5379, ∂w2 = 0.5379, ∂x2 = 0.8068, ∂b = -0.2689</code></pre>
+<h3>기울기는 누적된다</h3>
+<p><code>backward()</code>는 <code>.grad</code>에 값을 더한다. 같은 그래프 구조를 세 번 역전파하면 기울기가 세 배가 된다. 18일차에 본 것처럼 한 변수가 여러 곳에 쓰일 때 기울기를 더해야 하므로 이렇게 설계되었다. 그래서 학습 루프는 매 스텝 기울기를 0으로 지운다.</p>
+<pre><code class="language-python">w = torch.tensor(1.0, requires_grad=True)
+for k in range(3):
+    (3 * w).backward()
+    print(f"{k + 1}번째 backward 뒤 w.grad = {w.grad.item()}")
+</code></pre>
+<pre class="out"><code class="language-plaintext">1번째 backward 뒤 w.grad = 3.0
+2번째 backward 뒤 w.grad = 6.0
+3번째 backward 뒤 w.grad = 9.0</code></pre>
+<h3>기록 끄기</h3>
+<p>평가와 파라미터 갱신은 미분할 필요가 없다. <code>with torch.no_grad():</code> 안의 계산은 그래프를 만들지 않아 메모리와 시간을 아낀다. <code>x.detach()</code>는 그래프에서 떼어 낸 텐서를 돌려준다. 자동 미분만으로 쓴 선형 회귀 학습 루프는 다음과 같다. 기울기는 PyTorch가 구하고, 갱신과 초기화는 직접 한다.</p>
+<pre><code class="language-python">w = torch.zeros(1, requires_grad=True)
+b = torch.zeros(1, requires_grad=True)
+for step in range(200):
+    loss = ((X * w + b - Y) ** 2).mean()
+    loss.backward()
+    with torch.no_grad():          # 갱신은 기록하지 않는다
+        w -= 0.1 * w.grad
+        b -= 0.1 * b.grad
+    w.grad.zero_()
+    b.grad.zero_()
+</code></pre>
+<pre class="out"><code class="language-plaintext">w = 2.949, b = 0.997, 손실 0.0712  (참값 w = 3, b = 1)</code></pre>
+
+<h2 data-min="20" data-kind="concept">nn.Module</h2>
+<p>층과 모델은 모두 <dfn data-t="nn-module">nn.Module</dfn>을 상속한다. <code>__init__</code>에서 층을 속성으로 만들면 그 파라미터가 자동으로 모델에 등록되고, <code>forward</code>에 계산을 쓴다. 모델을 함수처럼 호출하면(<code>model(x)</code>) <code>forward</code>가 실행된다. <code>backward</code>는 쓰지 않는다.</p>
+<pre><code class="language-python">class MLP(nn.Module):
+    def __init__(self, sizes=(784, 256, 128, 10), p_drop=0.0):
+        super().__init__()
+        self.fc1 = nn.Linear(sizes[0], sizes[1])
+        self.fc2 = nn.Linear(sizes[1], sizes[2])
+        self.fc3 = nn.Linear(sizes[2], sizes[3])
+        self.drop = nn.Dropout(p_drop)
+
+    def forward(self, x):
+        x = self.drop(F.relu(self.fc1(x)))
+        x = self.drop(F.relu(self.fc2(x)))
+        return self.fc3(x)          # 로짓. 소프트맥스는 손실 함수 안에서
+
+model = MLP()
+for name, p in model.named_parameters():
+    print(f"{name:12s} {tuple(p.shape)}")
+</code></pre>
+<pre class="out"><code class="language-plaintext">fc1.weight   (256, 784)
+fc1.bias     (256,)
+fc2.weight   (128, 256)
+...
+파라미터 수: 235146</code></pre>
+<p>파라미터 수는 28일차의 NumPy 모델과 같은 235,146개다. <code>nn.Linear</code>의 가중치는 (출력, 입력) 형상으로 저장되고 $xW^\top + b$를 계산한다. 우리 NumPy 구현의 (입력, 출력) 형상과 전치 관계다. 층을 순서대로 지나가기만 하면 될 때는 <code>nn.Sequential(nn.Linear(784, 256), nn.ReLU(), ...)</code>로 짧게 쓴다.</p>
+<h3>state_dict</h3>
+<p>모델의 파라미터와 버퍼(배치 정규화의 이동 평균 등)를 이름-텐서 사전으로 담은 것이 <dfn data-t="state-dict">state_dict</dfn>다. <code>torch.save(model.state_dict(), "m.pt")</code>로 저장하고, 같은 구조의 모델에 <code>model.load_state_dict(torch.load("m.pt"))</code>로 불러온다. 21일차에 직접 만든 저장 방식과 같은 생각이다. <code>nn.Sequential</code>의 키는 <code>'0.weight', '0.bias', '2.weight', ...</code>처럼 층 번호가 붙는다.</p>
+<h3>학습 모드와 평가 모드</h3>
+<p>드롭아웃과 배치 정규화는 학습과 평가에서 다르게 동작한다. <code>model.train()</code>과 <code>model.eval()</code>이 모든 하위 층의 모드를 바꾼다. 드롭아웃 0.5인 모델에 같은 입력을 두 번 넣으면 학습 모드에서는 출력이 다르고, 평가 모드에서는 같다.</p>
+<pre class="out"><code class="language-plaintext">학습 모드, 같은 입력 두 번: tensor([ 0.0187,  0.5781, -0.0442]) tensor([0.1345, 0.3773, 0.1225])
+평가 모드, 같은 입력 두 번: tensor([ 0.0103,  0.3045, -0.0523]) tensor([ 0.0103,  0.3045, -0.0523])</code></pre>
+<div class="box warn" data-title="기본 초기화"><p><code>nn.Linear</code>의 기본 초기화는 균등분포 $U(-1/\sqrt{n_{\text{in}}},\ 1/\sqrt{n_{\text{in}}})$다. 입력이 784개면 표준편차가 0.0206으로, He 초기화(0.0505)의 약 0.41배다. 대부분은 이대로도 학습되지만, 24일차의 결과와 정확히 비교하려면 <code>nn.init.kaiming_normal_(layer.weight, nonlinearity="relu")</code>로 바꾼다.</p></div>
+
+<h2 data-min="20" data-kind="concept">손실 함수와 옵티마이저</h2>
+<p><code>nn.CrossEntropyLoss</code>는 <b>로짓</b>과 정수 레이블을 받아 안에서 로그-소프트맥스를 안정적으로 계산한다(11일차). 모델 끝에 소프트맥스를 미리 씌우면 소프트맥스가 두 번 적용되어 손실과 기울기가 틀린다. 오류 없이 실행되므로 찾기 어려운 버그다(27일차).</p>
+<pre><code class="language-python">logits = torch.tensor([[2.0, 0.5, -1.0], [0.1, 0.2, 3.0]])
+labels = torch.tensor([0, 2])
+loss_fn = nn.CrossEntropyLoss()
+manual = -(logits.log_softmax(dim=1)[torch.arange(2), labels]).mean()
+print(loss_fn(logits, labels), manual, loss_fn(logits.softmax(dim=1), labels))
+</code></pre>
+<pre class="out"><code class="language-plaintext">CrossEntropyLoss 0.1755,  직접 계산 0.1755
+소프트맥스를 먼저 씌우면(잘못): 0.6611</code></pre>
+<h3>표준 학습 단계</h3>
+<p>어떤 모델이든 학습 한 스텝은 다섯 줄이다. 순서를 외워 둔다.</p>
+<pre><code class="language-python">optimizer.zero_grad()          # 1. 지난 스텝의 기울기 지우기
+out = model(xb)                # 2. 순전파 (그래프 기록)
+loss = loss_fn(out, yb)        # 3. 손실
+loss.backward()                # 4. 역전파 (.grad 채우기)
+optimizer.step()               # 5. 파라미터 갱신
+</code></pre>
+<p>옵티마이저는 <code>torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)</code>, <code>torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)</code>처럼 만든다. 파라미터마다 다른 설정을 주려면 그룹으로 나눈다. 28일차처럼 가중치 감쇠를 가중치에만 적용하는 예다.</p>
+<pre><code class="language-python">decay = [p for p in model.parameters() if p.dim() &gt;= 2]      # 가중치 행렬
+no_decay = [p for p in model.parameters() if p.dim() &lt; 2]    # 편향
+opt = torch.optim.AdamW([{"params": decay, "weight_decay": 0.01},
+                         {"params": no_decay, "weight_decay": 0.0}], lr=1e-3)
+</code></pre>
+<h3>학습률 스케줄러</h3>
+<p><code>torch.optim.lr_scheduler</code>에 계단, 코사인, 원사이클 등이 있다(23일차). <code>LambdaLR</code>은 "최대 학습률에 곱할 배율"을 스텝의 함수로 받아 어떤 모양이든 만들 수 있다. 스텝마다 바꿀 때는 <code>optimizer.step()</code> 다음에 <code>scheduler.step()</code>을 부른다. 1,000스텝 중 100스텝 워밍업 + 코사인이면 스텝 0, 99, 500, 999의 학습률이 다음과 같다(최대 $10^{-3}$).</p>
+<pre class="out"><code class="language-plaintext">스텝 0, 99, 500, 999의 학습률: ['2.00e-05', '1.00e-03', '5.85e-04', '0.00e+00']</code></pre>
+
+<h2 data-min="10" data-kind="concept">Keras와의 대응</h2>
+<p>Keras는 같은 일을 더 짧게 쓴다. <code>compile</code>로 손실과 옵티마이저를 정하고 <code>fit</code>이 학습 루프를 대신 돈다. PyTorch는 학습 루프를 직접 쓰는 대신 그 안의 모든 단계를 바꿀 수 있다. 연구와 새 모델 구현에는 PyTorch가, 표준적인 모델을 빠르게 만들 때는 Keras가 편하다. Keras 3는 계산 엔진으로 TensorFlow, JAX, PyTorch를 고를 수 있다.</p>
+<table>
+  <thead><tr><th>PyTorch</th><th>Keras</th></tr></thead>
+  <tbody>
+    <tr><td><code>class M(nn.Module)</code> + <code>forward</code></td><td><code>keras.Sequential([...])</code> 또는 <code>keras.Model</code> + <code>call</code></td></tr>
+    <tr><td><code>nn.Linear(256, 128)</code></td><td><code>keras.layers.Dense(128)</code> (입력 크기는 자동)</td></tr>
+    <tr><td><code>nn.CrossEntropyLoss()</code></td><td><code>SparseCategoricalCrossentropy(from_logits=True)</code></td></tr>
+    <tr><td>직접 쓰는 학습 루프</td><td><code>model.compile(...)</code> + <code>model.fit(...)</code></td></tr>
+    <tr><td><code>model.state_dict()</code></td><td><code>model.save_weights(...)</code></td></tr>
+  </tbody>
+</table>
+<pre><code class="language-python">model_k = keras.Sequential([
+    keras.layers.Input((784,)),
+    keras.layers.Dense(512, activation="relu", kernel_initializer="he_normal"),
+    keras.layers.Dropout(0.2),
+    keras.layers.Dense(256, activation="relu", kernel_initializer="he_normal"),
+    keras.layers.Dropout(0.2),
+    keras.layers.Dense(10),
+])
+model_k.compile(
+    optimizer=keras.optimizers.AdamW(learning_rate=1e-3, weight_decay=0.01),
+    loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics=["accuracy"])
+model_k.fit(Xtr, ytr, batch_size=128, epochs=3, validation_data=(Xva, yva))
+</code></pre>
+<p>노트북 7절에서 이 모델을 3에폭 학습하면 테스트 정확도가 97.37%다. 증강과 스케줄 없이 3에폭만 학습했으므로 아래 미니 프로젝트의 결과(15에폭)보다 낮다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>텐서는 형상·자료형·장치를 가진다. 이미지는 (N, C, H, W). <code>from_numpy</code>는 메모리를 공유한다.</li>
+  <li>모델과 데이터는 같은 장치에. GPU 시간 측정은 <code>synchronize</code> 뒤에.</li>
+  <li>autograd: 순전파 때 그래프를 기록하고, <code>backward()</code>가 <code>.grad</code>에 <b>더한다</b>. 그래서 매 스텝 <code>zero_grad()</code>.</li>
+  <li><code>nn.Module</code>: <code>__init__</code>에 층, <code>forward</code>에 계산. <code>state_dict</code>로 저장. <code>train()</code>/<code>eval()</code>로 모드 전환.</li>
+  <li><code>CrossEntropyLoss</code>에는 로짓을 넣는다. 학습 한 스텝 = zero_grad → 순전파 → 손실 → backward → step.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"torch.arange(6)의 자료형은?","o":["float32","float64","int32","int64"],"a":3,"e":"정수 텐서의 기본 자료형은 int64다. 분류 레이블도 int64여야 한다."},
+ {"q":"(H, W, C) 형상의 이미지 텐서를 nn.Conv2d에 넣을 (1, C, H, W)로 바꾸는 코드는?","o":["img.view(1, C, H, W)","img.permute(2, 0, 1).unsqueeze(0)","img.transpose(0, 1)","img.reshape(C, H, W)"],"a":1,"e":"view나 reshape는 메모리 순서를 그대로 둔 채 형상만 바꾸므로 픽셀이 뒤섞인다. 축 순서를 바꾸려면 permute."},
+ {"q":"n = np.zeros(3); t = torch.from_numpy(n); n[0] = 5 뒤 t[0]은?","o":["0","5","오류","NaN"],"a":1,"e":"from_numpy는 메모리를 공유한다."},
+ {"q":"학습 루프에서 optimizer.zero_grad()를 빼면?","o":["오류가 난다","기울기가 스텝마다 누적되어 갱신이 점점 커지고 엉뚱해진다","아무 일도 없다","학습률이 0이 된다"],"a":1,"e":"backward는 .grad에 더한다."},
+ {"q":"평가 코드를 torch.no_grad() 안에서 실행하는 주된 이유는?","o":["정확도가 올라간다","계산 그래프를 만들지 않아 메모리와 시간을 아낀다","드롭아웃을 끈다","가중치가 바뀌는 것을 막는다"],"a":1,"e":"드롭아웃을 끄는 것은 model.eval()의 역할이다. 둘은 서로 다른 일을 한다."},
+ {"q":"모델 출력에 softmax를 씌운 뒤 nn.CrossEntropyLoss에 넣으면?","o":["올바르다","소프트맥스가 두 번 적용되어 손실과 기울기가 틀린다(오류는 안 남)","오류가 난다","정확도가 오른다"],"a":1,"e":"CrossEntropyLoss는 로짓을 받는다."},
+ {"q":"GPU에서 연산 시간을 잴 때 torch.cuda.synchronize()가 필요한 이유는?","o":["GPU를 초기화하려고","GPU 연산이 비동기라 명령만 보내고 다음 줄로 넘어가기 때문","정밀도를 맞추려고","메모리를 비우려고"],"a":1,"e":"기다리지 않으면 명령을 보내는 시간만 잰다."},
+ {"q":"nn.Linear(784, 256)의 weight 형상은?","o":["(784, 256)","(256, 784)","(256,)","(784,)"],"a":1,"e":"(출력, 입력) 형상이고 x @ W.T + b를 계산한다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>$f(x, y) = x^2y + \sin(xy)$의 $(x, y) = (1, 2)$에서의 기울기를 손으로 구하고, autograd로 확인하는 코드를 쓰라.
+    <details class="sol"><summary>풀이</summary><p>$\partial f/\partial x = 2xy + y\cos(xy) = 4 + 2\cos 2 \approx 3.1677$, $\partial f/\partial y = x^2 + x\cos(xy) = 1 + \cos 2 \approx 0.5839$.</p>
+<pre><code>x = torch.tensor(1.0, requires_grad=True); y = torch.tensor(2.0, requires_grad=True)
+f = x ** 2 * y + torch.sin(x * y); f.backward()
+print(x.grad, y.grad)   # tensor(3.1677) tensor(0.5839)
+</code></pre></details></li>
+  <li>입력 3채널 32×32 이미지를 받아 은닉층 100개, 출력 10개인 MLP를 <code>nn.Sequential</code>로 정의하라. 이미지를 펼치는 층이 필요하다. 파라미터는 몇 개인가?
+    <details class="sol"><summary>풀이</summary><pre><code>model = nn.Sequential(nn.Flatten(), nn.Linear(3 * 32 * 32, 100), nn.ReLU(), nn.Linear(100, 10))
+</code></pre><p>$3072 \times 100 + 100 + 100 \times 10 + 10 = 308{,}310$개. <code>nn.Flatten</code>은 (N, 3, 32, 32)를 (N, 3072)로 펼친다.</p></details></li>
+  <li>다음 학습 루프의 문제 세 가지를 찾으라.
+<pre><code>for xb, yb in data:
+    out = torch.softmax(model(xb), dim=1)
+    loss = nn.CrossEntropyLoss()(out, yb)
+    loss.backward()
+    optimizer.step()
+acc = (model(X_test).argmax(1) == y_test).float().mean()
+</code></pre>
+    <details class="sol"><summary>풀이</summary><p>(1) <code>zero_grad()</code>가 없어 기울기가 누적된다. (2) 소프트맥스를 씌운 출력을 <code>CrossEntropyLoss</code>에 넣었다. (3) 평가 전에 <code>model.eval()</code>과 <code>torch.no_grad()</code>가 없다. 드롭아웃이나 배치 정규화가 있으면 평가 결과가 틀리고, 그래프를 만들어 메모리를 낭비한다.</p></details></li>
+</ol>
+
+<h2 data-min="45" data-kind="project">미니 프로젝트: NumPy MLP를 PyTorch로 옮기기</h2>
+<section class="project" data-title="28일차의 MNIST MLP를 PyTorch로 다시 만들고 결과가 같은지 검증하기" data-min="45">
+<p class="lead">새 프레임워크로 옮길 때는 "같은 입력, 같은 가중치에서 같은 결과가 나오는가"를 먼저 확인한다. 그다음 같은 설정으로 학습해 결과를 비교한다. 노트북 6절에서 진행한다.</p>
+<p><a class="colab" data-nb="d29_pytorch_basics.ipynb">Colab에서 노트북 열기</a></p>
+<ol class="steps">
+<li><b>데이터.</b> 28일차와 같은 <code>mnist.npz</code>, 같은 분할(시드 0으로 5만/1만), 같은 정규화(평균 0.1307, 표준편차 0.3081)를 쓰고 <code>torch.from_numpy</code>로 텐서를 만든다.</li>
+<li><b>같은 가중치, 같은 결과.</b> PyTorch 모델을 <code>float64</code>로 만들고, 그 가중치를 전치해 NumPy 순전파·역전파 함수에 넣는다. 표본 64개에서 로짓, 손실, 모든 기울기를 비교한다.
+<pre class="out"><code class="language-plaintext">로짓 최대 차이 1.8e-16,  손실 차이 8.9e-16
+  (256, 784) 가중치 기울기 상대 차이 3.5e-16,  편향 기울기 최대 차이 1.7e-18
+  (128, 256) 가중치 기울기 상대 차이 6.5e-16,  편향 기울기 최대 차이 4.3e-18
+  (10, 128) 가중치 기울기 상대 차이 3.8e-16,  편향 기울기 최대 차이 2.8e-17</code></pre>
+차이가 모두 $10^{-15}$ 이하로, <code>float64</code>의 반올림 오차 수준이다. 3주차에 손으로 유도한 역전파와 autograd가 같은 값을 낸다.</li>
+<li><b>초기화 맞추기.</b> <code>he_init</code> 함수로 모든 <code>nn.Linear</code>를 He 초기화하고 편향을 0으로 둔다.</li>
+<li><b>학습.</b> 28일차의 "넓게 + 모두" 설정(784-512-256-10, 드롭아웃 0.2, 이동 증강 ±2픽셀, AdamW 학습률 $10^{-3}$, 가중치 감쇠 0.01을 가중치에만, 워밍업 1에폭 + 코사인, 배치 128, 15에폭)으로 학습한다. 스케줄은 <code>LambdaLR</code>, 증강은 텐서 연산으로 쓴다.
+<pre class="out"><code class="language-plaintext">에폭  1  마지막 배치 손실 0.3412  검증 정확도 0.9415
+에폭  5  마지막 배치 손실 0.1533  검증 정확도 0.9775
+에폭 10  마지막 배치 손실 0.0764  검증 정확도 0.9843
+에폭 15  마지막 배치 손실 0.0345  검증 정확도 0.9872
+검증 정확도 0.9872,  테스트 정확도 0.9878</code></pre></li>
+<li><b>비교.</b> 결과를 28일차와 표로 비교하고, 직접 쓴 코드의 양을 비교하라. GPU 런타임에서 에폭당 시간도 재어 본다.</li>
+</ol>
+<table>
+  <thead><tr><th></th><th>28일차 NumPy</th><th>29일차 PyTorch</th></tr></thead>
+  <tbody>
+    <tr><td>검증 정확도</td><td>98.67%</td><td>98.72%</td></tr>
+    <tr><td>테스트 정확도</td><td>98.76%</td><td>98.78%</td></tr>
+    <tr><td>직접 쓴 것</td><td>층별 순전파·역전파, 손실, AdamW, 스케줄, 학습 루프</td><td>순전파(<code>forward</code>), 증강, 학습 루프</td></tr>
+  </tbody>
+</table>
+<p>난수를 쓰는 순서와 일부 연산의 구현이 달라 소수점 셋째 자리는 다르지만 같은 수준이다(27일차: 이 정도 차이는 시드에 따른 흔들림 안이다). 결과가 같으면 앞으로는 역전파를 프레임워크에 맡기고 모델 설계에 집중할 수 있다.</p>
+<details class="sol"><summary>참고: 핵심 코드</summary>
+<pre><code class="language-python">def fit(model, epochs=15, lr=1e-3, wd=0.01, bs=128, aug=True, seed=1):
+    torch.manual_seed(seed)
+    decay = [p for p in model.parameters() if p.dim() &gt;= 2]
+    no_decay = [p for p in model.parameters() if p.dim() &lt; 2]
+    opt = torch.optim.AdamW([{"params": decay, "weight_decay": wd},
+                             {"params": no_decay, "weight_decay": 0.0}], lr=lr)
+    steps = math.ceil(len(Xtr) / bs)
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, warmup_cosine(epochs * steps,
+                                                                  steps))
+    for ep in range(epochs):
+        order = torch.randperm(len(Xtr))
+        for s in range(0, len(Xtr), bs):
+            idx = order[s:s + bs]
+            xb = shift_batch(Xtr[idx]) if aug else Xtr[idx]
+            xb, yb = xb.to(device), ytr[idx].to(device)
+            opt.zero_grad()
+            loss = F.cross_entropy(model(xb), yb)
+            loss.backward()
+            opt.step()
+            sched.step()
+    return model
+</code></pre></details>
+</section>

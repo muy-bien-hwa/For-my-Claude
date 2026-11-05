@@ -262,6 +262,12 @@ ol.steps > li::before { content: counter(st); position: absolute; left: 0; top: 
 /* 코드 */
 pre { margin: 20px 0; border-radius: 6px; overflow: auto; background: var(--code-bg); border: 1px solid var(--border); font-size: 13.5px; line-height: 1.65; color: var(--code-text); }
 pre code { display: block; padding: 16px 18px; background: none; }
+/* 정적 출력 블록 (Colab 실습 페이지): 바로 위 코드 블록에 붙여 보여 준다 */
+pre.out { background: var(--surface); color: var(--text-2); font-size: 13px; }
+pre.out::before { content: "출력"; display: block; padding: 8px 18px 0; font: 600 11.5px "Noto Sans KR", system-ui, sans-serif; color: var(--muted); }
+pre.out code { padding: 6px 18px 12px; white-space: pre-wrap; }
+pre:has(+ pre.out) { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+pre + pre.out { margin-top: 0; border-top: 1px dashed var(--border-strong); border-top-left-radius: 0; border-top-right-radius: 0; }
 .hljs-keyword, .hljs-selector-tag, .hljs-literal { color: var(--hl-kw); }
 .hljs-string, .hljs-regexp { color: var(--hl-str); }
 .hljs-number { color: var(--hl-num); }
