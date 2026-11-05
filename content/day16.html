@@ -1,0 +1,269 @@
+<ul class="goals">
+  <li>다층 퍼셉트론의 구조와 층별 계산식을 쓸 수 있다.</li>
+  <li>활성화 함수가 없으면 층을 쌓아도 선형 모델임을 보일 수 있다.</li>
+  <li>시그모이드, tanh, ReLU, Leaky ReLU, GELU, SiLU의 모양과 도함수, 장단점을 비교할 수 있다.</li>
+  <li>은닉층이 입력 공간을 변형해 선형 분리 가능한 표현을 만든다는 것을 설명할 수 있다.</li>
+  <li>보편 근사 정리의 의미와 한계, 깊이가 주는 이점을 ReLU 조각으로 설명할 수 있다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="concept">퍼셉트론을 쌓으면</h2>
+<p>15일차에서 퍼셉트론 세 개를 두 층으로 연결해 XOR을 풀었다. 이처럼 뉴런을 층으로 쌓고 한 층의 출력을 다음 층의 입력으로 쓰는 신경망을 <dfn data-t="mlp">다층 퍼셉트론</dfn>(MLP)이라 한다. 입력층과 출력층 사이의 층을 <dfn data-t="hidden-layer">은닉층</dfn>이라 부른다. 은닉층의 값은 데이터에 직접 나타나지 않고 신경망이 스스로 만든 중간 표현이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 250" width="640" role="img" aria-label="입력 2개, 은닉 뉴런 4개, 출력 1개인 다층 퍼셉트론">
+  <g class="s-mu" stroke-width="1">
+    <line x1="140" y1="95" x2="300" y2="45"/><line x1="140" y1="95" x2="300" y2="100"/><line x1="140" y1="95" x2="300" y2="155"/><line x1="140" y1="95" x2="300" y2="210"/>
+    <line x1="140" y1="160" x2="300" y2="45"/><line x1="140" y1="160" x2="300" y2="100"/><line x1="140" y1="160" x2="300" y2="155"/><line x1="140" y1="160" x2="300" y2="210"/>
+    <line x1="300" y1="45" x2="460" y2="128"/><line x1="300" y1="100" x2="460" y2="128"/><line x1="300" y1="155" x2="460" y2="128"/><line x1="300" y1="210" x2="460" y2="128"/>
+  </g>
+  <g font-size="13">
+  <g class="s-f"><circle cx="140" cy="95" r="20"/><circle cx="140" cy="160" r="20"/></g>
+  <g class="s-tx" text-anchor="middle"><text x="140" y="100">x₁</text><text x="140" y="165">x₂</text></g>
+  <g class="s-acs" stroke-width="1.6"><circle cx="300" cy="45" r="20"/><circle cx="300" cy="100" r="20"/><circle cx="300" cy="155" r="20"/><circle cx="300" cy="210" r="20"/></g>
+  <g class="s-tx" text-anchor="middle"><text x="300" y="50">h₁</text><text x="300" y="105">h₂</text><text x="300" y="160">h₃</text><text x="300" y="215">h₄</text></g>
+  <circle cx="460" cy="128" r="22" class="s-f2"/><text x="460" y="133" text-anchor="middle" class="s-tx">ŷ</text>
+  <g class="s-tx" text-anchor="middle" font-weight="700"><text x="140" y="245">입력층</text><text x="300" y="245">은닉층</text><text x="460" y="245">출력층</text></g>
+  <g class="s-txm" text-anchor="middle" font-size="12"><text x="220" y="20">W₁: (2, 4), b₁: (4,)</text><text x="385" y="20">W₂: (4, 1), b₂: (1,)</text></g>
+  <g class="s-txm" font-size="12"><text x="500" y="110">h = φ(xW₁ + b₁)</text><text x="500" y="132">ŷ = hW₂ + b₂</text><text x="500" y="154">파라미터 8+4+4+1 = 17개</text></g>
+  </g>
+</svg>
+<figcaption>입력 2개, 은닉 뉴런 4개, 출력 1개인 MLP. 선 하나가 가중치 하나다. 층 사이의 모든 뉴런이 연결되어 있다(완전연결).</figcaption>
+</figure>
+<p>이 강의는 입력을 행벡터 $\mathbf x$(형상 $(d,)$)로 쓰고 $\mathbf xW$로 곱한다. 코드의 배치 계산 $XW$와 같은 모양이다(17일차). 층 하나의 계산은 11일차의 소프트맥스 회귀와 같은 선형 변환에 활성화 함수 $\phi$를 씌운 것이다.</p>
+$$\mathbf h = \phi(\mathbf xW_1 + \mathbf b_1), \qquad \hat y = \mathbf hW_2 + \mathbf b_2 \quad(\text{분류면 뒤에 } \sigma \text{ 또는 softmax})$$
+
+<h2 data-min="15" data-kind="concept">활성화 함수가 필요한 이유</h2>
+<p>층과 층 사이에 넣는 비선형 함수 $\phi$를 <dfn data-t="activation">활성화 함수</dfn>라 한다. 이것을 빼면 어떻게 될까? 두 선형층을 연달아 적용하면</p>
+$$(\mathbf xW_1 + \mathbf b_1)W_2 + \mathbf b_2 = \mathbf x\,\underbrace{(W_1W_2)}_{W} + \underbrace{(\mathbf b_1W_2 + \mathbf b_2)}_{\mathbf b}$$
+<p>로, 하나의 선형층 $\mathbf xW + \mathbf b$와 같다. 100층을 쌓아도 결국 하나의 행렬곱이다. 선형 함수의 합성은 선형이기 때문이다. 결정 경계도 여전히 직선이라 XOR조차 풀 수 없다.</p>
+<div class="box ex" data-title="두 선형층이 하나로 합쳐짐"><p>$W_1 = \begin{bmatrix}1 &amp; 2\\ 0 &amp; 1\end{bmatrix}$, $W_2 = \begin{bmatrix}3\\ -1\end{bmatrix}$이면 $W_1W_2 = \begin{bmatrix}1\\ -1\end{bmatrix}$. 입력 $\mathbf x = (2, 5)$를 두 층에 차례로 넣으면 $(2, 9)$를 거쳐 $3\cdot2 - 9 = -3$, 합친 층에 넣으면 $2 - 5 = -3$이다. 같다. 중간에 ReLU를 넣으면 $(2, 9)$가 그대로 통과해 결과가 같지만, 입력이 $(-2, 1)$이면 첫 층 출력 $(-2, -3)$이 ReLU에서 $(0, 0)$이 되어 결과 0이 된다. 합친 선형층의 답은 $-2 - 1 = -3$이다. 활성화 함수가 입력에 따라 다르게 동작하는 "꺾임"을 만든다.</p></div>
+
+<h2 data-min="22" data-kind="concept">활성화 함수의 종류</h2>
+<p>쓸모 있는 활성화 함수는 비선형이면서 미분 가능(적어도 거의 모든 곳에서)해야 한다. 역전파에서 기울기가 층을 지날 때마다 $\phi'(z)$가 곱해지므로(18일차), 도함수의 모양이 학습의 성패를 가른다.</p>
+<div class="viz-mount" data-viz="activation"></div>
+<table>
+  <thead><tr><th>함수</th><th>식</th><th>범위</th><th>특징</th></tr></thead>
+  <tbody>
+    <tr><td>시그모이드</td><td>$\sigma(z) = \frac1{1 + e^{-z}}$</td><td>(0, 1)</td><td>도함수 최대 0.25, 양 끝에서 포화. 지금은 출력층(확률)과 게이트(37일차)에만 쓴다.</td></tr>
+    <tr><td><dfn data-t="tanh">tanh</dfn></td><td>$\frac{e^z - e^{-z}}{e^z + e^{-z}} = 2\sigma(2z) - 1$</td><td>(−1, 1)</td><td>0을 중심으로 대칭. 도함수 최대 1. 양 끝 포화. RNN에서 쓴다.</td></tr>
+    <tr><td><dfn data-t="relu">ReLU</dfn></td><td>$\max(0, z)$</td><td>[0, ∞)</td><td>양수 구간 도함수 1이라 기울기가 줄지 않는다. 계산이 가장 싸다. 음수만 들어오는 뉴런은 영원히 0(죽은 ReLU).</td></tr>
+    <tr><td><dfn data-t="leaky-relu">Leaky ReLU</dfn></td><td>$\max(\alpha z, z)$, $\alpha = 0.01$ 등</td><td>(−∞, ∞)</td><td>음수 구간에도 작은 기울기를 남겨 죽은 뉴런을 막는다.</td></tr>
+    <tr><td><dfn data-t="gelu">GELU</dfn></td><td>$z\,\Phi(z)$ ($\Phi$: 표준정규 누적분포)</td><td>약 [−0.17, ∞)</td><td>ReLU를 매끄럽게 만든 모양. BERT, GPT 등 트랜스포머의 표준.</td></tr>
+    <tr><td><dfn data-t="silu">SiLU</dfn> (Swish)</td><td>$z\,\sigma(z)$</td><td>약 [−0.28, ∞)</td><td>GELU와 비슷하다. 최신 대형 언어 모델(SwiGLU)에서 쓴다.</td></tr>
+  </tbody>
+</table>
+<div class="box warn" data-title="포화와 기울기 소실"><p>시그모이드의 도함수는 $|z| = 5$에서 0.0066이다. 이런 구간을 포화 구간이라 한다. 시그모이드 층을 여러 개 쌓으면 기울기에 0.25 이하의 수가 계속 곱해져 앞쪽 층에 거의 전달되지 않는다(5일차 경고, 24일차). 2010년대 초 ReLU가 표준이 된 가장 큰 이유가 이것이다.</p></div>
+<p>실무의 기본값: 은닉층은 ReLU(또는 GELU), 이진 분류의 출력은 시그모이드, 다중 분류의 출력은 소프트맥스, 회귀의 출력은 활성화 없음(항등).</p>
+
+<h2 data-min="20" data-kind="concept">은닉층은 공간을 바꾼다</h2>
+<p>4일차에서 행렬은 공간을 늘이고, 돌리고, 기울이는 선형변환이었다. 은닉층은 여기에 활성화 함수를 더한다. tanh는 먼 값을 −1과 1 근처로 눌러 담고, ReLU는 음수 쪽을 0으로 접는다. 선형변환이 공간을 늘이고 돌린 뒤 활성화가 그것을 휘거나 접는다. 이 과정을 거치면 원래 공간에서 뒤엉켜 있던 두 클래스가 직선 하나로 갈리는 배치로 바뀔 수 있다. 출력층은 그 새 공간에서 로지스틱 회귀를 할 뿐이다.</p>
+<div class="flow"><div>입력 공간<br>(뒤엉킴)</div><div>선형변환<br>$\mathbf xW + \mathbf b$<br>늘이기·돌리기</div><div class="hl">활성화 $\phi$<br>휘기·접기</div><div>은닉 공간<br>(직선으로 분리)</div><div>출력층<br>선형 분류</div></div>
+<div class="viz-mount" data-viz="space-warp"></div>
+<p>1일차의 표현 학습이 바로 이것이다. 사람이 다항 특징(8일차)이나 제곱 특징(10일차)을 설계하는 대신, 신경망은 데이터를 잘 가르는 특징 변환 자체를 가중치로 학습한다. 층이 깊어질수록 이 변환이 여러 번 겹쳐 점점 더 추상적인 표현이 된다.</p>
+
+<h2 data-min="15" data-kind="concept">보편 근사 정리</h2>
+<p>MLP는 어떤 함수까지 표현할 수 있을까? 답은 "거의 모든 함수"다.</p>
+<div class="box key" data-title="보편 근사 정리 (Cybenko 1989, Hornik 1991)"><p>은닉층이 하나뿐인 MLP라도 은닉 뉴런이 충분히 많으면, 유계 구간 위의 임의의 연속 함수를 원하는 만큼 정확하게 근사할 수 있다(활성화 함수가 다항식이 아닌 한).</p></div>
+<p>이것이 <dfn data-t="uat">보편 근사 정리</dfn>다. ReLU로 보면 직관이 쉽다. $\mathrm{ReLU}(x - c)$는 $x = c$에서 꺾이는 직선이다. 이런 꺾인 직선 여러 개에 가중치를 곱해 더하면 꺾은선이 된다. 꺾는 점을 촘촘히 두면 어떤 곡선도 꺾은선으로 따라 그릴 수 있다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 170" width="640" role="img" aria-label="ReLU 세 개를 더해 삼각형 모양의 혹을 만든다">
+  <g font-size="12">
+  <g transform="translate(10,30)">
+    <rect x="0" y="0" width="120" height="100" class="s-bg" stroke-width="1"/><line x1="0" y1="60" x2="120" y2="60" class="s-mu" stroke-width="1"/>
+    <polyline points="0,60 30,60 120,24" class="s-ac" stroke-width="2.4" fill="none"/>
+    <text x="60" y="122" text-anchor="middle" class="s-tx">ReLU(x − 1)</text>
+  </g>
+  <text x="148" y="85" text-anchor="middle" class="s-tx" font-size="18">+</text>
+  <g transform="translate(166,30)">
+    <rect x="0" y="0" width="120" height="100" class="s-bg" stroke-width="1"/><line x1="0" y1="60" x2="120" y2="60" class="s-mu" stroke-width="1"/>
+    <polyline points="0,60 60,60 120,96" class="s-red" stroke-width="2.4" fill="none"/>
+    <text x="60" y="122" text-anchor="middle" class="s-tx">−2·ReLU(x − 2)</text>
+  </g>
+  <text x="304" y="85" text-anchor="middle" class="s-tx" font-size="18">+</text>
+  <g transform="translate(322,30)">
+    <rect x="0" y="0" width="120" height="100" class="s-bg" stroke-width="1"/><line x1="0" y1="60" x2="120" y2="60" class="s-mu" stroke-width="1"/>
+    <polyline points="0,60 90,60 120,48" class="s-grn" stroke-width="2.4" fill="none"/>
+    <text x="60" y="122" text-anchor="middle" class="s-tx">ReLU(x − 3)</text>
+  </g>
+  <text x="460" y="85" text-anchor="middle" class="s-tx" font-size="18">=</text>
+  <g transform="translate(478,30)">
+    <rect x="0" y="0" width="140" height="100" class="s-bg" stroke-width="1"/><line x1="0" y1="80" x2="140" y2="80" class="s-mu" stroke-width="1"/>
+    <polyline points="0,80 35,80 70,30 105,80 140,80" class="s-ln" stroke-width="2.6" fill="none"/>
+    <text x="70" y="122" text-anchor="middle" class="s-tx" font-weight="700">혹 (높이 1, 폭 2)</text>
+  </g>
+  <text x="320" y="16" text-anchor="middle" class="s-txm">가로축 x: 0 ~ 4. 꺾이는 점 1, 2, 3에서 기울기가 +1, −2, +1만큼 바뀐다.</text>
+  </g>
+</svg>
+<figcaption>은닉 뉴런 세 개(ReLU)와 출력 가중치 $(1, -2, 1)$로 만든 혹. 이런 혹을 여러 위치에 다른 높이로 놓고 더하면 임의의 연속 함수를 근사할 수 있다.</figcaption>
+</figure>
+<div class="box warn" data-title="정리가 말하지 않는 것"><ul>
+<li>필요한 뉴런 수: 함수가 복잡하면 기하급수적으로 많을 수 있다.</li>
+<li>학습 가능성: 그런 가중치가 "존재"한다는 것이지, 경사하강법이 그것을 "찾는다"는 보장이 아니다.</li>
+<li>일반화: 학습 데이터에 맞는 함수가 새 데이터에도 맞는다는 보장이 없다(12일차).</li>
+</ul></div>
+
+<h2 data-min="10" data-kind="concept">깊이의 의미</h2>
+<p>은닉층 하나로 충분하다면 왜 깊게 쌓는가? 같은 뉴런 수로 표현할 수 있는 함수의 복잡도가 깊이에 따라 훨씬 빠르게 늘기 때문이다. ReLU 신경망의 출력은 꺾은선(고차원에서는 조각난 평면)이고, 그 조각의 수가 복잡도의 척도다.</p>
+<p>ReLU 두 개로 만든 "텐트" 함수 $t(x) = 2\,\mathrm{ReLU}(x) - 4\,\mathrm{ReLU}(x - 0.5)$는 $[0, 1]$에서 0 → 1 → 0으로 오르내리는 조각 2개짜리 함수다. 이것을 한 번 더 통과시킨 $t(t(x))$는 조각이 4개, 세 번이면 8개, $k$번이면 $2^k$개다. 층마다 ReLU 2개, 총 $2k$개의 뉴런으로 $2^k$개의 조각을 만든다. 은닉층 하나로 같은 함수를 만들려면 조각마다 뉴런 하나, 즉 약 $2^k$개가 필요하다. 깊이는 "같은 접기를 반복해 패턴을 기하급수적으로 늘리는" 능력이다. 실전의 데이터(이미지의 획 → 모양 → 부품 → 물체)도 이런 계층 구조를 가진다.</p>
+
+<h2 data-min="15" data-kind="practice">신경망 놀이터</h2>
+<p>입력 좌표 두 개만으로 여러 데이터를 분류하는 신경망을 학습시켜 본다. 은닉층과 뉴런 수를 바꿔 가며 위의 내용을 확인한다.</p>
+<div class="viz-mount" data-viz="playground"></div>
+<ol class="steps">
+<li>"원" 데이터에서 은닉층 0개(로지스틱 회귀)로 학습한다. 경계가 직선이라 정확도가 50% 근처에 머문다.</li>
+<li>은닉층 1개, 뉴런 2개 → 3개 → 4개로 늘린다. 뉴런 3개부터 원을 둘러싸는 경계가 생긴다(삼각형에 가까운 모양). 아래 작은 지도에서 각 뉴런이 직선 하나씩을 맡는 것을 확인한다.</li>
+<li>활성화를 "없음(선형)"으로 바꾸고 은닉층을 3개로 늘린다. 경계는 여전히 직선이다.</li>
+<li>"나선"을 은닉층 1개, 뉴런 8개로 학습한 뒤, 은닉층 2~3개로 바꿔 비교한다.</li>
+</ol>
+
+<h2 data-min="20" data-kind="practice">코드 실습: 선형 붕괴, 보편 근사, 깊이</h2>
+<p>먼저 활성화 없는 두 층이 한 층과 같음을 확인하고, ReLU를 넣으면 달라지는 것을 본다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+relu = lambda z: np.maximum(0, z)
+W1 = np.array([[1., 2.], [0., 1.]]); W2 = np.array([[3.], [-1.]])
+for x in [np.array([2., 5.]), np.array([-2., 1.])]:
+    two_linear = (x @ W1) @ W2
+    one_linear = x @ (W1 @ W2)
+    with_relu = relu(x @ W1) @ W2
+    print(f"x = {x}: 선형 두 층 {two_linear}, 합친 한 층 {one_linear}, ReLU 사이에 "
+          f"{with_relu}")
+</code></pre>
+<p>보편 근사를 숫자로 확인한다. $[0, 2\pi]$에 꺾는 점 $N$개를 고르게 두고 $\mathrm{ReLU}(x - c_k)$를 은닉 뉴런으로 삼은 뒤, 출력 가중치만 8일차의 최소제곱으로 구한다.</p>
+<pre class="run"><code>x = np.linspace(0, 2 * np.pi, 400); y = np.sin(x)
+plt.figure(figsize=(6, 3.4)); plt.plot(x, y, "k--", lw=1, label="sin x")
+for N in [2, 4, 8, 16, 32]:
+    knots = np.linspace(0, 2 * np.pi, N + 1)[:-1]
+    # (400, N+1) 은닉 출력
+    H = np.c_[np.ones_like(x), relu(x[:, None] - knots[None, :])]
+    v = np.linalg.lstsq(H, y, rcond=None)[0]                         # 출력 가중치
+    err = np.abs(H @ v - y).max()
+    print(f"ReLU {N:2d}개: 최대 오차 {err:.4f}")
+    if N in (4, 8): plt.plot(x, H @ v, lw=1.6, label=f"ReLU {N}개")
+plt.legend(); plt.grid(alpha=.3); plt.show()
+</code></pre>
+<p>뉴런을 두 배로 늘릴 때마다 최대 오차가 약 4분의 1로 준다. 마지막으로 텐트 함수를 거듭 합성해 깊이에 따른 조각 수를 센다.</p>
+<pre class="run"><code>t = lambda z: 2 * relu(z) - 4 * relu(z - 0.5)                 # ReLU 2개짜리 층
+xs = np.linspace(0, 1, 20001)
+fig, axs = plt.subplots(1, 4, figsize=(11, 2.4), sharey=True)
+f = xs.copy()
+for k, ax in enumerate(axs, 1):
+    f = t(f)                                                   # 층을 하나 더 통과
+    slope = np.diff(f) / np.diff(xs)
+    pieces = (np.abs(np.diff(slope)) &gt; 1e-3).sum() + 1
+    ax.plot(xs, f)
+    ax.set_title(f"깊이 {k}: 조각 {pieces}개, ReLU {2 * k}개", fontsize=9)
+plt.tight_layout(); plt.show()
+</code></pre>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>MLP: $\mathbf h = \phi(\mathbf xW_1 + \mathbf b_1)$, $\hat y = \mathbf hW_2 + \mathbf b_2$. 은닉층은 신경망이 만든 중간 표현.</li>
+  <li>활성화 없이 쌓은 선형층은 하나의 선형층과 같다. 비선형 활성화가 꺾임을 만든다.</li>
+  <li>은닉층의 기본은 ReLU(트랜스포머는 GELU). 시그모이드·tanh는 포화로 기울기가 사라진다.</li>
+  <li>은닉층 = 선형변환 + 휘기·접기 → 선형 분리 가능한 새 표현. 출력층은 그 위의 선형 분류기.</li>
+  <li>보편 근사 정리: 은닉층 하나로 어떤 연속 함수든 근사 가능(존재 보장). 깊이는 같은 뉴런 수로 기하급수적으로 복잡한 함수를 만든다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"활성화 함수 없이 선형층 3개를 쌓은 신경망과 같은 것은?","o":["3차 다항식 모델","선형층 하나","ReLU 신경망","결정 트리"],"a":1,"e":"$((\\mathbf xW_1)W_2)W_3 = \\mathbf x(W_1W_2W_3)$. 편향도 하나로 합쳐진다."},
+ {"q":"ReLU(−3)과 z = 2에서 ReLU의 도함수는?","o":["−3, 1","0, 1","0, 2","3, 0"],"a":1,"e":"ReLU는 음수를 0으로, 양수 구간 기울기는 1이다."},
+ {"q":"0을 중심으로 대칭이고 출력 범위가 (−1, 1)인 활성화 함수는?","o":["시그모이드","ReLU","tanh","GELU"],"a":2,"e":"$\\tanh(z) = 2\\sigma(2z) - 1$."},
+ {"q":"'죽은 ReLU'란?","o":["출력이 항상 1인 뉴런","입력이 항상 음수가 되어 출력과 기울기가 계속 0인 뉴런","학습률이 0인 뉴런","가중치가 무한대인 뉴런"],"a":1,"e":"기울기가 0이라 다시 살아날 수 없다. Leaky ReLU가 이를 막는다."},
+ {"q":"보편 근사 정리가 보장하는 것은?","o":["경사하강법이 최적 가중치를 찾는다","충분히 넓은 은닉층 하나로 연속 함수를 원하는 만큼 근사하는 가중치가 존재한다","과적합이 일어나지 않는다","필요한 뉴런 수가 적다"],"a":1,"e":"존재만 보장한다. 크기, 학습 가능성, 일반화는 보장하지 않는다."},
+ {"q":"입력 2, 은닉 4, 출력 1인 MLP(편향 포함)의 파라미터 수는?","o":["8","12","17","24"],"a":2,"e":"$(2\\times4 + 4) + (4\\times1 + 1) = 17$."},
+ {"q":"은닉층의 역할을 가장 잘 설명한 것은?","o":["입력을 저장한다","입력을 출력층이 직선으로 가를 수 있는 표현으로 바꾼다","손실을 계산한다","데이터를 섞는다"],"a":1,"e":"출력층은 은닉 표현 위의 선형 분류기다."},
+ {"q":"ReLU 2개짜리 텐트 함수를 k번 합성하면 조각 수는?","o":["2k","k²","2ᵏ","k"],"a":2,"e":"합성할 때마다 조각 수가 두 배가 된다. 깊이의 이점이다."}
+]</script>
+
+<h2 data-min="8" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>$\tanh(z) = 2\sigma(2z) - 1$임을 보이고, 이를 이용해 $\tanh'(0) = 1$을 구하라.
+    <details class="sol"><summary>풀이</summary><p>$2\sigma(2z) - 1 = \frac{2}{1 + e^{-2z}} - 1 = \frac{1 - e^{-2z}}{1 + e^{-2z}}$. 분자·분모에 $e^z$를 곱하면 $\frac{e^z - e^{-z}}{e^z + e^{-z}} = \tanh z$. 미분하면 $\tanh'(z) = 4\sigma'(2z) = 4\sigma(2z)(1 - \sigma(2z))$, $z = 0$에서 $4\cdot\frac14 = 1$.</p></details></li>
+  <li>$\max(a, b)$와 $|x|$를 ReLU로 표현하라.
+    <details class="sol"><summary>풀이</summary><p>$\max(a, b) = a + \mathrm{ReLU}(b - a)$. $|x| = \mathrm{ReLU}(x) + \mathrm{ReLU}(-x)$. 둘 다 ReLU 신경망이 정확히 표현할 수 있는 함수다.</p></details></li>
+  <li>입력 784, 은닉 256과 128, 출력 10인 MLP의 파라미터 수를 구하라. 어느 층에 가장 많은가?
+    <details class="sol"><summary>풀이</summary><p>$784\cdot256 + 256 = 200{,}960$, $256\cdot128 + 128 = 32{,}896$, $128\cdot10 + 10 = 1{,}290$. 합 235,146개. 첫 층이 85%를 차지한다. 17일차의 형상 추적 인터랙티브에서 확인한다.</p></details></li>
+  <li>은닉층 두 개짜리 ReLU 신경망 $\mathbf x = (1, -1)$, $W_1 = \begin{bmatrix}1 &amp; -1\\ 2 &amp; 1\end{bmatrix}$, $\mathbf b_1 = (0, 1)$, $W_2 = \begin{bmatrix}1\\ 1\end{bmatrix}$, $b_2 = -0.5$의 출력을 손으로 계산하라.
+    <details class="sol"><summary>풀이</summary><p>$\mathbf xW_1 = (1\cdot1 + (-1)\cdot2,\; 1\cdot(-1) + (-1)\cdot1) = (-1, -2)$, $+\mathbf b_1 = (-1, -1)$, ReLU → $(0, 0)$. 출력 $0 + 0 - 0.5 = -0.5$. 두 은닉 뉴런이 모두 꺼져 출력은 편향만 남는다.</p></details></li>
+</ol>
+
+<h2 data-min="35" data-kind="project">미니 프로젝트: 가중치를 직접 설계한 신경망</h2>
+<section class="project" data-title="학습 없이 ReLU 신경망의 가중치를 손으로 설계해 함수와 분류기 만들기" data-min="35">
+<p class="lead">학습 알고리즘을 쓰지 않고 ReLU 신경망의 가중치를 직접 정해서 원하는 함수를 만든다. 절댓값과 혹, $x^2$의 꺾은선 근사, 원 모양 데이터의 분류기를 차례로 설계한다. 은닉 뉴런 하나하나가 무슨 일을 하는지 정확히 알게 되며, 이것이 학습된 신경망을 해석하는 기초가 된다.</p>
+<ol class="steps">
+<li><b>도구 만들기.</b> 1입력 MLP를 계산하는 함수를 만든다. 은닉 뉴런 $j$의 출력은 $\mathrm{ReLU}(w_jx + b_j)$, 출력은 $\sum_j v_j h_j + c$다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+relu = lambda z: np.maximum(0, z)
+def mlp1d(x, w, b, v, c):
+    """x: (N,), 은닉층 가중치 w, b: (H,), 출력 가중치 v: (H,), 출력 편향 c"""
+    H = relu(x[:, None] * w[None, :] + b[None, :])    # (N, H)
+    return H @ v + c
+x = np.linspace(-3, 3, 601)
+abs_net = mlp1d(x, w=np.array([1., -1.]), b=np.array([0., 0.]), v=np.array([1., 1.]),
+                c=0.)
+print("|x| 최대 오차:", np.abs(abs_net - np.abs(x)).max())
+</code></pre></li>
+<li><b>혹 만들기.</b> 그림의 혹을 일반화해, 중심 $m$, 반폭 $s$, 높이 $a$인 삼각형 혹을 만드는 함수를 작성하라. 혹 두 개를 더해 쌍봉 모양을 그린다.
+<pre class="run"><code>def bump(m, s, a):
+    """중심 m, 반폭 s, 높이 a인 삼각형 혹의 (w, b, v)"""
+    w = np.array([1., 1., 1.])
+    b = np.array([-(m - s), -m, -(m + s)])            # 꺾는 점: m − s, m, m + s
+    # TODO 확인: 기울기 변화 +1, −2, +1
+    v = np.array([1., -2., 1.]) * a / s
+    return w, b, v
+w1, b1, v1 = bump(-1, 1, 1.0); w2, b2, v2 = bump(1.5, 0.5, 0.6)
+twin = mlp1d(x, np.r_[w1, w2], np.r_[b1, b2], np.r_[v1, v2], 0.)
+plt.figure(figsize=(5.6, 2.8))
+plt.plot(x, twin)
+plt.title("혹 두 개 = 은닉 뉴런 6개")
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+<li><b>$x^2$의 꺾은선 근사.</b> $[-2, 2]$에서 $x^2$을 꺾는 점 $-2, -1, 0, 1$을 쓰는 ReLU 4개로 근사한다. 각 구간의 기울기는 $-3, -1, 1, 3$이므로 꺾는 점에서의 기울기 변화는 $-3$(첫 뉴런), $+2, +2, +2$다. 출력 편향은 $x = -2$에서의 값 4다. 최대 오차를 구하고, 꺾는 점을 0.5 간격으로 늘리면 어떻게 되는지 비교하라.
+<pre class="run"><code>def square_net(step):
+    knots = np.arange(-2, 2, step)                    # −2부터 step 간격
+    vals = knots ** 2; nxt = (knots + step) ** 2
+    slopes = (nxt - vals) / step                       # 각 구간의 기울기
+    v = np.r_[slopes[0], np.diff(slopes)]               # 꺾는 점마다 기울기 변화
+    return np.ones_like(knots), -knots, v, 4.0
+xs = np.linspace(-2, 2, 801)
+for step in [1.0, 0.5, 0.25]:
+    w, b, v, c = square_net(step)
+    err = np.abs(mlp1d(xs, w, b, v, c) - xs ** 2).max()
+    print(f"간격 {step}: 은닉 뉴런 {len(w)}개, 최대 오차 {err:.4f}, 출력 가중치 "
+          f"{np.round(v, 2)[:5]}")
+</code></pre></li>
+<li><b>원 모양 데이터 분류기.</b> 놀이터의 "원" 데이터처럼, 안쪽 원(클래스 1)과 바깥 고리(클래스 0)를 가르는 신경망을 설계한다. 은닉 뉴런 4개 $\mathrm{ReLU}(x_1), \mathrm{ReLU}(-x_1), \mathrm{ReLU}(x_2), \mathrm{ReLU}(-x_2)$의 합은 $|x_1| + |x_2|$(마름모 모양의 거리)다. 출력 $\mathrm{step}(r - \sum_j h_j)$는 마름모 안쪽을 1로 판정한다. $r$을 바꿔 가며 정확도를 구하라.
+<pre class="run"><code>r = np.random.default_rng(5); pts = []
+for i in range(400):
+    c = i % 2
+    rad = r.random() * 1.0 if c else 1.6 + r.random() * .7
+    th = r.random() * 2 * np.pi
+    pts.append([rad * np.cos(th), rad * np.sin(th), c])
+pts = np.array(pts); X, y = pts[:, :2], pts[:, 2]
+W1 = np.array([[1., -1., 0., 0.], [0., 0., 1., -1.]])        # (2, 4)
+H = relu(X @ W1)                                              # (400, 4)
+for rad in [1.0, 1.2, 1.4, 1.6, 2.0]:
+    # 출력 가중치 −1, 편향 rad
+    pred = (rad - H.sum(axis=1) &gt; 0).astype(int)
+    print(f"r = {rad}: 정확도 {(pred == y).mean():.3f}")
+g1, g2 = np.meshgrid(np.linspace(-2.5, 2.5, 200), np.linspace(-2.5, 2.5, 200))
+Z = (1.4 - relu(np.c_[g1.ravel(), g2.ravel()] @ W1).sum(1) &gt; 0).reshape(g1.shape)
+plt.figure(figsize=(4.2, 4))
+plt.contourf(g1, g2, Z, levels=[-.5, .5, 1.5], colors=["#f3d6d3", "#d6e1f3"])
+plt.scatter(X[:, 0], X[:, 1], c=y, cmap="coolwarm_r", s=8)
+plt.gca().set_aspect("equal")
+plt.title("r = 1.4 마름모 경계")
+plt.show()
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>1단계: $|x| = \mathrm{ReLU}(x) + \mathrm{ReLU}(-x)$이므로 오차는 정확히 0이다.</li>
+<li>2단계: 꺾는 점 $m - s, m, m + s$에서 기울기가 $+a/s, -2a/s, +a/s$만큼 바뀌어 높이 $a$인 혹이 된다. 혹은 국소적인 "기본 벽돌"이고, 벽돌을 쌓아 원하는 모양을 만드는 것이 보편 근사의 직관이다.</li>
+<li>3단계: 간격 1에서 뉴런 4개, 최대 오차 0.25(구간 가운데). 간격 0.5에서 뉴런 8개, 오차 0.0625. 간격을 절반으로 하면 오차가 4분의 1이 된다. 꺾은선 근사의 오차는 간격의 제곱에 비례하기 때문이다. 코드 실습의 sin 근사와 같은 비율이다.</li>
+<li>4단계: $r$이 1.4~1.6일 때 정확도 1.0이다. 안쪽 원의 마름모 거리는 최대 $\sqrt2 \approx 1.41$이고 바깥 고리는 최소 1.6이므로 그 사이의 $r$이면 완벽히 가른다. 은닉 뉴런마다 직선 하나를 맡고, 출력층이 그것을 합쳐 다각형 경계를 만든다. 놀이터에서 학습된 뉴런 3~4개짜리 신경망도 비슷한 다각형을 스스로 찾는다.</li>
+</ul></details>
+</section>

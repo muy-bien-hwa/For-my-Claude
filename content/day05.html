@@ -1,0 +1,276 @@
+<ul class="goals">
+  <li>도함수를 "입력을 조금 바꿀 때 출력이 변하는 비율"로 설명하고 주요 함수의 도함수를 구할 수 있다.</li>
+  <li>연쇄법칙으로 합성함수를 미분할 수 있다.</li>
+  <li>편미분과 그래디언트를 계산하고, 그래디언트가 가장 가파른 오르막 방향임을 설명할 수 있다.</li>
+  <li>등고선 지도를 읽고, 등고선과 그래디언트의 관계를 설명할 수 있다.</li>
+  <li>수치 미분으로 해석적 미분을 검증할 수 있다.</li>
+</ul>
+
+<h2 data-min="22" data-kind="concept">도함수: 순간 변화율</h2>
+<p>학습은 손실을 줄이는 방향으로 파라미터를 고치는 일이다. 그 방향을 알려 주는 것이 미분이다.</p>
+<p>함수 $f$의 <dfn data-t="derivative">도함수</dfn>는 입력을 아주 조금 바꿨을 때 출력이 변하는 비율이다.</p>
+$$f'(x) = \lim_{h\to0}\frac{f(x+h) - f(x)}{h}$$
+<p>그래프에서는 점 $(x, f(x))$에서의 접선의 기울기다. 아래에서 $h$를 줄이며 할선이 접선에 다가가는 과정을 확인한다.</p>
+<div class="viz-mount" data-viz="derivative"></div>
+<p>실용적 해석: $f'(x) = 3$이면 "$x$를 0.01 늘리면 $f$는 약 0.03 늘어난다". 즉 작은 변화에 대해 $\Delta f \approx f'(x)\,\Delta x$다.</p>
+<table>
+  <thead><tr><th>함수 $f(x)$</th><th>도함수 $f'(x)$</th><th>쓰이는 곳</th></tr></thead>
+  <tbody>
+    <tr><td>$c$ (상수)</td><td>$0$</td><td></td></tr>
+    <tr><td>$x^n$</td><td>$n x^{n-1}$</td><td>제곱 오차</td></tr>
+    <tr><td>$e^x$</td><td>$e^x$</td><td>소프트맥스</td></tr>
+    <tr><td>$\ln x$</td><td>$1/x$</td><td>교차 엔트로피</td></tr>
+    <tr><td>$\sigma(x) = \frac{1}{1+e^{-x}}$</td><td>$\sigma(x)\,(1-\sigma(x))$</td><td>시그모이드</td></tr>
+    <tr><td>$\tanh x$</td><td>$1 - \tanh^2 x$</td><td>tanh 활성화</td></tr>
+    <tr><td>$\max(0, x)$</td><td>$x&gt;0$이면 1, 아니면 0</td><td>ReLU</td></tr>
+  </tbody>
+</table>
+<p>규칙: 합의 미분은 미분의 합 $(f+g)' = f' + g'$, 상수배는 그대로 $(cf)' = cf'$, 곱은 $(fg)' = f'g + fg'$다.</p>
+<div class="box ex" data-title="다항식의 도함수"><p>$f(x) = 3x^2 - 4x + 1$이면 $f'(x) = 6x - 4$다. $x = 2$에서 기울기는 8이므로 $x$를 2.01로 바꾸면 $f$는 약 0.08 증가한다. 실제로 $f(2.01) - f(2) = 5.0803 - 5 = 0.0803$이다. $f'(x) = 0$인 $x = 2/3$에서 접선이 수평이고, 이 점이 최솟값이다.</p></div>
+
+<h2 data-min="18" data-kind="concept">연쇄법칙</h2>
+<p>함수가 $x \to u = g(x) \to y = f(u)$처럼 이어져 있으면 변화율은 곱해져서 전달된다. 이것이 <dfn data-t="chain-rule">연쇄법칙</dfn>이다.</p>
+$$\frac{dy}{dx} = \frac{dy}{du}\cdot\frac{du}{dx}$$
+<figure class="fig">
+<svg viewBox="0 0 600 140" width="600" role="img" aria-label="변화율이 곱해져 전달됨">
+  <defs><marker id="d5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker></defs>
+  <g font-size="14">
+  <rect x="30" y="40" width="80" height="50" rx="8" class="s-f"/><text x="70" y="70" text-anchor="middle" class="s-tx" font-weight="700">x</text>
+  <rect x="260" y="40" width="80" height="50" rx="8" class="s-f"/><text x="300" y="70" text-anchor="middle" class="s-tx" font-weight="700">u = g(x)</text>
+  <rect x="490" y="40" width="80" height="50" rx="8" class="s-acs"/><text x="530" y="70" text-anchor="middle" class="s-tx" font-weight="700">y = f(u)</text>
+  <path d="M110 65 H256" class="s-ac" stroke-width="2" marker-end="url(#d5a)"/><path d="M340 65 H486" class="s-ac" stroke-width="2" marker-end="url(#d5a)"/>
+  <text x="185" y="55" text-anchor="middle" class="s-txa" font-weight="700">du/dx = 3</text><text x="415" y="55" text-anchor="middle" class="s-txa" font-weight="700">dy/du = 2</text>
+  <text x="300" y="122" text-anchor="middle" class="s-tx">x가 1 변하면 u는 3, y는 3 × 2 = 6 변한다: dy/dx = 6</text></g>
+</svg>
+<figcaption>사슬처럼 이어진 함수에서 전체 변화율은 각 단계 변화율의 곱이다.</figcaption>
+</figure>
+<div class="box ex" data-title="합성함수 미분"><p>$y = (3x+1)^2$. $u = 3x + 1$, $y = u^2$로 쪼개면 $\frac{dy}{du} = 2u$, $\frac{du}{dx} = 3$이므로 $\frac{dy}{dx} = 6(3x+1)$. 사슬이 길어도 원리는 같다: $x\to a\to b\to c\to L$이면 $\frac{\partial L}{\partial x} = \frac{\partial L}{\partial c}\frac{\partial c}{\partial b}\frac{\partial b}{\partial a}\frac{\partial a}{\partial x}$.</p></div>
+<p>신경망은 수십~수백 단계의 사슬이다. 18일차의 <b>역전파</b>는 이 곱을 출력 쪽부터 계산하며 중간 결과를 재사용하는 알고리즘이다.</p>
+<details class="sol"><summary>유도: 시그모이드의 도함수</summary>
+<p>$\sigma(x) = (1+e^{-x})^{-1}$. 연쇄법칙으로</p>
+$$\sigma'(x) = -(1+e^{-x})^{-2}\cdot(-e^{-x}) = \frac{1}{1+e^{-x}}\cdot\frac{e^{-x}}{1+e^{-x}} = \sigma(x)\,\big(1-\sigma(x)\big)$$
+<p>마지막 단계는 $\frac{e^{-x}}{1+e^{-x}} = 1 - \frac{1}{1+e^{-x}}$를 이용했다. 순전파에서 계산한 $\sigma(x)$만으로 미분을 구할 수 있어 역전파에 편리하다.</p></details>
+<div class="box warn" data-title="기울기 소실의 씨앗"><p>시그모이드 도함수의 최댓값은 0.25다. 시그모이드 층 10개를 지나는 사슬이면 기울기에 최대 $0.25^{10}\approx10^{-6}$이 곱해져 앞쪽 층에 거의 전달되지 않는다. 24일차의 기울기 소실 문제다.</p></div>
+
+<h2 data-min="15" data-kind="concept">편미분과 그래디언트</h2>
+<p>손실은 많은 파라미터의 함수다. 다른 변수는 모두 고정하고 한 변수만 움직였을 때의 도함수를 <dfn data-t="partial-derivative">편미분</dfn>이라 하고 $\partial f/\partial x_i$로 쓴다.</p>
+<div class="box ex" data-title="편미분 계산"><p>$f(x, y) = x^2y + 3y$. $x$로 미분할 때 $y$는 상수로 본다: $\frac{\partial f}{\partial x} = 2xy$. $y$로 미분하면 $\frac{\partial f}{\partial y} = x^2 + 3$. 점 $(2, -1)$에서 $\frac{\partial f}{\partial x} = -4$, $\frac{\partial f}{\partial y} = 7$.</p></div>
+<p>모든 편미분을 모은 벡터를 <dfn data-t="gradient">그래디언트</dfn>라 한다.</p>
+$$\nabla f = \left(\frac{\partial f}{\partial x_1}, \frac{\partial f}{\partial x_2}, \dots, \frac{\partial f}{\partial x_n}\right)$$
+<div class="box key"><ul>
+<li>그래디언트는 함수값이 <b>가장 빠르게 증가하는 방향</b>을 가리키고, 그 크기는 그 방향의 기울기다.</li>
+<li>따라서 $-\nabla f$는 가장 빠르게 감소하는 방향이다. 경사하강법은 이 방향으로 움직인다.</li>
+<li>그래디언트의 형상은 변수의 형상과 같다. 가중치 $W$가 (784, 128)이면 $\partial L/\partial W$도 (784, 128)이다.</li>
+</ul></div>
+
+<h2 data-min="28" data-kind="concept">등고선 읽기</h2>
+<p>변수가 두 개인 함수 $f(x, y)$는 지형으로 그릴 수 있다. $(x, y)$는 지도 위 위치, $f(x, y)$는 그 위치의 높이다. 지형을 위에서 내려다보며 높이를 나타내는 방법이 <dfn data-t="contour">등고선</dfn>이다. 등고선은 높이가 같은 점들을 이은 선이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 300" width="640" role="img" aria-label="지형을 같은 높이로 자르면 등고선이 생긴다">
+  <text x="160" y="22" text-anchor="middle" class="s-tx" font-weight="700">옆에서 본 지형</text>
+  <text x="480" y="22" text-anchor="middle" class="s-tx" font-weight="700">위에서 본 등고선 지도</text>
+  <g transform="translate(20,40)">
+    <path d="M10 220 C 70 220, 90 40, 150 40 C 210 40, 230 220, 290 220" class="s-acs" stroke-width="2"/>
+    <g class="s-org" stroke-width="1.5" stroke-dasharray="5 4"><line x1="0" y1="180" x2="300" y2="180"/><line x1="0" y1="140" x2="300" y2="140"/><line x1="0" y1="100" x2="300" y2="100"/><line x1="0" y1="62" x2="300" y2="62"/></g>
+    <g class="s-txm" font-size="12"><text x="304" y="184">높이 1</text><text x="304" y="144">높이 2</text><text x="304" y="104">높이 3</text><text x="304" y="66">높이 4</text></g>
+    <g class="s-orgf"><circle cx="64" cy="180" r="4"/><circle cx="236" cy="180" r="4"/><circle cx="91" cy="140" r="4"/><circle cx="209" cy="140" r="4"/><circle cx="108" cy="100" r="4"/><circle cx="192" cy="100" r="4"/><circle cx="125" cy="62" r="4"/><circle cx="175" cy="62" r="4"/></g>
+    <text x="150" y="250" text-anchor="middle" class="s-txm" font-size="12">각 높이의 수평면이 지형과 만나는 점 = 등고선</text>
+  </g>
+  <g transform="translate(480,160)">
+    <ellipse cx="0" cy="0" rx="120" ry="100" class="s-org" stroke-width="2"/>
+    <ellipse cx="0" cy="0" rx="82" ry="68" class="s-org" stroke-width="2"/>
+    <ellipse cx="0" cy="0" rx="54" ry="45" class="s-org" stroke-width="2"/>
+    <ellipse cx="0" cy="0" rx="28" ry="23" class="s-org" stroke-width="2"/>
+    <g class="s-tx" font-size="12" text-anchor="middle"><text x="0" y="-104">1</text><text x="0" y="-72">2</text><text x="0" y="-49">3</text><text x="0" y="-27">4</text></g>
+    <circle cx="0" cy="0" r="4" class="s-acf"/><text x="0" y="16" text-anchor="middle" class="s-txa" font-size="12" font-weight="700">봉우리</text>
+    <text x="-128" y="20" text-anchor="end" class="s-txm" font-size="11.5">간격 넓음 = 완만</text>
+  </g>
+</svg>
+<figcaption>왼쪽 지형을 높이 1, 2, 3, 4의 수평면으로 자르고, 잘린 곡선들을 위에서 내려다본 것이 오른쪽 지도다.</figcaption>
+</figure>
+<div class="box key" data-title="등고선을 읽는 네 가지 규칙">
+<ol>
+<li>같은 선 위의 모든 점은 함수값이 같다. 선을 따라 걸으면 높이가 변하지 않는다.</li>
+<li>선 사이 간격이 좁을수록 가파르다(조금만 움직여도 다음 높이에 도달한다).</li>
+<li>닫힌 고리가 겹겹이 있으면 그 중심이 봉우리나 골짜기다. 값이 안쪽으로 커지면 봉우리, 작아지면 골짜기다.</li>
+<li>그래디언트는 항상 등고선에 <b>수직</b>이고 높은 쪽을 가리킨다.</li>
+</ol></div>
+<p>규칙 4의 이유: 등고선을 따라 움직이면 높이 변화가 0이다. 방향 $\mathbf u$로 움직일 때의 변화율을 <dfn data-t="directional-derivative">방향 미분</dfn>이라 하며 $\nabla f\cdot\mathbf u$이다. 등고선 방향에서 이 값이 0이므로, 그래디언트와 등고선 방향의 내적이 0, 즉 수직이다.</p>
+<p>아래 인터랙티브는 같은 함수를 등고선 지도와 3D 곡면으로 나란히 보여 준다. 단면 높이 $c$를 바꾸면 3D 곡면을 그 높이에서 자른 곡선(주황)과 지도의 같은 등고선(주황)이 함께 바뀐다.</p>
+<div class="viz-mount" data-viz="gradient-field"></div>
+<table>
+  <thead><tr><th>지형</th><th>등고선 모양</th><th>특징</th></tr></thead>
+  <tbody>
+    <tr><td>둥근 그릇 $x^2 + y^2$</td><td>동심원</td><td>어디서든 그래디언트의 반대 방향이 중심(최솟값)을 향한다.</td></tr>
+    <tr><td>길쭉한 그릇 $x^2/4 + y^2$</td><td>길쭉한 타원</td><td>그래디언트의 반대 방향이 중심을 정확히 향하지 않는다. 9일차에서 경사하강법이 지그재그로 움직이는 원인이다.</td></tr>
+    <tr><td>안장 $x^2 - y^2$</td><td>엇갈린 쌍곡선</td><td>가운데 점은 그래디언트가 0이지만 최솟값이 아니다. 한 방향으로는 오르막, 다른 방향으로는 내리막이다.</td></tr>
+  </tbody>
+</table>
+<p>손실 지형도 같은 방식으로 읽는다. 파라미터가 2개인 모델의 손실 $L(w_1, w_2)$를 등고선으로 그리면, 학습은 바깥 고리에서 가장 안쪽 고리(손실 최소)로 걸어 내려가는 과정이다.</p>
+
+<h2 data-min="12" data-kind="concept">1차 근사: 경사하강법의 근거</h2>
+<p>한 점 근처에서 함수는 접평면으로 잘 근사된다. 이를 <dfn data-t="taylor">1차 테일러 근사</dfn>라 한다.</p>
+$$f(\mathbf x + \Delta) \approx f(\mathbf x) + \nabla f(\mathbf x)\cdot\Delta$$
+<p>$\Delta = -\eta\,\nabla f$로 고르면 $f$의 변화는 $-\eta\|\nabla f\|^2 \le 0$이다. 즉 그래디언트 반대 방향으로 작은 걸음을 옮기면 함수값이 반드시 줄어든다. 걸음이 너무 크면 근사가 틀어져 오히려 커질 수 있다. 이것이 학습률이 너무 크면 학습이 발산하는 이유다(9일차).</p>
+<div class="box ex" data-title="한 걸음 계산"><p>$f(x, y) = x^2 + 3y^2$, 현재 $(1, 1)$, $f = 4$. $\nabla f = (2x, 6y) = (2, 6)$. $\eta = 0.1$로 한 걸음: $(1, 1) - 0.1(2, 6) = (0.8, 0.4)$, $f = 0.64 + 0.48 = 1.12$. 1차 근사의 예측은 $4 - 0.1(4 + 36) = 0$이었다. 실제 감소량이 예측보다 작은 것은 걸음이 커서 곡률의 영향이 나타났기 때문이다.</p></div>
+
+<h2 data-min="12" data-kind="practice">수치 미분</h2>
+<p>공식으로 구한 미분이 맞는지 확인하는 가장 확실한 방법은 정의대로 작은 $h$를 넣어 계산해 보는 것이다. 이를 <dfn data-t="numerical-gradient">수치 미분</dfn>이라 한다. 양쪽으로 $h$만큼 움직이는 중앙 차분이 한쪽 차분보다 훨씬 정확하다.</p>
+$$f'(x) \approx \frac{f(x+h) - f(x-h)}{2h}$$
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+
+def num_grad(f, x, h=1e-5):
+    """임의 형상의 배열 x에 대한 f의 그래디언트를 중앙 차분으로 계산"""
+    x = np.array(x, dtype=float)
+    g = np.zeros_like(x)
+    for i in np.ndindex(x.shape):          # 모든 원소 위치를 차례로
+        old = x[i]
+        x[i] = old + h; fp = f(x)
+        x[i] = old - h; fm = f(x)
+        x[i] = old
+        g[i] = (fp - fm) / (2 * h)
+    return g
+
+f = lambda v: v[0] ** 2 * v[1] + 3 * v[1]               # f(x, y) = x²y + 3y
+p = np.array([2.0, -1.0])
+print("해석적:", np.array([2 * p[0] * p[1], p[0] ** 2 + 3]))
+print("수치적:", num_grad(f, p).round(6))
+sig = lambda z: 1 / (1 + np.exp(-z))
+for z0 in [-3.0, 0.0, 2.0]:
+    print(f"σ'({z0}) 해석적 {sig(z0) * (1 - sig(z0)):.6f}  수치적 "
+          f"{num_grad(lambda v: sig(v[0]), [z0])[0]:.6f}")
+</code></pre>
+<p>$h$를 무작정 작게 하면 좋을까? 너무 작으면 컴퓨터의 반올림 오차가 커진다. $h$에 따른 오차를 그려 본다.</p>
+<pre class="run"><code>hs = np.logspace(-14, 0, 60)
+x0 = 1.0
+true = np.cos(x0)
+fwd = [abs((np.sin(x0 + h) - np.sin(x0)) / h - true) for h in hs]
+cen = [abs((np.sin(x0 + h) - np.sin(x0 - h)) / (2 * h) - true) for h in hs]
+plt.figure(figsize=(5.5, 3.4))
+plt.loglog(hs, fwd, label="한쪽 차분"); plt.loglog(hs, cen, label="중앙 차분")
+plt.xlabel("h")
+plt.ylabel("오차 |근사 − 참값|")
+plt.legend()
+plt.grid(alpha=.3)
+plt.title("sin x의 x=1에서 미분 오차")
+plt.show()
+</code></pre>
+<p>오차는 $h$가 줄면 줄다가 어느 지점부터 다시 커진다. 중앙 차분은 $h\approx10^{-5}$ 근처에서 오차가 약 $10^{-11}$로 가장 작다. 20일차의 기울기 검증에서 이 값을 쓴다.</p>
+
+<h2 data-min="8" data-kind="concept">벡터와 행렬에 대한 미분 미리 보기</h2>
+<p>신경망의 그래디언트는 벡터와 행렬에 대한 미분이다. 두 결과만 기억한다(18일차에서 유도한다).</p>
+<ul>
+<li>$y = \mathbf w\cdot\mathbf x$이면 $\frac{\partial y}{\partial\mathbf w} = \mathbf x$. 가중치에 대한 미분은 입력이다.</li>
+<li>$Y = XW$이고 상류에서 온 기울기가 $G = \partial L/\partial Y$이면 $\frac{\partial L}{\partial W} = X^\top G$이다. 형상으로 기억한다: $W$가 $(d, k)$, $X$가 $(N, d)$, $G$가 $(N, k)$일 때 $(d, k)$를 만드는 곱은 $X^\top G$뿐이다.</li>
+</ul>
+<pre class="run"><code>rng = np.random.default_rng(0)
+X = rng.normal(size=(4, 3)); W = rng.normal(size=(3, 2))
+L = lambda W_: (X @ W_).sum()           # L = 모든 원소의 합 → G는 1로 채운 (4, 2)
+G = np.ones((4, 2))
+print("X^T G =\n", (X.T @ G).round(4))
+print("수치 미분 =\n", num_grad(L, W).round(4))
+</code></pre>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>도함수 = 순간 변화율 = 접선의 기울기. $\Delta f \approx f'(x)\Delta x$.</li>
+  <li>연쇄법칙: 이어진 함수의 변화율은 각 단계 변화율의 곱.</li>
+  <li>그래디언트 = 편미분들의 벡터 = 가장 가파른 오르막 방향. 등고선에 수직.</li>
+  <li>등고선: 같은 값을 잇는 선. 촘촘하면 가파르고, 닫힌 고리의 중심은 극값이다.</li>
+  <li>그래디언트 반대 방향의 작은 걸음은 함수값을 줄인다(1차 근사). 수치 미분으로 미분을 검증한다.</li>
+</ul></div>
+
+<h2 data-min="10" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"f′(x) = 5일 때 x를 0.01 늘리면 f는 대략?","o":["0.01 증가","0.05 증가","5 증가","0.5 증가"],"a":1,"e":"$\\Delta f \\approx f'(x)\\Delta x = 5 \\times 0.01$."},
+ {"q":"y = sin(x²)의 도함수는?","o":["cos(x²)","2x·cos(x²)","2x·sin(x²)","cos(2x)"],"a":1,"e":"바깥 함수 미분 cos(x²)에 안쪽 함수 미분 2x를 곱한다."},
+ {"q":"등고선 지도에서 선이 촘촘하게 모인 곳은?","o":["평평한 곳","경사가 가파른 곳","최솟값","함수값이 0인 곳"],"a":1,"e":"조금만 움직여도 다음 높이에 닿으므로 경사가 가파르다."},
+ {"q":"점 P에서 그래디언트와 등고선의 관계는?","o":["평행하다","수직이다","45도를 이룬다","관계없다"],"a":1,"e":"등고선 방향의 방향 미분이 0이므로 그래디언트는 등고선 방향과 내적이 0이다."},
+ {"q":"경사하강법이 파라미터를 그래디언트의 반대 방향으로 옮기는 이유는?","o":["계산이 빠르다","그래디언트가 가장 가파른 증가 방향이므로 반대가 가장 가파른 감소 방향이다","수치적으로 안정하다","관례다"],"a":1,"e":"손실을 줄여야 하므로 반대 방향으로 움직인다."},
+ {"q":"W.shape = (256, 10)이면 ∂L/∂W의 형상은?","o":["(10, 256)","(256, 10)","(256,)","스칼라"],"a":1,"e":"스칼라 손실의 그래디언트는 변수와 형상이 같다."},
+ {"q":"안장점에 대한 설명으로 옳은 것은?","o":["최솟값이다","그래디언트가 0이지만 어떤 방향으로는 내려가고 어떤 방향으로는 올라간다","최댓값이다","그래디언트가 무한대다"],"a":1,"e":"x² − y²의 원점처럼 그래디언트가 0이어도 극값이 아닐 수 있다."}
+]</script>
+
+<h2 data-min="10" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>$f(x) = \ln(1+e^x)$(softplus)의 도함수가 시그모이드임을 보이고, 수치 미분으로 확인하라.
+    <details class="sol"><summary>풀이</summary><p>$\frac{d}{dx}\ln(1+e^x) = \frac{e^x}{1+e^x} = \frac{1}{1+e^{-x}} = \sigma(x)$.</p><pre><code>sp = lambda v: np.log(1 + np.exp(v[0]))
+for x0 in [-1.0, 0.0, 2.0]:
+    print(num_grad(sp, [x0])[0].round(6), sig(x0).round(6))
+</code></pre></details></li>
+  <li>$L(w, b) = (wx + b - y)^2$에서 $x = 2, y = 7, w = 1, b = 0$일 때 $\partial L/\partial w$와 $\partial L/\partial b$를 구하라. 손실을 줄이려면 $w$, $b$를 각각 늘려야 하는가, 줄여야 하는가?
+    <details class="sol"><summary>풀이</summary><p>$r = wx + b - y = -5$. $\partial L/\partial w = 2rx = -20$, $\partial L/\partial b = 2r = -10$. 둘 다 음수이므로 반대 방향, 즉 $w$와 $b$를 늘려야 한다. 예측(2)이 정답(7)보다 작으니 맞는 방향이다.</p></details></li>
+  <li>$f(x, y) = x^2 - y^2$의 점 $(1, 1)$에서 그래디언트를 구하고, 등고선 방향(그래디언트에 수직인 방향)으로의 방향 미분이 0임을 확인하라.
+    <details class="sol"><summary>풀이</summary><p>$\nabla f = (2, -2)$. 수직 방향 $\mathbf u = (1, 1)/\sqrt2$: $\nabla f\cdot\mathbf u = (2 - 2)/\sqrt2 = 0$. 실제로 $(1+t, 1+t)$에서 $f = 0$으로 일정하다.</p></details></li>
+</ol>
+
+<h2 data-min="40" data-kind="project">미니 프로젝트: 그래디언트로 최저점 찾기</h2>
+<section class="project" data-title="수치 미분과 경사하강으로 지형의 골짜기 찾기" data-min="40">
+<p class="lead">최솟값이 네 곳 있는 힘멜블라우 함수 $f(x, y) = (x^2 + y - 11)^2 + (x + y^2 - 7)^2$의 등고선을 그리고, 수치 미분으로 구한 그래디언트를 따라 내려가는 탐색기를 직접 만든다. 출발점에 따라 다른 골짜기에 도착하는 현상을 관찰한다.</p>
+<ol class="steps">
+<li><b>지형 그리기.</b> 등고선 지도로 골짜기 네 곳의 위치를 눈으로 찾는다. 값의 범위가 넓어 로그 간격의 등고선을 쓴다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+f = lambda v: (v[0] ** 2 + v[1] - 11) ** 2 + (v[0] + v[1] ** 2 - 7) ** 2
+xs = np.linspace(-5, 5, 200)
+XX, YY = np.meshgrid(xs, xs)
+# 배열 연산으로 격자 전체를 한 번에
+ZZ = f([XX, YY])
+levels = [0.5, 2, 5, 10, 20, 40, 80, 150, 300, 600]
+def base_plot():
+    plt.figure(figsize=(5.6, 5))
+    cs = plt.contour(XX, YY, ZZ, levels=levels, cmap="Blues_r")
+    plt.clabel(cs, fmt="%g", fontsize=7)
+    plt.xlabel("x"); plt.ylabel("y"); plt.gca().set_aspect("equal")
+base_plot(); plt.title("힘멜블라우 함수의 등고선"); plt.show()
+</code></pre></li>
+<li><b>그래디언트 확인.</b> 해석적 그래디언트를 직접 유도해 함수로 만들고, 수치 미분(<code>num_grad</code>)과 비교한다. 빈칸을 채워라.
+<pre class="run"><code>def grad_f(v):
+    x, y = v
+    a = x ** 2 + y - 11
+    b = x + y ** 2 - 7
+    dfdx = 4 * x * a + 2 * b           # 연쇄법칙: 2a·(2x) + 2b·1
+    dfdy = 2 * a + 4 * y * b           # TODO 확인: 2a·1 + 2b·(2y)
+    return np.array([dfdx, dfdy])
+p = np.array([1.0, -2.0])
+print("해석적:", grad_f(p), " 수치적:", num_grad(f, p).round(5))
+</code></pre></li>
+<li><b>경사하강 탐색기.</b> 출발점에서 그래디언트 반대 방향으로 반복해서 걸음을 옮기고, 경로를 저장한다.
+<pre class="run"><code>def descend(start, lr=0.01, steps=200):
+    p = np.array(start, dtype=float)
+    path = [p.copy()]
+    for _ in range(steps):
+        p = p - lr * grad_f(p)
+        path.append(p.copy())
+    return np.array(path)
+starts = [(0, 0), (-1, 4), (-4, -1), (2, -4), (4, 4)]
+base_plot()
+for s in starts:
+    P = descend(s)
+    plt.plot(P[:, 0], P[:, 1], ".-", ms=3, lw=1)
+    plt.plot(*P[0], "ko", ms=5); plt.plot(*P[-1], "r*", ms=12)
+    print(f"출발 {s} → 도착 ({P[-1, 0]:.3f}, {P[-1, 1]:.3f}), f = {f(P[-1]):.2e}")
+plt.title("출발점에 따라 다른 골짜기에 도착"); plt.show()
+</code></pre></li>
+<li><b>걸음 크기 실험.</b> 학습률 0.001, 0.01, 0.02, 0.03으로 같은 출발점에서 실행해 함수값의 변화를 그린다.
+<pre class="run"><code>plt.figure(figsize=(5.6, 3.4))
+for lr in [0.001, 0.01, 0.02, 0.03]:
+    P = descend((0, 0), lr=lr, steps=100)
+    vals = [f(q) for q in P]
+    plt.semilogy(np.clip(vals, 1e-12, 1e6), label=f"lr = {lr}")
+plt.xlabel("반복 횟수")
+plt.ylabel("f (로그 눈금)")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>네 최솟값은 약 $(3, 2)$, $(-2.805, 3.131)$, $(-3.779, -3.283)$, $(3.584, -1.848)$이며 모두 $f = 0$이다. 출발점이 어느 골짜기의 "유역"에 있느냐에 따라 도착점이 정해진다. 경사하강법은 가까운 극소점을 찾을 뿐 전체 최솟값을 보장하지 않는다.</li>
+<li>경로는 등고선을 수직으로 가로지르며 내려간다(그래디언트가 등고선에 수직이므로).</li>
+<li>학습률 0.001은 너무 느리고, 0.01~0.02는 잘 수렴하며, 0.03 정도부터는 골짜기 벽을 오가며 진동하거나 발산한다. 9일차에서 이 현상을 체계적으로 다룬다.</li>
+<li>신경망의 손실 지형은 차원이 매우 높아, 이런 작은 국소 최솟값보다 안장점과 평탄한 지역이 더 큰 문제가 된다(22일차).</li>
+</ul></details>
+</section>

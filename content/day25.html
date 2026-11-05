@@ -1,0 +1,297 @@
+<ul class="goals">
+  <li>배치 정규화의 학습 모드와 추론 모드 계산을 쓰고 그 차이를 설명할 수 있다.</li>
+  <li>배치 정규화의 역전파 공식을 유도하고 구현해 기울기 검증을 통과시킬 수 있다.</li>
+  <li>배치 정규화, 층 정규화, 그룹 정규화, RMSNorm이 어느 축으로 정규화하는지 구별할 수 있다.</li>
+  <li>정규화 층이 깊은 망의 학습을 가능하게 하고 큰 학습률을 허용함을 실험으로 확인할 수 있다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="concept">왜 층 사이를 정규화하는가</h2>
+<p>9일차에서 입력 특징을 표준화하면 손실 지형이 둥글어져 학습이 빨라졌다. 은닉층의 입력은 앞 층의 출력이라 학습하는 동안 분포가 계속 바뀐다. 24일차에서 본 대로 초기화가 조금만 어긋나도 층을 지날수록 값이 사라지거나 폭발한다. 그렇다면 층마다 활성값을 다시 표준화하면 어떨까? 이것이 정규화 층의 아이디어다.</p>
+<p>원래 논문(Ioffe &amp; Szegedy, 2015)은 "앞 층이 바뀌어 다음 층 입력의 분포가 흔들리는 현상"을 줄인다고 설명했다. 이후 연구는 정규화 층이 손실 지형을 매끄럽게 만들어 더 큰 학습률을 안정적으로 쓰게 해 준다는 설명이 더 정확하다고 본다. 이유가 무엇이든 효과는 분명하다. 깊은 망이 초기화에 덜 민감해지고, 더 큰 학습률로 더 빨리 학습된다.</p>
+
+<h2 data-min="25" data-kind="concept">배치 정규화</h2>
+<p><dfn data-t="batchnorm">배치 정규화</dfn>(BatchNorm)는 미니배치 안에서 특징(열)마다 평균과 분산을 구해 표준화한 뒤, 학습 가능한 배율 $\gamma$와 이동 $\beta$를 적용한다. 입력 $X$가 $(N, d)$일 때 특징 $j$마다</p>
+$$\mu_j = \frac1N\sum_i X_{ij},\qquad \sigma_j^2 = \frac1N\sum_i(X_{ij} - \mu_j)^2,\qquad \hat X_{ij} = \frac{X_{ij} - \mu_j}{\sqrt{\sigma_j^2 + \epsilon}},\qquad Y_{ij} = \gamma_j\hat X_{ij} + \beta_j$$
+<p>$\epsilon$(예: $10^{-5}$)은 분산이 0일 때 나누기를 막는다. $\gamma$와 $\beta$가 없다면 모든 특징이 강제로 평균 0, 분산 1이 되어 표현력이 제한된다. $\gamma = \sigma$, $\beta = \mu$로 학습되면 정규화를 완전히 되돌릴 수도 있으므로, 정규화는 "기본값"을 정할 뿐 표현력을 빼앗지 않는다.</p>
+<div class="box ex" data-title="특징 하나, 배치 4개"><p>값 $(2, 4, 6, 8)$. $\mu = 5$, $\sigma^2 = (9 + 1 + 1 + 9)/4 = 5$, $\sigma \approx 2.236$. $\hat x = (-1.342, -0.447, 0.447, 1.342)$. $\gamma = 2$, $\beta = 1$이면 $y = (-1.683, 0.106, 1.894, 3.683)$. 9일차의 표준화와 같은 계산을 층 안에서, 배치마다 하는 것이다.</p></div>
+<div class="viz-mount" data-viz="batchnorm"></div>
+
+<h2 data-min="12" data-kind="concept">학습 모드와 추론 모드</h2>
+<p>추론할 때는 표본이 하나만 들어올 수도 있고, 같은 입력의 예측이 함께 들어온 다른 표본에 따라 달라져서도 안 된다. 그래서 배치 정규화는 학습 중에 배치 통계의 지수 이동 평균(22일차)을 따로 기록해 두었다가 추론에서는 그 값을 쓴다.</p>
+$$\mu_{\text{run}} \leftarrow (1 - m)\,\mu_{\text{run}} + m\,\mu_B,\qquad \sigma^2_{\text{run}} \leftarrow (1 - m)\,\sigma^2_{\text{run}} + m\,\sigma_B^2 \qquad (m = 0.1)$$
+<div class="box warn" data-title="흔한 실수"><ul>
+<li>평가할 때 추론 모드로 바꾸지 않는다. PyTorch에서는 <code>model.eval()</code>을 빠뜨리면 평가 결과가 배치 구성에 따라 흔들린다. 다시 학습할 때는 <code>model.train()</code>.</li>
+<li>배치가 너무 작다(2~8). 배치 통계가 불안정해 학습이 나빠진다. 그룹 정규화나 층 정규화를 쓴다.</li>
+<li>학습 데이터와 분포가 다른 데이터로 추론하면 저장된 통계가 맞지 않는다.</li>
+</ul></div>
+
+<h2 data-min="20" data-kind="concept">배치 정규화의 역전파</h2>
+<p>$\gamma$, $\beta$의 기울기는 선형층과 같은 방식이다. $G = \partial L/\partial Y$일 때 $\partial L/\partial\gamma_j = \sum_i G_{ij}\hat X_{ij}$, $\partial L/\partial\beta_j = \sum_i G_{ij}$. 까다로운 것은 입력의 기울기다. $\mu$와 $\sigma$가 배치의 모든 표본으로 계산되므로, 표본 하나를 바꾸면 모든 표본의 출력이 바뀐다(18일차의 분기 규칙). 이를 정리하면 특징마다 다음 식이 된다($g_i = \gamma G_i$로 둔다).</p>
+$$\frac{\partial L}{\partial X_i} = \frac{1}{N\sqrt{\sigma^2 + \epsilon}}\left(N g_i - \sum_k g_k - \hat X_i\sum_k g_k\hat X_k\right)$$
+<p>세 항의 의미: 첫째는 자기 자신을 통한 직접 경로, 둘째는 평균 $\mu$를 통한 경로(모든 표본의 기울기 합을 뺀다), 셋째는 분산 $\sigma^2$을 통한 경로다. 결과적으로 입력 기울기는 표본 방향으로 평균이 0이고 $\hat X$와 직교한다. 정규화가 "평균 이동"과 "크기 변화"를 지워 버리므로, 그 방향으로는 기울기가 흐르지 않는 것이다. 미니 프로젝트에서 구현하고 수치 미분으로 검증한다.</p>
+
+<h2 data-min="15" data-kind="concept">층 정규화와 정규화 축</h2>
+<p>배치 정규화는 배치 축으로 평균을 낸다. 그래서 배치 크기에 의존하고, 문장 길이가 제각각인 시퀀스 모델에서는 쓰기 어렵다. <dfn data-t="layernorm">층 정규화</dfn>(LayerNorm, Ba 등, 2016)는 표본 하나 안에서 모든 특징의 평균과 분산으로 정규화한다. 배치 크기와 무관하고, 학습과 추론의 계산이 같다. 트랜스포머와 RNN의 표준이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 660 230" width="660" role="img" aria-label="배치 정규화, 층 정규화, 그룹 정규화의 정규화 축">
+  <g font-size="12">
+  <g transform="translate(20,30)">
+    <g class="s-f" stroke-width="1"><rect x="0" y="0" width="160" height="120"/></g>
+    <rect x="40" y="0" width="20" height="120" class="s-acf" opacity=".55"/>
+    <g class="s-mu" stroke-width="1"><line x1="0" y1="20" x2="160" y2="20"/><line x1="0" y1="40" x2="160" y2="40"/><line x1="0" y1="60" x2="160" y2="60"/><line x1="0" y1="80" x2="160" y2="80"/><line x1="0" y1="100" x2="160" y2="100"/>
+    <line x1="20" y1="0" x2="20" y2="120"/><line x1="40" y1="0" x2="40" y2="120"/><line x1="60" y1="0" x2="60" y2="120"/><line x1="80" y1="0" x2="80" y2="120"/><line x1="100" y1="0" x2="100" y2="120"/><line x1="120" y1="0" x2="120" y2="120"/><line x1="140" y1="0" x2="140" y2="120"/></g>
+    <text x="80" y="-10" text-anchor="middle" class="s-txm">특징 (d) →</text><text x="-8" y="60" text-anchor="middle" class="s-txm" transform="rotate(-90 -8 60)">배치 (N) →</text>
+    <text x="80" y="145" text-anchor="middle" class="s-tx" font-weight="700">배치 정규화</text>
+    <text x="80" y="163" text-anchor="middle" class="s-txm">특징 하나를 배치 전체에서</text>
+    <text x="80" y="181" text-anchor="middle" class="s-txm">(배치 크기에 의존)</text>
+  </g>
+  <g transform="translate(250,30)">
+    <g class="s-f" stroke-width="1"><rect x="0" y="0" width="160" height="120"/></g>
+    <rect x="0" y="40" width="160" height="20" class="s-grnf" opacity=".55"/>
+    <g class="s-mu" stroke-width="1"><line x1="0" y1="20" x2="160" y2="20"/><line x1="0" y1="40" x2="160" y2="40"/><line x1="0" y1="60" x2="160" y2="60"/><line x1="0" y1="80" x2="160" y2="80"/><line x1="0" y1="100" x2="160" y2="100"/>
+    <line x1="20" y1="0" x2="20" y2="120"/><line x1="40" y1="0" x2="40" y2="120"/><line x1="60" y1="0" x2="60" y2="120"/><line x1="80" y1="0" x2="80" y2="120"/><line x1="100" y1="0" x2="100" y2="120"/><line x1="120" y1="0" x2="120" y2="120"/><line x1="140" y1="0" x2="140" y2="120"/></g>
+    <text x="80" y="-10" text-anchor="middle" class="s-txm">특징 (d) →</text>
+    <text x="80" y="145" text-anchor="middle" class="s-tx" font-weight="700">층 정규화</text>
+    <text x="80" y="163" text-anchor="middle" class="s-txm">표본 하나의 모든 특징</text>
+    <text x="80" y="181" text-anchor="middle" class="s-txm">(배치와 무관)</text>
+  </g>
+  <g transform="translate(480,30)">
+    <g class="s-f" stroke-width="1"><rect x="0" y="0" width="160" height="120"/></g>
+    <rect x="0" y="40" width="80" height="20" class="s-orgf" opacity=".6"/>
+    <g class="s-mu" stroke-width="1"><line x1="0" y1="20" x2="160" y2="20"/><line x1="0" y1="40" x2="160" y2="40"/><line x1="0" y1="60" x2="160" y2="60"/><line x1="0" y1="80" x2="160" y2="80"/><line x1="0" y1="100" x2="160" y2="100"/>
+    <line x1="20" y1="0" x2="20" y2="120"/><line x1="40" y1="0" x2="40" y2="120"/><line x1="60" y1="0" x2="60" y2="120"/><line x1="80" y1="0" x2="80" y2="120" stroke-width="2.4"/><line x1="100" y1="0" x2="100" y2="120"/><line x1="120" y1="0" x2="120" y2="120"/><line x1="140" y1="0" x2="140" y2="120"/></g>
+    <text x="80" y="-10" text-anchor="middle" class="s-txm">특징 (d) →</text>
+    <text x="80" y="145" text-anchor="middle" class="s-tx" font-weight="700">그룹 정규화</text>
+    <text x="80" y="163" text-anchor="middle" class="s-txm">표본 하나의 특징 묶음</text>
+    <text x="80" y="181" text-anchor="middle" class="s-txm">(그룹 2개의 예)</text>
+  </g>
+  </g>
+</svg>
+<figcaption>행 = 표본, 열 = 특징(이미지라면 채널). 색칠한 칸들이 평균과 분산을 함께 계산하는 집합이다. 이미지 텐서 $(N, C, H, W)$에서는 공간 축 $H, W$도 함께 묶는다(배치 정규화는 채널마다 $N, H, W$ 전체).</figcaption>
+</figure>
+<table>
+  <thead><tr><th>방법</th><th>평균을 내는 축</th><th>주된 쓰임</th></tr></thead>
+  <tbody>
+    <tr><td>배치 정규화</td><td>배치 (+ 공간)</td><td>CNN (배치가 충분히 클 때)</td></tr>
+    <tr><td>층 정규화</td><td>특징 (+ 공간)</td><td>트랜스포머, RNN</td></tr>
+    <tr><td>그룹 정규화</td><td>특징 묶음 (+ 공간)</td><td>배치가 작은 CNN (검출, 분할)</td></tr>
+    <tr><td>RMSNorm</td><td>특징 (평균 빼기 없음)</td><td>최신 대형 언어 모델</td></tr>
+  </tbody>
+</table>
+
+<h2 data-min="10" data-kind="concept">그룹 정규화와 RMSNorm</h2>
+<p><dfn data-t="groupnorm">그룹 정규화</dfn>(Wu &amp; He, 2018)는 채널을 몇 개의 묶음으로 나눠 묶음마다 층 정규화를 한다. 묶음이 1개면 층 정규화, 묶음 수가 채널 수와 같으면 채널마다 따로 정규화하는 인스턴스 정규화가 된다. 고해상도 이미지라 배치를 2~4장밖에 못 넣는 객체 검출에서 배치 정규화 대신 쓴다.</p>
+<p><dfn data-t="rmsnorm">RMSNorm</dfn>(Zhang &amp; Sennrich, 2019)은 층 정규화에서 평균을 빼는 단계를 생략하고 제곱평균제곱근으로만 나눈다.</p>
+$$\mathrm{RMSNorm}(\mathbf x) = \frac{\mathbf x}{\sqrt{\frac1d\sum_j x_j^2 + \epsilon}}\odot\mathbf g$$
+<p>계산이 조금 싸고 성능은 비슷해 LLaMA 같은 최신 언어 모델이 쓴다.</p>
+
+<h2 data-min="8" data-kind="concept">정규화 층을 어디에 둘까</h2>
+<ul>
+<li>CNN과 MLP의 고전적 배치: 선형(합성곱) → 배치 정규화 → ReLU. 정규화가 평균을 빼므로 바로 앞 선형층의 편향 $\mathbf b$는 쓸모가 없어 보통 뺀다(<code>bias=False</code>).</li>
+<li>트랜스포머: 각 하위 층 앞에 층 정규화를 두는 Pre-LN 구조가 현재 표준이다(44일차).</li>
+<li>정규화 층의 $\gamma$, $\beta$에는 보통 가중치 감쇠를 적용하지 않는다.</li>
+</ul>
+
+<h2 data-min="25" data-kind="practice">코드 실습: 정규화 층의 순전파</h2>
+<p>배치 정규화와 층 정규화의 순전파를 구현하고, 정규화 후 어느 축으로 평균 0, 분산 1이 되는지 확인한다.</p>
+<pre class="run"><code>import numpy as np
+import math
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(0)
+# 특징마다 다른 규모
+X = rng.normal(size=(8,
+                     5)) * np.array([1, 10, 0.1, 5, 2]) + np.array([0, 50, -3, 7, 1])
+def batchnorm_forward(X, gamma, beta, eps=1e-5):
+    # 특징(열)마다, 배치 방향으로
+    mu, var = X.mean(axis=0), X.var(axis=0)
+    return gamma * (X - mu) / np.sqrt(var + eps) + beta
+def layernorm_forward(X, gamma, beta, eps=1e-5):
+    # 표본(행)마다
+    mu = X.mean(axis=1, keepdims=True); var = X.var(axis=1, keepdims=True)
+    return gamma * (X - mu) / np.sqrt(var + eps) + beta
+def rmsnorm_forward(X, g, eps=1e-5):
+    return X / np.sqrt((X ** 2).mean(axis=1, keepdims=True) + eps) * g
+ones, zeros = np.ones(5), np.zeros(5)
+Yb = batchnorm_forward(X, ones, zeros)
+Yl = layernorm_forward(X, ones, zeros)
+Yr = rmsnorm_forward(X, ones)
+print("배치 정규화: 열 평균", Yb.mean(0).round(6), " 열 표준편차", Yb.std(0).round(3))
+print("층 정규화:   행 평균", Yl.mean(1).round(6)[:4], " 행 표준편차",
+      Yl.std(1).round(3)[:4])
+print("RMSNorm:     행 제곱평균", (Yr ** 2).mean(1).round(3)[:4], " 행 평균(0 아님)",
+      Yr.mean(1).round(3)[:4])
+print("예제 (2, 4, 6, 8), γ=2, β=1:",
+      batchnorm_forward(np.array([[2.], [4.], [6.], [8.]]), 2, 1).ravel().round(3))
+</code></pre>
+<p>배치 정규화는 같은 입력도 함께 들어온 배치에 따라 다른 출력을 낸다. 확인해 본다.</p>
+<pre class="run"><code>x0 = X[:1]                                                  # 첫 표본
+other1, other2 = X[1:4], rng.normal(size=(3, 5)) * 30
+out_a = batchnorm_forward(np.vstack([x0, other1]), ones, zeros)[0]
+out_b = batchnorm_forward(np.vstack([x0, other2]), ones, zeros)[0]
+print("같은 표본, 다른 배치에서의 배치 정규화 출력:\n", out_a.round(3), "\n",
+      out_b.round(3))
+print("층 정규화는 배치와 무관:",
+      np.allclose(layernorm_forward(x0, ones, zeros),
+                  layernorm_forward(X, ones, zeros)[:1]))
+</code></pre>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>배치 정규화: 특징마다 배치 평균·분산으로 표준화 후 $\gamma\hat x + \beta$. 학습은 배치 통계, 추론은 이동 평균 통계.</li>
+  <li>역전파: 평균과 분산을 통한 경로까지 포함한 세 항. 입력 기울기는 배치 방향 평균 0.</li>
+  <li>층 정규화는 표본 안의 특징으로 정규화(배치 무관, 트랜스포머 표준). 그룹 정규화는 특징 묶음, RMSNorm은 평균 빼기 생략.</li>
+  <li>효과: 깊은 망을 초기화에 덜 민감하게 하고 큰 학습률을 허용한다.</li>
+  <li>주의: 평가 때 <code>model.eval()</code>, 작은 배치에는 배치 정규화를 피한다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"배치 정규화에서 학습 가능한 γ, β가 필요한 이유는?","o":["계산을 빠르게 하려고","정규화가 표현력을 제한하지 않도록, 필요하면 원래 분포를 되찾을 수 있게","기울기 소실을 일으키려고","배치 크기를 늘리려고"],"a":1,"e":"γ = σ, β = μ면 정규화를 되돌릴 수 있다."},
+ {"q":"배치 정규화가 추론 모드에서 쓰는 평균과 분산은?","o":["현재 배치의 통계","학습 중 기록한 이동 평균 통계","0과 1","테스트 세트 전체의 통계"],"a":1,"e":"같은 입력은 항상 같은 출력을 내야 하므로 저장된 통계를 쓴다."},
+ {"q":"PyTorch에서 평가 전에 model.eval()을 빠뜨리면?","o":["아무 일 없다","배치 정규화가 배치 통계를 써서 결과가 배치 구성에 따라 흔들리고(이동 평균도 갱신됨) 평가가 부정확해진다","학습이 멈춘다","오류가 난다"],"a":1,"e":"드롭아웃도 꺼지지 않는다(26일차)."},
+ {"q":"층 정규화가 평균을 내는 축은?","o":["배치","표본 하나의 특징","전체 데이터","시간"],"a":1,"e":"그래서 배치 크기와 무관하다."},
+ {"q":"배치 크기 2로 학습해야 하는 고해상도 CNN에서 배치 정규화 대신 쓰기 좋은 것은?","o":["더 큰 학습률","그룹 정규화","드롭아웃","정규화 없음"],"a":1,"e":"배치 통계가 불안정할 때 표본 안에서 정규화한다."},
+ {"q":"RMSNorm이 층 정규화와 다른 점은?","o":["배치 축으로 평균","평균을 빼지 않고 제곱평균제곱근으로만 나눈다","γ가 없다","학습 모드가 따로 있다"],"a":1,"e":"계산이 조금 싸다."},
+ {"q":"선형층 → 배치 정규화 → ReLU에서 선형층의 편향을 보통 빼는 이유는?","o":["메모리 때문에","배치 정규화가 평균을 빼므로 편향의 효과가 사라지고 β가 같은 역할을 하므로","기울기가 폭발해서","초기화가 어려워서"],"a":1,"e":"편향은 정규화에서 상쇄된다."},
+ {"q":"배치 정규화 입력 기울기의 성질로 옳은 것은?","o":["항상 0이다","특징마다 배치 방향의 합이 0이다","출력 기울기와 같다","γ와 무관하다"],"a":1,"e":"평균을 통한 경로가 공통 성분을 빼 준다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>배치 $(1, 2, 3)$에 대한 배치 정규화($\gamma = 1, \beta = 0$, $\epsilon = 0$) 출력을 구하라. 같은 표본 1이 배치 $(1, 10, 20)$에 들어가면 출력은?
+    <details class="sol"><summary>풀이</summary><p>$(1, 2, 3)$: $\mu = 2$, $\sigma = \sqrt{2/3} = 0.816$, 출력 $(-1.225, 0, 1.225)$. $(1, 10, 20)$: $\mu = 10.33$, $\sigma = 7.76$, 표본 1의 출력 $-1.203$. 같은 값이 배치에 따라 다른 출력을 낸다.</p></details></li>
+  <li>배치 정규화 입력 기울기 공식에서 $\sum_i\partial L/\partial X_i = 0$임을 보여라.
+    <details class="sol"><summary>풀이</summary><p>$\sum_i(Ng_i - \sum_kg_k - \hat X_i\sum_kg_k\hat X_k) = N\sum g - N\sum g - (\sum_i\hat X_i)(\sum_kg_k\hat X_k) = 0$. 마지막은 $\sum_i\hat X_i = 0$(표준화했으므로)이기 때문이다.</p></details></li>
+  <li>입력 차원 512인 층 정규화와 RMSNorm의 학습 파라미터 수는 각각 몇 개인가?
+    <details class="sol"><summary>풀이</summary><p>층 정규화는 $\gamma$, $\beta$ 각 512개로 1024개. RMSNorm은 $\mathbf g$ 512개(이동 없음).</p></details></li>
+</ol>
+
+<h2 data-min="40" data-kind="project">미니 프로젝트: 배치 정규화 구현과 검증</h2>
+<section class="project" data-title="BatchNorm 층을 forward·backward·학습/추론 모드까지 구현하고, 깊은 망을 살리는지 확인하기" data-min="40">
+<p class="lead">배치 정규화 층을 21일차 프레임워크 형식(<code>forward</code>, <code>backward</code>, <code>params</code>, 학습/추론 모드)으로 구현하고 수치 미분으로 검증한다. 이어서 24일차에 학습되지 않던 10층 시그모이드 MLP와 느리던 ReLU MLP에 넣어, 정규화 층이 학습을 가능하게 하고 큰 학습률을 허용하는지 확인한다. 학습을 8번 하므로 수십 초 걸린다.</p>
+<ol class="steps">
+<li><b>BatchNorm 층.</b> 학습 모드에서는 배치 통계를 쓰고 이동 평균을 갱신한다. 추론 모드에서는 이동 평균을 쓴다.
+<pre class="run"><code>class BatchNorm:
+    def __init__(self, d, momentum=0.1, eps=1e-5):
+        self.gamma, self.beta = np.ones(d), np.zeros(d)
+        self.dgamma, self.dbeta = np.zeros(d), np.zeros(d)
+        self.run_mean, self.run_var = np.zeros(d), np.ones(d)
+        self.m, self.eps, self.training = momentum, eps, True
+    def forward(self, X):
+        if self.training:
+            mu, var = X.mean(0), X.var(0)
+            # TODO 확인: 이동 평균
+            self.run_mean = (1 - self.m) * self.run_mean + self.m * mu
+            self.run_var = (1 - self.m) * self.run_var + self.m * var
+        else:
+            mu, var = self.run_mean, self.run_var
+        self.std = np.sqrt(var + self.eps); self.xhat = (X - mu) / self.std
+        return self.gamma * self.xhat + self.beta
+    def backward(self, G):
+        self.dgamma[...] = (G * self.xhat).sum(0); self.dbeta[...] = G.sum(0)
+        g = G * self.gamma; N = len(G)
+        # TODO 확인: 입력에 대한 기울기(세 항)
+        dX = N * g - g.sum(0) - self.xhat * (g * self.xhat).sum(0)
+        return dX / (N * self.std)
+    def params(self): return [(self.gamma, self.dgamma), (self.beta, self.dbeta)]
+print("BatchNorm 준비 완료")
+</code></pre></li>
+<li><b>기울기 검증.</b> 무작위 $\gamma$, $\beta$와 손실 $L = \sum Y\odot W$(W는 고정된 무작위 행렬)로 입력, $\gamma$, $\beta$의 기울기를 모두 검증한다.
+<pre class="run"><code>r = np.random.default_rng(0)
+Xg = r.normal(2, 3, (6, 4)); Wg = r.normal(size=(6, 4))
+bn = BatchNorm(4); bn.gamma[...] = r.normal(size=4); bn.beta[...] = r.normal(size=4)
+loss = lambda: (bn.forward(Xg) * Wg).sum()
+loss(); dX = bn.backward(Wg)
+def numeric(arr):
+    out = np.zeros_like(arr)
+    for i in np.ndindex(arr.shape):
+        o = arr[i]
+        arr[i] = o + 1e-5
+        a = loss()
+        arr[i] = o - 1e-5
+        b = loss()
+        arr[i] = o
+        out[i] = (a - b) / 2e-5
+    return out
+for name, ana, arr in [("입력 X", dX, Xg), ("γ", bn.dgamma.copy(), bn.gamma),
+                       ("β", bn.dbeta.copy(), bn.beta)]:
+    num = numeric(arr)
+    print(f"{name:5s} 최대 상대 오차 "
+          f"{np.abs(ana - num).max() / np.abs(num).max():.1e}")
+print("입력 기울기의 열 합 (0이어야 함):", dX.sum(0).round(10))
+</code></pre></li>
+<li><b>깊은 망에 넣기.</b> 24일차의 10층 MLP(폭 64, Xavier 초기화)를 층 객체로 다시 만들고, 각 선형층 뒤에 BatchNorm을 넣을지 고를 수 있게 한다.
+<pre class="run"><code>d = load_data("digits"); Xd, yd = d["X"].astype(float) / 16, d["y"]
+rng = np.random.default_rng(0); tr, te = [], []
+for k in range(10):
+    idx = rng.permutation(np.where(yd == k)[0])
+    cut = int(0.8 * len(idx))
+    tr += list(idx[:cut])
+    te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+class Linear:
+    def __init__(self, a, b, r):
+        self.W = r.normal(0, math.sqrt(1 / a), (a, b)); self.b = np.zeros(b)
+        self.dW, self.db = np.zeros_like(self.W), np.zeros(b); self.training = True
+    def forward(self, X):
+        self.X = X; return X @ self.W + self.b
+    def backward(self, G):
+        self.dW[...] = self.X.T @ G; self.db[...] = G.sum(0); return G @ self.W.T
+    def params(self): return [(self.W, self.dW), (self.b, self.db)]
+class Act:
+    def __init__(self, kind): self.kind, self.training = kind, True
+    def forward(self, X):
+        self.o = 1 / (1 + np.exp(-X)) if self.kind == "sigmoid" else np.maximum(0, X)
+        return self.o
+    def backward(self, G):
+        return G * (self.o * (1 - self.o) if self.kind == "sigmoid" else (self.o &gt; 0))
+    def params(self): return []
+def build(act, use_bn, depth=10, width=64, seed=1):
+    r = np.random.default_rng(seed); layers, a = [], 64
+    for _ in range(depth):
+        layers.append(Linear(a, width, r))
+        if use_bn: layers.append(BatchNorm(width))
+        layers.append(Act(act)); a = width
+    layers.append(Linear(a, 10, r)); return layers
+def run(act, use_bn, lr, epochs=10, seed=1):
+    layers = build(act, use_bn, seed=seed)
+    r = np.random.default_rng(seed)
+    curve = []
+    for ep in range(epochs):
+        for l in layers: l.training = True
+        order = r.permutation(len(tr)); tot = 0.0
+        for s in range(0, len(order), 32):
+            i = tr[order[s:s + 32]]; Z = Xd[i]
+            for l in layers: Z = l.forward(Z)
+            Zm = Z - Z.max(1, keepdims=True)
+            P = np.exp(Zm) / np.exp(Zm).sum(1, keepdims=True)
+            tot += -np.log(P[np.arange(len(i)), yd[i]] + 1e-12).sum()
+            G = P.copy(); G[np.arange(len(i)), yd[i]] -= 1; G /= len(i)
+            for l in reversed(layers): G = l.backward(G)
+            for l in layers:
+                for p, g in l.params(): p -= lr * g
+        curve.append(tot / len(tr))
+    for l in layers: l.training = False                       # 추론 모드로 평가
+    Z = Xd[te]
+    for l in layers: Z = l.forward(Z)
+    return np.array(curve), (Z.argmax(1) == yd[te]).mean()
+print("준비 완료")
+</code></pre></li>
+<li><b>비교.</b> 시그모이드와 ReLU 각각에 대해 배치 정규화 유무, 학습률 0.1과 0.5로 10에폭 학습한다.
+<pre class="run"><code>with np.errstate(all="ignore"):
+    for act in ["sigmoid", "relu"]:
+        for use_bn in [False, True]:
+            for lr in [0.1, 0.5]:
+                curve, acc = run(act, use_bn, lr)
+                print(f"{act:7s} {'BN 있음' if use_bn else 'BN 없음'}  lr {lr}: 손실 "
+                      f"{curve[0]:.3f} → {curve[-1]:.3f},  테스트 정확도 {acc:.3f}")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>2단계: 세 기울기 모두 상대 오차 $10^{-10}$ 수준이고, 입력 기울기의 열 합은 0이다.</li>
+<li>4단계: 배치 정규화가 없는 10층 시그모이드 망은 두 학습률 모두에서 손실이 $\ln10$ 근처에 머물러 정확도 10%다. 배치 정규화를 넣으면 같은 망이 학습률 0.1에서 96.7%, 0.5에서 92.6%까지 학습된다. ReLU 망도 배치 정규화가 없으면 Xavier 초기화 탓에 느리고(학습률 0.1에서 65.7%), 학습률 0.5에서는 학습이 거의 되지 않는다(17.3%). 배치 정규화가 있으면 두 학습률 모두에서 98% 이상이다.</li>
+<li>정규화 층은 초기화와 활성화 함수의 나쁜 조합을 상당 부분 구제하고, 더 큰 학습률을 허용한다. 이것이 2015년 이후 깊은 CNN의 거의 모든 층에 배치 정규화가 들어간 이유다. 33일차의 잔차 연결과 함께 쓰면 100층이 넘는 망도 학습된다.</li>
+<li>주의: 평가 전에 모든 층을 추론 모드로 바꿨다. 학습 모드로 평가하면 테스트 배치의 통계를 쓰게 되어 결과가 달라진다.</li>
+</ul></details>
+</section>

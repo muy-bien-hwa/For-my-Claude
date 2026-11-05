@@ -1,0 +1,226 @@
+<ul class="goals">
+  <li>실제 데이터를 불러와 형상, 분포, 표본을 점검하는 탐색 과정을 수행한다.</li>
+  <li>평균 벡터와 거리(또는 내적)만으로 동작하는 분류기를 직접 구현하고 평가한다.</li>
+  <li>혼동 행렬로 오류를 분석하고, PCA로 차원을 줄였을 때 성능이 어떻게 변하는지 측정한다.</li>
+  <li>1주차의 도구(NumPy, 벡터·행렬, 확률)를 하나의 작업 흐름으로 연결한다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="review">프로젝트 개요</h2>
+<p>8×8 손글씨 숫자 1797장을 분류한다. 신경망은 아직 쓰지 않는다. 학습이라고 부를 수 있는 단계는 "숫자별 평균 이미지 계산" 하나뿐인데도 상당한 정확도가 나온다. 이 결과는 2주차 이후 모델들의 비교 기준이 된다.</p>
+<div class="flow"><div>데이터 탐색</div><div>기준선</div><div class="hl">최근접 중심<br>분류기</div><div>오류 분석</div><div>PCA 공간<br>분류</div><div>보고서</div></div>
+<h3>완료 기준</h3>
+<ul class="checklist" data-id="w1-project">
+  <li>데이터의 형상, 값 범위, 클래스별 개수를 확인하고 표본 이미지를 그렸다.</li>
+  <li>층화 분할로 학습 80%, 테스트 20%를 만들었다.</li>
+  <li>최빈 클래스 기준선의 정확도를 구했다.</li>
+  <li>최근접 중심 분류기(유클리드 거리)의 테스트 정확도를 구했다.</li>
+  <li>코사인 유사도 버전과 비교했다.</li>
+  <li>혼동 행렬을 그리고 가장 많이 헷갈린 숫자 쌍 세 개를 찾았다.</li>
+  <li>PCA 차원 $k$에 따른 정확도 곡선을 그렸다.</li>
+  <li>결과를 다섯 문장 이내의 보고서로 정리했다.</li>
+</ul>
+
+<h2 data-min="25" data-kind="project">1단계: 데이터 탐색</h2>
+<p>모델을 만들기 전에 데이터를 본다. 형상, 값의 범위, 클래스 균형, 표본 몇 개를 확인하는 것은 모든 프로젝트의 첫 단계다(27일차의 디버깅 절차도 여기서 시작한다).</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("digits")
+X, y = d["X"].astype(float), d["y"]
+print("X:", X.shape, X.dtype, " 값 범위:", X.min(), "~", X.max())
+print("y:", y.shape, " 클래스:", np.unique(y))
+counts = np.bincount(y)
+print("클래스별 개수:", counts, " 최소/최대 비:",
+      (counts.min() / counts.max()).round(3))
+plt.figure(figsize=(6, 2.6)); plt.bar(range(10), counts); plt.xticks(range(10))
+plt.xlabel("숫자"); plt.ylabel("개수"); plt.title("클래스 분포"); plt.show()
+</code></pre>
+<pre class="run"><code>fig, axs = plt.subplots(10, 10, figsize=(7, 7))
+for k in range(10):
+    idx = np.where(y == k)[0][:10]
+    for j, i in enumerate(idx):
+        axs[k, j].imshow(X[i].reshape(8, 8), cmap="gray_r"); axs[k, j].axis("off")
+plt.suptitle("숫자별 표본 10개"); plt.tight_layout(); plt.show()
+pix_mean, pix_std = X.mean(axis=0), X.std(axis=0)
+fig, axs = plt.subplots(1, 2, figsize=(5.5, 2.6))
+axs[0].imshow(pix_mean.reshape(8, 8), cmap="gray_r")
+axs[0].set_title("픽셀 평균")
+axs[0].axis("off")
+axs[1].imshow(pix_std.reshape(8, 8), cmap="magma")
+axs[1].set_title("픽셀 표준편차")
+axs[1].axis("off")
+plt.show()
+print("항상 0인 픽셀 수:", (pix_std == 0).sum())
+</code></pre>
+<p>표준편차가 0인 픽셀(가장자리)은 정보가 전혀 없다. 클래스는 거의 균등하다.</p>
+<h3>층화 분할</h3>
+<p>테스트 세트의 클래스 비율이 전체와 같도록, 클래스마다 따로 섞어 80:20으로 나눈다. 테스트 세트는 마지막 평가 전까지 쓰지 않는다.</p>
+<pre class="run"><code>rng = np.random.default_rng(0)
+tr_idx, te_idx = [], []
+for k in range(10):
+    idx = rng.permutation(np.where(y == k)[0])
+    cut = int(0.8 * len(idx))
+    tr_idx += list(idx[:cut]); te_idx += list(idx[cut:])
+tr_idx, te_idx = np.array(tr_idx), np.array(te_idx)
+Xtr, ytr, Xte, yte = X[tr_idx], y[tr_idx], X[te_idx], y[te_idx]
+print("학습", Xtr.shape, " 테스트", Xte.shape)
+print("테스트 클래스 비율:", (np.bincount(yte) / len(yte)).round(3))
+</code></pre>
+
+<h2 data-min="15" data-kind="project">2단계: 기준선</h2>
+<p>아무것도 배우지 않은 예측의 성능을 먼저 잰다. 모든 입력에 학습 세트의 최빈 클래스를 답하는 기준선과, 무작위로 답하는 기준선이다. 모델이 이보다 나아야 의미가 있다.</p>
+<pre class="run"><code>major = np.bincount(ytr).argmax()
+acc_major = (yte == major).mean()
+acc_rand = (rng.integers(0, 10, size=len(yte)) == yte).mean()
+print(f"최빈 클래스({major}) 기준선 정확도: {acc_major:.3f}")
+print(f"무작위 추측 정확도: {acc_rand:.3f}  (기댓값 0.1)")
+</code></pre>
+
+<h2 data-min="35" data-kind="project">3단계: 최근접 중심 분류기</h2>
+<p><dfn data-t="nearest-centroid">최근접 중심 분류기</dfn>는 학습 데이터에서 클래스별 평균 벡터(중심)를 구해 두고, 새 입력을 가장 가까운 중심의 클래스로 분류한다.</p>
+<figure class="fig">
+<svg viewBox="0 0 520 240" width="520" role="img" aria-label="최근접 중심 분류의 원리">
+  <g class="s-acf" opacity=".35"><circle cx="90" cy="70" r="5"/><circle cx="110" cy="95" r="5"/><circle cx="70" cy="100" r="5"/><circle cx="120" cy="60" r="5"/><circle cx="95" cy="120" r="5"/></g>
+  <g class="s-redf" opacity=".35"><circle cx="380" cy="80" r="5"/><circle cx="410" cy="110" r="5"/><circle cx="360" cy="115" r="5"/><circle cx="420" cy="70" r="5"/><circle cx="395" cy="135" r="5"/></g>
+  <g class="s-grnf" opacity=".35"><circle cx="230" cy="190" r="5"/><circle cx="260" cy="200" r="5"/><circle cx="215" cy="210" r="5"/><circle cx="250" cy="175" r="5"/><circle cx="270" cy="215" r="5"/></g>
+  <rect x="92" y="82" width="14" height="14" class="s-acf"/><rect x="390" y="96" width="14" height="14" class="s-redf"/><rect x="238" y="192" width="14" height="14" class="s-grnf"/>
+  <circle cx="290" cy="110" r="7" class="s-ln" stroke-width="2.5"/><text x="300" y="104" class="s-tx" font-weight="700">새 입력</text>
+  <line x1="290" y1="110" x2="99" y2="89" class="s-mu" stroke-dasharray="4 4"/><line x1="290" y1="110" x2="397" y2="103" class="s-red" stroke-width="2"/><line x1="290" y1="110" x2="245" y2="199" class="s-mu" stroke-dasharray="4 4"/>
+  <text x="345" y="96" style="fill:var(--bad)" font-size="12" font-weight="700">가장 가까움</text>
+  <text x="260" y="236" text-anchor="middle" class="s-txm" font-size="12">사각형: 클래스 중심(평균 이미지). 새 입력은 가장 가까운 중심의 클래스로 분류된다.</text>
+</svg>
+<figcaption>학습은 평균을 계산하는 것뿐이고, 예측은 거리 10개를 비교하는 것뿐이다.</figcaption>
+</figure>
+<p>모든 테스트 샘플과 모든 중심 사이의 거리를 반복문 없이 구한다. $\|\mathbf a - \mathbf b\|^2 = \|\mathbf a\|^2 - 2\,\mathbf a\cdot\mathbf b + \|\mathbf b\|^2$를 쓰면 행렬곱 한 번으로 계산된다.</p>
+<pre class="run"><code>centroids = np.stack([Xtr[ytr == k].mean(axis=0) for k in range(10)])     # (10, 64)
+def sq_dist(A, B):
+    """A (n, d)와 B (m, d) 사이 모든 쌍의 제곱 거리 (n, m)"""
+    return (A ** 2).sum(1)[:, None] - 2 * A @ B.T + (B ** 2).sum(1)[None, :]
+D = sq_dist(Xte, centroids)                    # (364, 10)
+pred = D.argmin(axis=1)
+acc_euc = (pred == yte).mean()
+print("거리 행렬 형상:", D.shape,
+      f"  최근접 중심(유클리드) 테스트 정확도: {acc_euc:.3f}")
+fig, axs = plt.subplots(1, 10, figsize=(10, 1.4))
+for k, ax in enumerate(axs):
+    ax.imshow(centroids[k].reshape(8, 8), cmap="gray_r")
+    ax.set_title(k, fontsize=9)
+    ax.axis("off")
+plt.show()
+</code></pre>
+<h3>코사인 유사도 버전</h3>
+<p>거리 대신 코사인 유사도가 가장 큰 중심을 고르면 이미지의 전체 밝기(벡터의 길이)에 덜 민감해진다. 빈칸을 채워 비교하라.</p>
+<pre class="run"><code>def normalize_rows(A):
+    return A / np.linalg.norm(A, axis=1, keepdims=True)
+# TODO 확인: (364, 10) 코사인 유사도
+S = normalize_rows(Xte) @ normalize_rows(centroids).T
+pred_cos = S.argmax(axis=1)
+acc_cos = (pred_cos == yte).mean()
+print(f"유클리드 {acc_euc:.3f}   코사인 {acc_cos:.3f}")
+</code></pre>
+
+<h2 data-min="30" data-kind="project">4단계: 혼동 행렬과 오류 분석</h2>
+<p>정확도 하나로는 어디서 틀리는지 알 수 없다. 정답(행)과 예측(열) 조합의 개수를 센 혼동 행렬을 만든다(12일차에서 자세히 다룬다).</p>
+<pre class="run"><code>cm = np.zeros((10, 10), int)
+np.add.at(cm, (yte, pred), 1)                  # (정답, 예측) 위치에 1씩 더하기
+plt.figure(figsize=(5, 4.3)); plt.imshow(cm, cmap="Blues"); plt.colorbar()
+for i in range(10):
+    for j in range(10):
+        if cm[i, j]:
+            plt.text(j, i, cm[i, j], ha="center", va="center", fontsize=8,
+                     color="white" if cm[i, j] &gt; cm.max() / 2 else "black")
+plt.xlabel("예측")
+plt.ylabel("정답")
+plt.xticks(range(10))
+plt.yticks(range(10))
+plt.title("혼동 행렬")
+plt.show()
+per_class = cm.diagonal() / cm.sum(axis=1)
+print("클래스별 정확도:", per_class.round(2))
+off = cm.copy(); np.fill_diagonal(off, 0)
+top = np.dstack(np.unravel_index(np.argsort(-off.ravel())[:3], off.shape))[0]
+print("가장 많이 헷갈린 (정답 → 예측):",
+      [(int(a), int(b), int(off[a, b])) for a, b in top])
+</code></pre>
+<pre class="run"><code>wrong = np.where(pred != yte)[0][:12]
+fig, axs = plt.subplots(2, 12, figsize=(12, 2.4))
+for c, i in enumerate(wrong):
+    axs[0, c].imshow(Xte[i].reshape(8, 8), cmap="gray_r")
+    axs[0, c].set_title(f"{yte[i]}→{pred[i]}", fontsize=9)
+    axs[0, c].axis("off")
+    axs[1, c].imshow(centroids[pred[i]].reshape(8, 8), cmap="gray_r")
+    axs[1, c].axis("off")
+axs[0, 0].set_ylabel("틀린 입력")
+plt.suptitle("위: 틀린 테스트 이미지(정답→예측), 아래: 선택된 중심")
+plt.show()
+</code></pre>
+<p>틀린 이미지 대부분은 사람이 봐도 애매하거나, 평균 모양에서 크게 벗어난 필체다. 평균 하나로는 같은 숫자의 다양한 필체를 표현하지 못한다. 13일차의 k-최근접 이웃과 3주차의 신경망이 이 한계를 넘는다.</p>
+
+<h2 data-min="30" data-kind="project">5단계: PCA 공간에서 분류</h2>
+<p>4일차의 PCA로 64차원을 $k$차원으로 줄인 뒤 같은 분류기를 적용한다. 주성분은 <b>학습 세트로만</b> 구하고, 테스트 세트에는 같은 변환을 적용한다. 테스트 데이터로 변환을 만들면 테스트 정보가 학습에 새어 들어간다.</p>
+<pre class="run"><code>mean = Xtr.mean(axis=0)
+U, s, Vt = np.linalg.svd(Xtr - mean, full_matrices=False)
+ks = [1, 2, 3, 5, 8, 12, 16, 24, 32, 64]
+accs = []
+for k in ks:
+    Ztr = (Xtr - mean) @ Vt[:k].T
+    Zte = (Xte - mean) @ Vt[:k].T
+    cen = np.stack([Ztr[ytr == c].mean(axis=0) for c in range(10)])
+    accs.append((sq_dist(Zte, cen).argmin(1) == yte).mean())
+plt.figure(figsize=(5.5, 3.3)); plt.semilogx(ks, accs, "o-")
+plt.axhline(acc_euc, color="gray", ls="--", label="원래 64차원")
+plt.xlabel("PCA 차원 k")
+plt.ylabel("테스트 정확도")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
+print({k: round(float(a), 3) for k, a in zip(ks, accs)})
+</code></pre>
+<pre class="run"><code>Ztr = (Xtr - mean) @ Vt[:2].T
+cen2 = np.stack([Ztr[ytr == c].mean(axis=0) for c in range(10)])
+g = np.linspace(Ztr.min() - 2, Ztr.max() + 2, 300)
+GX, GY = np.meshgrid(g, g)
+G = np.c_[GX.ravel(), GY.ravel()]
+# 격자 각 점의 예측 = 결정 영역
+region = sq_dist(G, cen2).argmin(1).reshape(GX.shape)
+plt.figure(figsize=(6, 5))
+plt.contourf(GX, GY, region, levels=np.arange(11) - 0.5, cmap="tab10", alpha=.25)
+plt.scatter(Ztr[:, 0], Ztr[:, 1], c=ytr, cmap="tab10", s=6)
+for c in range(10):
+    plt.text(*cen2[c], str(c), fontsize=13, weight="bold", ha="center", va="center",
+             bbox=dict(fc="white", alpha=.7))
+plt.title("2차원 PCA 공간의 결정 영역")
+plt.xlabel("제1 주성분")
+plt.ylabel("제2 주성분")
+plt.show()
+</code></pre>
+<p>최근접 중심 분류기의 결정 영역은 중심들 사이의 수직이등분선으로 나뉜 다각형(보로노이 영역)이다. 경계가 모두 직선이라는 점이 이 방법의 한계다.</p>
+
+<h2 data-min="15" data-kind="project">6단계: 보고서 정리</h2>
+<p>아래 질문에 답하는 다섯 문장 이내의 보고서를 학습 노트에 쓴다.</p>
+<ol class="steps">
+  <li>데이터: 몇 개의 샘플, 몇 차원, 클래스 균형은 어떠했는가?</li>
+  <li>기준선과 최근접 중심 분류기의 정확도는 각각 얼마인가?</li>
+  <li>가장 많이 헷갈린 숫자 쌍은 무엇이며, 왜 그렇다고 보는가?</li>
+  <li>PCA로 몇 차원까지 줄여도 성능이 거의 유지되었는가?</li>
+  <li>이 방법의 한계와, 개선하려면 무엇이 필요한가?</li>
+</ol>
+<details class="sol"><summary>참고 보고서</summary>
+<p>손글씨 숫자 1797장(64차원, 클래스 거의 균등)을 층화 분할했다(학습 1433, 테스트 364). 최빈 클래스 기준선은 약 10%, 최근접 중심 분류기는 테스트 91.5%(코사인 버전 92.0%)로 기준선보다 크게 좋다. 1을 9나 2로, 5를 9로 가장 많이 헷갈렸으며, 숫자 1의 정확도가 70%로 가장 낮았다(1을 쓰는 방식이 다양해 평균 하나로 표현되지 않는다). PCA 12차원에서 90.7%, 24차원에서 원래 64차원과 같은 정확도를 보였다. 평균 하나로 다양한 필체를 표현하는 데 한계가 있고 결정 경계가 직선뿐이므로, 비선형 모델이 필요하다.</p></details>
+
+<h2 data-min="20" data-kind="project">확장 과제</h2>
+<ol class="exercises">
+  <li><b>k-최근접 이웃.</b> 중심 대신 학습 샘플 전체와의 거리를 구해, 가장 가까운 $k$개의 다수결로 예측하라. $k = 1, 3, 5, 10$의 정확도를 비교하라. (13일차 미리 보기)
+    <details class="sol"><summary>풀이</summary><pre><code>Dall = sq_dist(Xte, Xtr)                        # (364, 1433)
+for k in [1, 3, 5, 10]:
+    nn = np.argsort(Dall, axis=1)[:, :k]         # 가까운 k개의 인덱스
+    votes = ytr[nn]                              # (364, k)
+    pk = np.array([np.bincount(v, minlength=10).argmax() for v in votes])
+    print(k, (pk == yte).mean().round(3))
+</code></pre><p>k-최근접 이웃은 99% 이상으로 최근접 중심보다 훨씬 좋다. 평균 하나가 아니라 학습 샘플 전체를 기억해 필체의 다양성을 반영하기 때문이다. 대신 예측할 때마다 모든 학습 샘플과의 거리를 계산해야 한다.</p></details></li>
+  <li><b>클래스별 여러 중심.</b> 숫자마다 학습 샘플을 3개 무리로 나누고(무작위 초기화 후 "가장 가까운 무리에 배정 → 무리 평균 갱신"을 10번 반복), 30개 중심으로 분류하라. 정확도가 오르는가? (13일차 k-평균 미리 보기)
+    <details class="sol"><summary>힌트</summary><p>숫자 $c$의 샘플 $X_c$에서 무작위로 3개를 골라 초기 중심으로 둔다. <code>sq_dist(X_c, C).argmin(1)</code>로 배정하고, 배정된 샘플의 평균으로 중심을 갱신한다. 숫자 하나의 여러 필체(예: 7의 가로획 유무)가 서로 다른 중심으로 나뉜다.</p></details></li>
+  <li><b>평행이동에 대한 취약성.</b> 테스트 이미지를 오른쪽으로 한 칸 민(np.roll) 뒤 정확도를 다시 재라. 얼마나 떨어지는가? 왜 그런가?
+    <details class="sol"><summary>풀이</summary><pre><code>shifted = np.roll(Xte.reshape(-1, 8, 8), 1, axis=2).reshape(-1, 64)
+print((sq_dist(shifted, centroids).argmin(1) == yte).mean().round(3))
+</code></pre><p>정확도가 약 30%로 크게 떨어진다. 픽셀 위치를 그대로 비교하는 방법은 모양이 조금만 이동해도 다른 벡터로 본다. 31일차의 합성곱 신경망은 위치 이동에 강한 구조로 이 문제를 해결한다.</p></details></li>
+</ol>

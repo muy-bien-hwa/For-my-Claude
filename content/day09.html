@@ -1,0 +1,394 @@
+<ul class="goals">
+  <li>경사하강법의 갱신 규칙을 쓰고, 한 걸음씩 손으로 계산할 수 있다.</li>
+  <li>학습률에 따라 수렴, 진동, 발산이 일어나는 조건을 곡률로 설명할 수 있다.</li>
+  <li>손실 지형의 등고선이 길쭉할 때 학습이 느려지는 이유와 표준화의 효과를 설명할 수 있다.</li>
+  <li>배치, 확률적, 미니배치 경사하강법을 구별하고 에폭과 스텝 수를 계산할 수 있다.</li>
+  <li>학습 곡선을 보고 학습률이 적절한지 판단할 수 있다.</li>
+</ul>
+
+<h2 data-min="8" data-kind="concept">왜 반복해서 푸는가</h2>
+<p>8일차의 정규방정식은 한 번에 답을 준다. 그러나 두 가지 이유로 딥러닝에서는 쓸 수 없다.</p>
+<ul>
+<li>파라미터가 $d$개면 $(d\times d)$ 행렬을 풀어야 한다. $d$가 1억이면 행렬 원소만 $10^{16}$개다.</li>
+<li>신경망의 손실은 파라미터에 대해 2차 함수가 아니다. "기울기 = 0"을 식으로 풀 수 없다.</li>
+</ul>
+<p>대신 아무 곳에서 출발해 손실이 줄어드는 방향으로 조금씩 움직인다. 5일차에서 본 대로 그 방향은 그래디언트의 반대 방향이다. 이 방법이 <dfn data-t="gradient-descent">경사하강법</dfn>이며, 모든 딥러닝 학습의 기본 알고리즘이다.</p>
+<div class="flow"><div>초기값 $\boldsymbol\theta_0$</div><div>손실 $L(\boldsymbol\theta_t)$ 계산</div><div class="hl">그래디언트<br>$\nabla L(\boldsymbol\theta_t)$</div><div>$\boldsymbol\theta_{t+1} = \boldsymbol\theta_t - \eta\nabla L$</div><div>멈출 때까지 반복</div></div>
+
+<h2 data-min="20" data-kind="concept">갱신 규칙과 학습률</h2>
+$$\boldsymbol\theta_{t+1} = \boldsymbol\theta_t - \eta\,\nabla L(\boldsymbol\theta_t)$$
+<p>$t$는 반복 번호, $\eta$(에타)는 한 걸음의 크기를 정하는 <dfn data-t="learning-rate">학습률</dfn>이다. 그래디언트가 크면(가파르면) 걸음이 크고, 바닥에 가까워 그래디언트가 작아지면 걸음도 저절로 작아진다.</p>
+<div class="box ex" data-title="한 걸음씩 계산"><p>$L(w) = (w - 2)^2$, $L'(w) = 2(w - 2)$, 출발 $w_0 = -1$, $\eta = 0.1$.</p>
+<table>
+  <thead><tr><th>$t$</th><th>$w_t$</th><th>$L'(w_t)$</th><th>$w_{t+1} = w_t - 0.1L'$</th><th>최솟값까지 거리</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td>−1</td><td>−6</td><td>−0.4</td><td>3 → 2.4</td></tr>
+    <tr><td>1</td><td>−0.4</td><td>−4.8</td><td>0.08</td><td>2.4 → 1.92</td></tr>
+    <tr><td>2</td><td>0.08</td><td>−3.84</td><td>0.464</td><td>1.92 → 1.536</td></tr>
+  </tbody>
+</table>
+<p>매 걸음 거리가 0.8배가 된다. 20걸음 뒤 거리는 $3\times0.8^{20}\approx0.035$다.</p></div>
+<p>0.8은 어디서 왔는가? 최솟값 $w^*$로부터의 거리를 $e_t = w_t - w^*$라 하면, 2차 함수에서 $L'(w) = L''\,(w - w^*)$이므로</p>
+$$e_{t+1} = e_t - \eta L''e_t = (1 - \eta L'')\,e_t$$
+<p>위 예제는 $L'' = 2$, $\eta = 0.1$이므로 배율이 $1 - 0.2 = 0.8$이다. 배율의 절댓값이 1보다 작아야 거리가 줄어든다. 즉 $0 &lt; \eta &lt; 2/L''$일 때 <dfn data-t="convergence">수렴</dfn>하고, 그보다 크면 거리가 매번 커지는 <dfn data-t="divergence">발산</dfn>이 일어난다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 210" width="640" role="img" aria-label="학습률에 따른 네 가지 움직임">
+  <g font-size="12">
+  <g transform="translate(5,10)">
+    <path d="M10 10 Q75 190 140 10" class="s-ln" stroke-width="1.6" fill="none"/>
+    <polyline points="25.6,48 36,67.6 45.1,81 52.9,89.6 59.4,94.8" class="s-ac" stroke-width="1.6" fill="none"/>
+    <g class="s-acf"><circle cx="25.6" cy="48" r="3.5"/><circle cx="36" cy="67.6" r="3.5"/><circle cx="45.1" cy="81" r="3.5"/><circle cx="52.9" cy="89.6" r="3.5"/><circle cx="59.4" cy="94.8" r="3.5"/></g>
+    <text x="75" y="135" text-anchor="middle" class="s-tx" font-weight="700">η 작음</text>
+    <text x="75" y="153" text-anchor="middle" class="s-txm">느리게 수렴</text>
+    <text x="75" y="171" text-anchor="middle" class="s-txm">0 &lt; ηL'' &lt; 1</text>
+  </g>
+  <g transform="translate(163,10)">
+    <path d="M10 10 Q75 190 140 10" class="s-ln" stroke-width="1.6" fill="none"/>
+    <polyline points="25.6,48 55.5,91.9 68.5,99.1 73.7,100" class="s-grn" stroke-width="1.6" fill="none"/>
+    <g class="s-grnf"><circle cx="25.6" cy="48" r="3.5"/><circle cx="55.5" cy="91.9" r="3.5"/><circle cx="68.5" cy="99.1" r="3.5"/><circle cx="73.7" cy="100" r="3.5"/></g>
+    <text x="75" y="135" text-anchor="middle" class="s-tx" font-weight="700">η 적당</text>
+    <text x="75" y="153" text-anchor="middle" class="s-txm">빠르게 수렴</text>
+    <text x="75" y="171" text-anchor="middle" class="s-txm">ηL'' ≈ 1</text>
+  </g>
+  <g transform="translate(321,10)">
+    <path d="M10 10 Q75 190 140 10" class="s-ln" stroke-width="1.6" fill="none"/>
+    <polyline points="25.6,48 116.6,63.1 42.5,77.5 101,85.6 56.8,92.9 88,96.4" class="s-org" stroke-width="1.6" fill="none"/>
+    <g class="s-orgf"><circle cx="25.6" cy="48" r="3.5"/><circle cx="116.6" cy="63.1" r="3.5"/><circle cx="42.5" cy="77.5" r="3.5"/><circle cx="101" cy="85.6" r="3.5"/><circle cx="56.8" cy="92.9" r="3.5"/><circle cx="88" cy="96.4" r="3.5"/></g>
+    <text x="75" y="135" text-anchor="middle" class="s-tx" font-weight="700">η 큼</text>
+    <text x="75" y="153" text-anchor="middle" class="s-txm">양쪽을 오가며 수렴</text>
+    <text x="75" y="171" text-anchor="middle" class="s-txm">1 &lt; ηL'' &lt; 2</text>
+  </g>
+  <g transform="translate(479,10)">
+    <path d="M10 10 Q75 190 140 10" class="s-ln" stroke-width="1.6" fill="none"/>
+    <polyline points="49,85.6 107.5,77.5 29.5,55.9 129.6,36.5" class="s-red" stroke-width="1.6" fill="none"/>
+    <g class="s-redf"><circle cx="49" cy="85.6" r="3.5"/><circle cx="107.5" cy="77.5" r="3.5"/><circle cx="29.5" cy="55.9" r="3.5"/><circle cx="129.6" cy="36.5" r="3.5"/></g>
+    <text x="75" y="135" text-anchor="middle" class="s-tx" font-weight="700">η 너무 큼</text>
+    <text x="75" y="153" text-anchor="middle" class="s-txm">점점 멀어짐 (발산)</text>
+    <text x="75" y="171" text-anchor="middle" class="s-txm">ηL'' &gt; 2</text>
+  </g>
+  </g>
+</svg>
+<figcaption>같은 그릇에서 학습률만 바꾼 네 경우. $L''$은 곡률(그릇이 휜 정도)이다. 곡률이 클수록 안전한 학습률의 상한 $2/L''$이 작아진다.</figcaption>
+</figure>
+<div class="viz-mount" data-viz="gd-1d"></div>
+<div class="box key"><ul>
+<li>안정 조건: $\eta &lt; 2/L''$. 가장 빠른 학습률은 $\eta = 1/L''$(2차 함수에서는 한 걸음에 도착).</li>
+<li>실제 손실은 2차 함수가 아니어서 곡률이 위치마다 다르다. 그래서 학습률은 실험으로 정한다. 보통 $10^{-1}, 10^{-2}, 10^{-3}, \dots$처럼 10배 간격으로 시도한다.</li>
+</ul></div>
+
+<h2 data-min="22" data-kind="concept">손실 지형과 조건수</h2>
+<p>파라미터 공간의 각 점에 손실값을 높이로 대응시킨 지형을 <dfn data-t="loss-landscape">손실 지형</dfn>이라 한다. 선형회귀의 MSE는 파라미터에 대한 2차 함수이므로 지형이 그릇 모양이고 바닥이 하나뿐이다. 문제는 그릇의 모양이다.</p>
+<p>그릇이 한 방향으로는 가파르고 다른 방향으로는 완만하다고 하자. 학습률은 가장 가파른 방향의 곡률 $\lambda_{\max}$ 때문에 $2/\lambda_{\max}$보다 작아야 한다. 그런데 이 작은 학습률로는 완만한 방향(곡률 $\lambda_{\min}$)으로 거의 움직이지 못한다. 필요한 반복 횟수는 두 곡률의 비에 비례한다.</p>
+$$\kappa = \frac{\lambda_{\max}}{\lambda_{\min}} \quad(\text{조건수})$$
+<p>여기서 곡률은 손실의 2차 미분 행렬(헤세 행렬)의 고유값이다. 선형회귀에서 헤세 행렬은 $\frac2N X^\top X$로 데이터만으로 정해진다. 4일차의 고유값이 "각 축 방향으로 늘어나는 정도"였듯, 여기서는 "각 방향으로 그릇이 휜 정도"다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 230" width="640" role="img" aria-label="둥근 그릇과 길쭉한 그릇에서의 경로">
+  <g transform="translate(160,115)">
+    <g class="s-mu" stroke-width="1.2" fill="none"><circle r="90"/><circle r="64"/><circle r="40"/><circle r="18"/></g>
+    <polyline points="-70,-50 -38,-27 -18,-13 -8,-6 -3,-2" class="s-grn" stroke-width="2" fill="none"/>
+    <g class="s-grnf"><circle cx="-70" cy="-50" r="3.5"/><circle cx="-38" cy="-27" r="3.5"/><circle cx="-18" cy="-13" r="3.5"/><circle cx="-8" cy="-6" r="3.5"/></g>
+    <circle r="4" class="s-acf"/>
+    <text x="0" y="112" text-anchor="middle" class="s-tx" font-size="13" font-weight="700">둥근 그릇 (κ = 1)</text>
+  </g>
+  <g transform="translate(470,115)">
+    <g class="s-mu" stroke-width="1.2" fill="none"><ellipse rx="150" ry="40"/><ellipse rx="108" ry="29"/><ellipse rx="66" ry="18"/><ellipse rx="26" ry="7"/></g>
+    <polyline points="-130,-16 -118,15 -106,-13 -95,11 -85,-9 -76,8 -68,-6 -60,5 -52,-4 -45,3" class="s-red" stroke-width="2" fill="none"/>
+    <g class="s-redf"><circle cx="-130" cy="-16" r="3.5"/><circle cx="-118" cy="15" r="3"/><circle cx="-106" cy="-13" r="3"/><circle cx="-95" cy="11" r="3"/><circle cx="-85" cy="-9" r="3"/><circle cx="-76" cy="8" r="3"/><circle cx="-68" cy="-6" r="3"/><circle cx="-60" cy="5" r="3"/><circle cx="-52" cy="-4" r="3"/><circle cx="-45" cy="3" r="3"/></g>
+    <circle r="4" class="s-acf"/>
+    <text x="0" y="112" text-anchor="middle" class="s-tx" font-size="13" font-weight="700">길쭉한 그릇 (κ 큼)</text>
+    <text x="0" y="-55" text-anchor="middle" class="s-txm" font-size="12">세로로는 벽을 오가고, 가로로는 조금씩만 전진</text>
+  </g>
+</svg>
+<figcaption>그래디언트는 등고선에 수직이다. 둥근 그릇에서는 수직 방향이 곧 중심 방향이지만, 길쭉한 그릇에서는 중심을 비켜 가므로 지그재그가 생긴다.</figcaption>
+</figure>
+<p>아래 인터랙티브의 지형 메뉴에서 "선형회귀 손실 L(w, b) (원래 입력)"과 "같은 데이터, 표준화한 입력"을 비교한다. 같은 데이터, 같은 모델인데 입력의 단위만 바꿨다. "길쭉한 골짜기"에서는 학습률을 올려 지그재그가 심해지는 것을 확인한다.</p>
+<div class="viz-mount" data-viz="gd"></div>
+
+<h2 data-min="15" data-kind="concept">특성 스케일링</h2>
+<p>그릇이 길쭉해지는 가장 흔한 원인은 특징마다 값의 크기가 다른 것이다. 와인 데이터의 프롤린은 수백~천 단위이고 색조는 1 근처다. 가중치를 조금 바꿨을 때 프롤린 쪽은 예측이 크게 변하고(가파름) 색조 쪽은 거의 변하지 않는다(완만함). 특징들의 크기를 맞추는 전처리를 <dfn data-t="feature-scaling">특성 스케일링</dfn>이라 한다.</p>
+<table>
+  <thead><tr><th>방법</th><th>식</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td><dfn data-t="standardization">표준화</dfn></td><td>$z = \dfrac{x - \mu}{\sigma}$</td><td>평균 0, 표준편차 1</td></tr>
+    <tr><td><dfn data-t="min-max">최소-최대 정규화</dfn></td><td>$z = \dfrac{x - x_{\min}}{x_{\max} - x_{\min}}$</td><td>범위 [0, 1]</td></tr>
+  </tbody>
+</table>
+<div class="box ex" data-title="두 방법 비교"><p>$x = (2, 4, 6, 8)$. 평균 $\mu = 5$, 표준편차 $\sigma = \sqrt{(9 + 1 + 1 + 9)/4} = \sqrt5 \approx 2.236$. 표준화: $(-1.342, -0.447, 0.447, 1.342)$. 최소-최대: $(0, 0.333, 0.667, 1)$. 이상치 100이 추가되면 최소-최대 결과는 원래 네 값이 모두 0~0.06에 몰리고, 표준화는 상대적으로 덜 찌그러진다.</p></div>
+<div class="box key"><ul>
+<li>평균과 표준편차는 <b>학습 세트에서만</b> 계산하고, 그 값으로 검증·테스트 세트를 변환한다. 테스트 세트의 통계를 쓰면 테스트 정보가 학습에 새어 들어간다(12일차의 데이터 누수).</li>
+<li>스케일링은 예측 성능의 상한을 바꾸지 않는다. 같은 해에 <b>더 빨리</b> 도달하게 할 뿐이다(8일차 프로젝트에서 예측이 그대로임을 확인했다).</li>
+<li>신경망의 입력도 항상 스케일링한다. 이미지는 보통 픽셀을 255로 나누거나 채널별로 표준화한다.</li>
+</ul></div>
+
+<h2 data-min="22" data-kind="concept">배치, 확률적, 미니배치</h2>
+<p>MSE의 그래디언트는 표본별 그래디언트의 평균이다. 이 평균을 몇 개의 표본으로 계산하느냐에 따라 세 가지 방식이 있다.</p>
+$$\nabla L = \frac1N\sum_{i=1}^N\nabla\ell_i \;\approx\; \frac1B\sum_{i\in\mathcal B}\nabla\ell_i$$
+<table>
+  <thead><tr><th>방식</th><th>한 번 갱신에 쓰는 표본</th><th>특징</th></tr></thead>
+  <tbody>
+    <tr><td><dfn data-t="batch-gd">배치 경사하강법</dfn></td><td>전체 $N$개</td><td>정확한 그래디언트, 매끄러운 경로. 한 걸음이 비싸다.</td></tr>
+    <tr><td><dfn data-t="sgd">확률적 경사하강법</dfn>(SGD)</td><td>무작위 1개</td><td>한 걸음이 매우 싸지만 경로가 요동친다. 병렬화가 어렵다.</td></tr>
+    <tr><td>미니배치 경사하강법</td><td>무작위 $B$개 (보통 32~512)</td><td>두 장점의 절충. GPU에서 $B$개를 동시에 계산한다. 딥러닝의 표준.</td></tr>
+  </tbody>
+</table>
+<p>무작위로 고른 표본 묶음을 <dfn data-t="minibatch">미니배치</dfn>라 한다. 미니배치 그래디언트는 전체 그래디언트의 추정치이며 평균은 정확하고 잡음이 섞여 있다. 잡음의 표준편차는 $1/\sqrt B$에 비례하므로 배치를 4배로 키우면 잡음은 절반이 된다. 실무에서는 미니배치 방식도 흔히 SGD라 부른다.</p>
+<p>학습 데이터 전체를 한 번 훑는 단위를 <dfn data-t="epoch">에폭</dfn>, 파라미터를 한 번 갱신하는 단위를 <dfn data-t="iteration">스텝</dfn>(반복)이라 한다.</p>
+<div class="box ex" data-title="에폭과 스텝"><p>학습 표본 $N = 60{,}000$개, 배치 크기 $B = 64$. 한 에폭의 스텝 수는 $\lceil 60000/64\rceil = 938$이다(마지막 배치는 32개). 20에폭이면 18,760번 갱신한다. 같은 20에폭을 배치 경사하강법으로 돌리면 갱신은 20번뿐이다.</p></div>
+<ol class="steps">
+<li>에폭마다 학습 데이터의 순서를 무작위로 섞는다.</li>
+<li>앞에서부터 $B$개씩 잘라 미니배치를 만든다.</li>
+<li>각 미니배치로 그래디언트를 계산하고 한 걸음 갱신한다.</li>
+<li>모든 미니배치를 쓰면 한 에폭이 끝난다. 검증 손실을 기록하고 1로 돌아간다.</li>
+</ol>
+<div class="box note" data-title="섞는 이유"><p>데이터가 클래스 순서로 정렬되어 있으면, 섞지 않은 미니배치는 한동안 한 클래스만 보게 되어 파라미터가 그 클래스 쪽으로 쏠렸다가 다음 클래스에서 되돌아간다. 섞으면 각 미니배치가 전체 분포를 대표한다.</p></div>
+
+<h2 data-min="12" data-kind="concept">학습 곡선 읽기</h2>
+<p>스텝 또는 에폭에 따른 손실 그래프를 학습 곡선이라 한다. 학습이 잘 되고 있는지를 가장 먼저 알려 주는 신호다. 손실의 범위가 넓으므로 세로축은 보통 로그 눈금으로 그린다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 260" width="640" role="img" aria-label="학습률에 따른 학습 곡선 모양">
+  <g font-size="12">
+  <line x1="70" y1="220" x2="470" y2="220" class="s-mu" stroke-width="1.2"/>
+  <line x1="70" y1="220" x2="70" y2="20" class="s-mu" stroke-width="1.2"/>
+  <text x="270" y="244" text-anchor="middle" class="s-txm">스텝</text>
+  <text x="40" y="120" text-anchor="middle" class="s-txm" transform="rotate(-90 40 120)">손실 (로그 눈금)</text>
+  <path d="M70 70 L470 140" class="s-mu" stroke-width="2.2" fill="none" stroke-dasharray="6 4"/>
+  <path d="M70 70 C 110 160, 150 196, 470 200" class="s-grn" stroke-width="2.4" fill="none"/>
+  <path d="M70 70 C 90 120, 100 130, 120 128 L130 140 L140 122 L150 138 L160 120 L170 136 L180 121 L190 135 L200 122 L210 137 L220 120 L230 134 L240 123 L250 136 L260 121 L270 135 L280 122 L290 136 L300 121 L310 135 L320 122 L330 134 L340 121 L350 136 L360 122 L370 135 L380 121 L390 134 L400 123 L410 136 L420 121 L430 135 L440 122 L450 134 L460 121 L470 135" class="s-org" stroke-width="1.6" fill="none"/>
+  <path d="M70 70 C 100 60, 120 40, 150 22" class="s-red" stroke-width="2.4" fill="none"/>
+  <text x="156" y="28" class="s-txm">NaN</text>
+  </g>
+  <g transform="translate(490,40)" font-size="12.5">
+    <line x1="0" y1="0" x2="24" y2="0" class="s-red" stroke-width="2.4"/><text x="32" y="4" class="s-tx">너무 큼: 발산</text>
+    <line x1="0" y1="30" x2="24" y2="30" class="s-org" stroke-width="2"/><text x="32" y="34" class="s-tx">큼: 높은 곳에서 요동</text>
+    <line x1="0" y1="60" x2="24" y2="60" class="s-mu" stroke-width="2.2" stroke-dasharray="6 4"/><text x="32" y="64" class="s-tx">작음: 느린 감소</text>
+    <line x1="0" y1="90" x2="24" y2="90" class="s-grn" stroke-width="2.4"/><text x="32" y="94" class="s-tx">적당: 빠르게 떨어져</text>
+    <text x="32" y="112" class="s-tx">평평해짐</text>
+  </g>
+</svg>
+<figcaption>학습률에 따른 전형적인 학습 곡선. 실전에서는 처음 수백 스텝의 곡선만 보고 학습률을 고친다.</figcaption>
+</figure>
+<p>언제 멈추는가? 정해진 에폭 수를 다 돌거나, 손실의 감소량이 기준(예: 상대 변화 $10^{-6}$) 아래로 떨어지거나, 검증 손실이 더 이상 줄지 않을 때 멈춘다. 마지막 기준은 12일차와 26일차의 조기 종료다.</p>
+
+<h2 data-min="22" data-kind="practice">코드 실습: 경사하강법 직접 구현</h2>
+<p>8일차의 붓꽃 회귀(꽃잎 길이 → 너비)를 경사하강법으로 다시 푼다. 파라미터는 $\boldsymbol\theta = (b, w)$ 두 개다. 그래디언트는 $\frac2N X^\top(X\boldsymbol\theta - \mathbf y)$이다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("iris")
+x, y = d["X"][:, 2], d["X"][:, 3]
+N = len(y)
+X1 = np.c_[np.ones(N), x]                                    # 원래 입력
+theta_ne = np.linalg.solve(X1.T @ X1, X1.T @ y)               # 정답 (정규방정식)
+L_star = ((X1 @ theta_ne - y) ** 2).mean()
+
+def gd(X, y, lr, steps):
+    th = np.zeros(X.shape[1]); hist = []
+    for _ in range(steps):
+        grad = 2 / len(y) * X.T @ (X @ th - y)
+        th = th - lr * grad
+        hist.append(((X @ th - y) ** 2).mean())
+    return th, np.array(hist)
+
+H = 2 / N * X1.T @ X1                                          # 헤세 행렬
+lam = np.linalg.eigvalsh(H)
+print("곡률(고유값):", lam.round(3), " 조건수:", (lam[1] / lam[0]).round(1),
+      " 학습률 상한 2/λmax:", (2 / lam[1]).round(4))
+plt.figure(figsize=(5.6, 3.4))
+for lr in [0.01, 0.05, 0.056]:
+    th, h = gd(X1, y, lr, 300)
+    plt.semilogy(np.clip(h - L_star, 1e-12, 1e3), label=f"η = {lr}")
+    print(f"η = {lr}: θ = {th.round(4)}, 300스텝 후 L − L* = {h[-1] - L_star:.2e}")
+plt.xlabel("스텝")
+plt.ylabel("L − L* (로그)")
+plt.legend()
+plt.grid(alpha=.3)
+plt.title("원래 입력")
+plt.show()
+</code></pre>
+<p>원래 입력에서는 조건수가 약 105이고, 학습률 상한 0.0554를 조금만 넘겨도(0.056) 발산한다. 이제 꽃잎 길이를 표준화한다.</p>
+<pre class="run"><code>xs = (x - x.mean()) / x.std()
+Xs = np.c_[np.ones(N), xs]
+lam_s = np.linalg.eigvalsh(2 / N * Xs.T @ Xs)
+print("표준화 후 곡률:", lam_s.round(3), " 조건수:", (lam_s[1] / lam_s[0]).round(2))
+for lr in [0.1, 0.5]:
+    th, h = gd(Xs, y, lr, 30)
+    k = np.argmax(h &lt; L_star * 1.01) + 1
+    print(f"η = {lr}: 손실이 최솟값의 1% 이내에 들기까지 {k}스텝")
+</code></pre>
+<p>표준화하면 두 곡률이 모두 2가 되어 그릇이 완전히 둥글어진다. $\eta = 1/2$이면 한 걸음에 바닥에 도착한다. 원래 입력에서는 $\eta = 0.05$로 300스텝을 돌아야 $L - L^*$가 $10^{-6}$ 수준이 되던 일이다. 마지막으로 표준화된 지형 위에서 배치 크기에 따른 경로를 그린다.</p>
+<pre class="run"><code>bs = np.linspace(-0.2, 2.6, 120); ws = np.linspace(-0.5, 1.9, 120)
+BB, WW = np.meshgrid(bs, ws)
+# 격자 위 모든 (b, w)의 손실
+LL = ((BB[..., None] + WW[..., None] * xs - y) ** 2).mean(axis=-1)
+# 표준화 입력의 최적 (b, w)
+theta_s = np.linalg.solve(Xs.T @ Xs, Xs.T @ y)
+def minibatch_path(B, lr, epochs, seed=0):
+    rng = np.random.default_rng(seed); th = np.array([0.0, 1.6]); path = [th.copy()]
+    for _ in range(epochs):
+        idx = rng.permutation(N)
+        for s in range(0, N, B):
+            b = idx[s:s + B]
+            th = th - lr * 2 / len(b) * Xs[b].T @ (Xs[b] @ th - y[b])
+            path.append(th.copy())
+    return np.array(path)
+fig, axs = plt.subplots(1, 3, figsize=(10, 3.4), sharey=True)
+for ax, (B, lr) in zip(axs, [(N, 0.1), (10, 0.05), (1, 0.02)]):
+    cs = ax.contour(BB, WW, LL, levels=[0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2],
+                    cmap="Blues_r")
+    ax.clabel(cs, fmt="%g", fontsize=7)
+    P = minibatch_path(B, lr, 2)
+    ax.plot(P[:, 0], P[:, 1], ".-", color="C3", ms=2, lw=.8)
+    ax.plot(*theta_s, "k*", ms=12)
+    ax.set_title(f"B = {B}, 2에폭 = {len(P) - 1}스텝"); ax.set_xlabel("b")
+axs[0].set_ylabel("w"); plt.tight_layout(); plt.show()
+</code></pre>
+<p>배치 경사하강법(B = 150)은 2에폭 동안 2걸음만 간다. 미니배치(B = 10)는 30걸음을 가며 약간 흔들리고, SGD(B = 1)는 300걸음을 가지만 바닥 근처에서 계속 요동친다. 요동은 학습률을 줄이면 작아진다(23일차의 학습률 스케줄).</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>경사하강법: $\boldsymbol\theta \leftarrow \boldsymbol\theta - \eta\nabla L$. 정규방정식을 쓸 수 없는 큰 모델·비선형 모델의 기본 해법.</li>
+  <li>2차 함수에서 오차는 매 걸음 $(1 - \eta L'')$배. $\eta &lt; 2/L''$이면 수렴, 넘으면 발산.</li>
+  <li>조건수 $\kappa = \lambda_{\max}/\lambda_{\min}$이 크면 길쭉한 그릇에서 지그재그로 느리게 수렴한다. 표준화로 $\kappa$를 줄인다.</li>
+  <li>스케일링 통계는 학습 세트에서만 계산한다.</li>
+  <li>미니배치 SGD가 딥러닝의 표준. 에폭 = 데이터 한 바퀴, 스텝 = 갱신 한 번. 학습 곡선으로 학습률을 진단한다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"현재 w = 1, L′(w) = 4, 학습률 0.1일 때 한 걸음 뒤의 w는?","o":["1.4","0.6","0.96","−3"],"a":1,"e":"$w - \\eta L' = 1 - 0.1\\times4 = 0.6$."},
+ {"q":"L(w) = (w − 2)²에서 w₀ = 0, η = 0.1이면 w₁은?","o":["0.2","0.4","−0.4","2"],"a":1,"e":"$L'(0) = -4$이므로 $0 - 0.1\\times(-4) = 0.4$."},
+ {"q":"곡률 L″ = 10인 2차 함수에서 경사하강법이 수렴하는 학습률의 상한은?","o":["0.1","0.2","2","10"],"a":1,"e":"$\\eta &lt; 2/L'' = 0.2$. $\\eta = 0.1$이면 한 걸음에 도착한다."},
+ {"q":"등고선이 매우 길쭉한 타원일 때 일어나는 현상과 해결책으로 옳은 것은?","o":["빠르게 수렴, 해결 불필요","좁은 방향으로 지그재그하며 느리게 수렴, 특징 표준화","즉시 발산, 학습률 증가","국소 최솟값에 갇힘, 초기화 변경"],"a":1,"e":"조건수가 커서 생기는 문제이며 표준화로 그릇을 둥글게 만든다."},
+ {"q":"학습 표본 1000개, 배치 크기 50으로 3에폭 학습하면 갱신 횟수는?","o":["3","20","60","3000"],"a":2,"e":"에폭당 1000/50 = 20스텝, 3에폭이면 60스텝."},
+ {"q":"표준화에 쓸 평균과 표준편차는 어디서 계산해야 하는가?","o":["전체 데이터","학습 세트","테스트 세트","검증 세트와 테스트 세트"],"a":1,"e":"다른 세트의 통계를 쓰면 정보가 새어 평가가 낙관적으로 된다."},
+ {"q":"학습 시작 직후 손실이 점점 커지다 NaN이 되었다. 가장 먼저 의심할 것은?","o":["데이터가 부족하다","학습률이 너무 크다","에폭이 부족하다","모델이 너무 작다"],"a":1,"e":"발산의 전형적인 모습이다. 학습률을 10배 줄여 본다."},
+ {"q":"배치 크기를 16에서 64로 4배 키우면 미니배치 그래디언트 잡음의 표준편차는 대략?","o":["4배","2배","절반","1/4"],"a":2,"e":"잡음의 표준편차는 $1/\\sqrt B$에 비례한다."}
+]</script>
+
+<h2 data-min="8" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>$L(w) = (w-2)^2$, $w_0 = -1$, $\eta = 0.25$로 세 걸음을 손으로 계산하라. 거리의 배율은 얼마인가?
+    <details class="sol"><summary>풀이</summary><p>배율 $1 - 0.25\times2 = 0.5$. $w$: $-1 \to 0.5 \to 1.25 \to 1.625$. 거리 $3 \to 1.5 \to 0.75 \to 0.375$로 매번 절반이 된다.</p></details></li>
+  <li>$L(w) = 5w^2$에서 (a) 수렴하는 $\eta$의 범위, (b) 한 걸음에 도착하는 $\eta$, (c) $\eta = 0.2$와 $\eta = 0.3$에서 일어나는 일을 설명하라.
+    <details class="sol"><summary>풀이</summary><p>$L'' = 10$. (a) $0 &lt; \eta &lt; 0.2$. (b) $\eta = 0.1$이면 배율 0. (c) $\eta = 0.2$이면 배율 $-1$: $w$가 $+a, -a, +a, \dots$로 영원히 진동한다. $\eta = 0.3$이면 배율 $-2$: 매번 부호가 바뀌며 두 배씩 멀어져 발산한다.</p></details></li>
+  <li>2차원 손실 $L(w_1, w_2) = w_1^2 + 25w_2^2$에서 학습률의 상한은 얼마이고, 그 상한 근처의 학습률로 $w_1$ 방향의 거리가 $1/100$이 되려면 대략 몇 걸음이 필요한가?
+    <details class="sol"><summary>풀이</summary><p>곡률은 2와 50. 상한 $\eta &lt; 2/50 = 0.04$. $\eta = 0.039$이면 $w_1$ 방향 배율은 $1 - 0.078 = 0.922$, $0.922^k = 0.01$에서 $k = \ln0.01/\ln0.922 \approx 57$걸음. 조건수 25가 걸음 수를 늘린다. 같은 그릇을 $w_2$ 축으로 5배 늘려(스케일링) 둥글게 만들면 $\eta = 0.5$로 한 걸음이면 된다.</p>
+<pre><code>w = np.array([1.0, 1.0]); lr = 0.039
+for k in range(1, 200):
+    w = w - lr * np.array([2 * w[0], 50 * w[1]])
+    if abs(w[0]) &lt; 0.01: print(k, w); break
+</code></pre></details></li>
+  <li>표본 $N = 50{,}000$개를 배치 크기 128로 10에폭 학습한다. 총 스텝 수는? 한 스텝에 0.05초가 걸리면 학습 시간은?
+    <details class="sol"><summary>풀이</summary><p>에폭당 $\lceil 50000/128\rceil = 391$스텝, 10에폭 3,910스텝, 약 196초(3분 16초).</p></details></li>
+</ol>
+
+<h2 data-min="40" data-kind="project">미니 프로젝트: 경사하강법 회귀와 학습률 실험</h2>
+<section class="project" data-title="와인 회귀를 경사하강법으로 풀고 학습률·스케일·배치 크기 실험하기" data-min="40">
+<p class="lead">8일차의 와인 플라보노이드 회귀를 정규방정식 없이 경사하강법으로 푼다. 그래디언트를 수치 미분으로 검증하고, 학습률·입력 스케일·배치 크기가 수렴에 주는 영향을 측정한다. 이론으로 계산한 학습률 상한이 실험과 맞는지 확인한다.</p>
+<ol class="steps">
+<li><b>데이터 준비.</b> 8일차와 같은 분할(시드 0)을 쓴다. 학습 세트 통계로 표준화하고 1의 열을 붙인다. 비교용 정답은 정규방정식으로 구한다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("wine")
+names = d["feature_names_ko"]; A_all = d["X"].astype(float)
+t = names.index("플라보노이드")
+y = A_all[:, t]; X = np.delete(A_all, t, axis=1)
+rng = np.random.default_rng(0)
+idx = rng.permutation(len(y)); cut = int(0.8 * len(y)); tr, te = idx[:cut], idx[cut:]
+mu, sd = X[tr].mean(axis=0), X[tr].std(axis=0)
+design = lambda M: np.c_[np.ones(len(M)), M]
+Ztr, Zte = design((X[tr] - mu) / sd), design((X[te] - mu) / sd)
+ytr, yte = y[tr], y[te]
+theta_ne = np.linalg.solve(Ztr.T @ Ztr, Ztr.T @ ytr)
+mse = lambda th, Z, t_: ((Z @ th - t_) ** 2).mean()
+L_star = mse(theta_ne, Ztr, ytr)
+print("학습", Ztr.shape, " 최소 학습 MSE L* =", round(L_star, 4))
+</code></pre></li>
+<li><b>그래디언트 검증.</b> 해석적 그래디언트 함수를 만들고 5일차의 수치 미분과 비교한다. 두 값의 상대 오차가 $10^{-6}$ 이하이면 구현이 맞다.
+<pre class="run"><code>def grad(th, Z, t_):
+    return 2 / len(t_) * Z.T @ (Z @ th - t_)                # TODO 확인: (13,) 형상
+
+def num_grad(f, v, h=1e-5):
+    v = np.array(v, dtype=float); g = np.zeros_like(v)
+    for i in range(len(v)):
+        old = v[i]
+        v[i] = old + h; fp = f(v)
+        v[i] = old - h; fm = f(v)
+        v[i] = old; g[i] = (fp - fm) / (2 * h)
+    return g
+
+th0 = np.random.default_rng(1).normal(size=Ztr.shape[1])
+ga, gn = grad(th0, Ztr, ytr), num_grad(lambda v: mse(v, Ztr, ytr), th0)
+print("상대 오차:", np.abs(ga - gn).max() / np.abs(ga).max())
+</code></pre></li>
+<li><b>학습 함수.</b> 배치 크기 <code>B</code>를 받는 미니배치 경사하강법을 만든다. <code>B</code>가 학습 표본 수와 같으면 배치 경사하강법이 된다. 에폭마다 학습 MSE를 기록한다.
+<pre class="run"><code>def fit_gd(Z, t_, lr, epochs, B=None, seed=0):
+    n = len(t_); B = B or n
+    r = np.random.default_rng(seed)
+    th = np.zeros(Z.shape[1]); hist = []
+    for ep in range(epochs):
+        order = r.permutation(n)                              # 에폭마다 섞기
+        for s in range(0, n, B):
+            b = order[s:s + B]
+            th = th - lr * grad(th, Z[b], t_[b])              # TODO 확인: 한 스텝
+        hist.append(mse(th, Z, t_))
+    return th, np.array(hist)
+
+th, h = fit_gd(Ztr, ytr, lr=0.1, epochs=300)
+print("θ_GD와 θ_정규방정식의 최대 차이:", np.abs(th - theta_ne).max().round(6))
+print("테스트 MSE  GD:", round(mse(th, Zte, yte), 4), "  정규방정식:",
+      round(mse(theta_ne, Zte, yte), 4))
+</code></pre></li>
+<li><b>학습률 상한 실험.</b> 헤세 행렬 $\frac2N Z^\top Z$의 최대 고유값으로 상한 $2/\lambda_{\max}$를 계산한다. 학습률을 바꿔 가며 200스텝 후의 손실을 그리고, 발산이 시작되는 지점이 이론값과 맞는지 확인하라.
+<pre class="run"><code>lam = np.linalg.eigvalsh(2 / len(ytr) * Ztr.T @ Ztr)
+eta_max = 2 / lam[-1]
+print(f"λmax = {lam[-1]:.3f}, λmin = {lam[0]:.3f}, 조건수 = {lam[-1] / lam[0]:.1f}, "
+      f"이론 상한 = {eta_max:.4f}")
+lrs = np.logspace(-3, np.log10(0.4), 25)
+final = []
+with np.errstate(over="ignore", invalid="ignore"):
+    for lr in lrs:
+        final.append(fit_gd(Ztr, ytr, lr, 200)[1][-1])
+final = np.nan_to_num(np.array(final), nan=1e6, posinf=1e6)
+plt.figure(figsize=(5.6, 3.4))
+plt.loglog(lrs, np.clip(final - L_star, 1e-10, 1e6), "o-", ms=4)
+plt.axvline(eta_max, color="C3", ls="--", label=f"이론 상한 {eta_max:.3f}")
+plt.xlabel("학습률 η")
+plt.ylabel("200스텝 후 L − L*")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+<li><b>스케일링을 하지 않으면.</b> 원래 단위의 입력으로 같은 일을 한다. 학습률 상한과 5000스텝 후의 손실을 표준화 입력과 비교하라.
+<pre class="run"><code>Rtr = design(X[tr])
+lam_r = np.linalg.eigvalsh(2 / len(ytr) * Rtr.T @ Rtr)
+print(f"원래 입력: 조건수 = {lam_r[-1] / lam_r[0]:.2e}, 이론 상한 = "
+      f"{2 / lam_r[-1]:.2e}")
+th_r, h_r = fit_gd(Rtr, ytr, lr=1.9 / lam_r[-1], epochs=5000)
+th_s, h_s = fit_gd(Ztr, ytr, lr=0.1, epochs=5000)
+plt.figure(figsize=(5.6, 3.4))
+plt.semilogy(h_r - L_star, label="원래 입력")
+plt.semilogy(np.clip(h_s - L_star, 1e-12, None), label="표준화 입력 (η = 0.1)")
+plt.xlabel("스텝"); plt.ylabel("L − L*"); plt.legend(); plt.grid(alpha=.3); plt.show()
+print(f"5000스텝 후 학습 MSE: 원래 {h_r[-1]:.3f}, 표준화 {h_s[-1]:.4f} (최소 "
+      f"{L_star:.4f})")
+</code></pre></li>
+<li><b>배치 크기 실험.</b> B = 1, 16, 142(전체)로 30에폭씩 학습해 에폭에 따른 손실을 비교한다. 학습률은 각각 0.01, 0.05, 0.1로 둔다. 같은 에폭 수에서 어느 쪽이 빨리 떨어지는가? 마지막 값은 어느 쪽이 더 낮은가?
+<pre class="run"><code>plt.figure(figsize=(5.6, 3.4))
+for B, lr in [(1, 0.01), (16, 0.05), (len(ytr), 0.1)]:
+    _, hb = fit_gd(Ztr, ytr, lr, 30, B=B)
+    plt.semilogy(np.arange(1, 31), hb - L_star, "o-", ms=3,
+                 label=f"B = {B}, η = {lr}")
+    print(f"B = {B:3d}: 에폭당 {int(np.ceil(len(ytr) / B)):3d}스텝, 1에폭 후 "
+          f"{hb[0]:.3f}, 30에폭 후 {hb[-1]:.4f}")
+plt.xlabel("에폭"); plt.ylabel("L − L*"); plt.legend(); plt.grid(alpha=.3); plt.show()
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>2단계: 상대 오차는 $10^{-10}$ 수준이다. 그래디언트를 새로 구현할 때마다 이 검사를 하는 습관이 20일차의 신경망 구현에서 큰 도움이 된다.</li>
+<li>3단계: 표준화 입력과 $\eta = 0.1$이면 300에폭(배치 GD이므로 300스텝) 후 정규방정식 해와 소수 다섯째 자리 이하에서 일치한다.</li>
+<li>4단계: 이론 상한은 약 0.256이다. 0.243까지는 학습률이 클수록 200스텝 후의 손실이 작고, 0.312에서는 손실이 $10^{62}$ 수준으로 폭발한다. 발산이 시작되는 경계가 이론값과 일치한다. 2차 함수가 아닌 실제 신경망에서도 "어느 학습률을 넘으면 갑자기 발산한다"는 모양은 같으며, 보통 그 경계의 절반쯤에서 학습률을 고른다.</li>
+<li>5단계: 원래 입력의 조건수는 약 $4\times10^8$이고 학습률 상한은 $10^{-6}$ 수준이다. 이 학습률로는 프롤린 방향만 움직이고 나머지 방향은 거의 움직이지 않아, 5000스텝 후에도 손실이 최솟값의 몇 배에 머문다. 표준화 입력은 수십 스텝이면 끝난다.</li>
+<li>6단계: 1에폭만 보면 SGD(B = 1)가 142번 갱신하므로 가장 빨리 떨어진다. 그러나 잡음 때문에 최솟값 근처에서 계속 흔들려 30에폭 후 값은 배치 GD가 더 낮다. 미니배치는 그 중간이다. 큰 데이터에서는 배치 GD의 한 걸음이 너무 비싸서 미니배치가 시간 대비 가장 효율적이다.</li>
+</ul></details>
+</section>

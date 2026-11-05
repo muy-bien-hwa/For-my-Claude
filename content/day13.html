@@ -1,0 +1,379 @@
+<ul class="goals">
+  <li>k-최근접 이웃의 동작과 k·스케일·차원이 성능에 미치는 영향을 설명할 수 있다.</li>
+  <li>지니 불순도로 결정 트리의 분할을 계산하고, 깊이에 따른 과적합을 설명할 수 있다.</li>
+  <li>서포트 벡터 머신의 마진과 힌지 손실을 로지스틱 회귀와 비교할 수 있다.</li>
+  <li>k-평균 군집 알고리즘을 구현하고 군집 수를 고를 수 있다.</li>
+  <li>결측치, 범주형 특징, 스케일링을 포함한 전처리 파이프라인을 누수 없이 구성할 수 있다.</li>
+</ul>
+
+<h2 data-min="6" data-kind="concept">고전 머신러닝 지도</h2>
+<p>딥러닝 이전에도 강력한 학습 알고리즘이 많았고, 지금도 표 형태(행 = 표본, 열 = 특징)의 데이터에서는 이들이 신경망보다 나은 경우가 많다. 이번 강의는 서로 다른 아이디어를 가진 네 가지 모델을 본다.</p>
+<table>
+  <thead><tr><th>모델</th><th>아이디어</th><th>학습</th><th>종류</th></tr></thead>
+  <tbody>
+    <tr><td>선형·로지스틱·소프트맥스 회귀 (8~11일차)</td><td>특징의 가중합</td><td>경사하강법</td><td>지도</td></tr>
+    <tr><td>k-최근접 이웃</td><td>가까운 이웃을 따라 한다</td><td>없음 (저장만)</td><td>지도</td></tr>
+    <tr><td>결정 트리</td><td>질문을 반복해 공간을 쪼갠다</td><td>탐욕적 분할</td><td>지도</td></tr>
+    <tr><td>서포트 벡터 머신</td><td>가장 넓은 여백으로 가른다</td><td>볼록 최적화</td><td>지도</td></tr>
+    <tr><td>k-평균</td><td>가까운 점끼리 묶는다</td><td>반복 할당</td><td>비지도</td></tr>
+  </tbody>
+</table>
+
+<h2 data-min="20" data-kind="concept">k-최근접 이웃</h2>
+<p>새 표본이 오면 학습 데이터에서 가장 가까운 $k$개를 찾아 다수결(회귀면 평균)로 답하는 방법이 <dfn data-t="knn">k-최근접 이웃</dfn>(kNN)이다. 학습 단계에서는 데이터를 저장할 뿐 아무것도 계산하지 않고, 모든 일을 예측할 때 한다. 7일차의 최근접 중심 분류기가 "클래스 평균 하나와 비교"했다면 kNN은 "모든 표본과 비교"한다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 250" width="640" role="img" aria-label="질문 점 주변의 가장 가까운 다섯 이웃">
+  <g transform="translate(40,10)">
+  <circle cx="230" cy="120" r="78" class="s-mu" stroke-width="1.4" fill="none" stroke-dasharray="6 4"/>
+  <g class="s-mu" stroke-width="1"><line x1="230" y1="120" x2="268" y2="95"/><line x1="230" y1="120" x2="200" y2="70"/><line x1="230" y1="120" x2="280" y2="160"/><line x1="230" y1="120" x2="175" y2="140"/><line x1="230" y1="120" x2="245" y2="188"/></g>
+  <g class="s-acf"><circle cx="268" cy="95" r="6"/><circle cx="280" cy="160" r="6"/><circle cx="245" cy="188" r="6"/><circle cx="330" cy="70" r="6"/><circle cx="360" cy="140" r="6"/><circle cx="340" cy="200" r="6"/><circle cx="390" cy="95" r="6"/></g>
+  <g class="s-orgf"><circle cx="200" cy="70" r="6"/><circle cx="175" cy="140" r="6"/><circle cx="100" cy="80" r="6"/><circle cx="80" cy="150" r="6"/><circle cx="130" cy="200" r="6"/><circle cx="60" cy="40" r="6"/></g>
+  <path d="M230 108 L233.5 116 L242 116 L235 121 L238 129 L230 124 L222 129 L225 121 L218 116 L226.5 116 Z" class="s-redf"/>
+  <text x="230" y="225" text-anchor="middle" class="s-tx" font-size="12.5">k = 5: 파랑 3, 주황 2 → 파랑</text>
+  </g>
+  <g transform="translate(470,60)" font-size="12.5">
+    <text x="0" y="0" class="s-tx" font-weight="700">k의 영향</text>
+    <text x="0" y="24" class="s-txm">k = 1: 학습 데이터 100% 정답,</text>
+    <text x="0" y="42" class="s-txm">  경계가 들쭉날쭉 (과적합)</text>
+    <text x="0" y="66" class="s-txm">k 큼: 경계가 매끄러움,</text>
+    <text x="0" y="84" class="s-txm">  너무 크면 과소적합</text>
+    <text x="0" y="108" class="s-txm">k = N: 항상 다수 클래스</text>
+  </g>
+</svg>
+<figcaption>별이 새 표본이다. 점선 원 안의 가장 가까운 다섯 점이 투표한다. $k$는 교차검증으로 고르며, 동점을 피하려고 홀수를 쓰는 경우가 많다.</figcaption>
+</figure>
+<div class="viz-mount" data-viz="knn"></div>
+<div class="box warn" data-title="거리는 단위에 민감하다"><p>와인 데이터에서 프롤린은 278~1680, 색조는 0.48~1.71 범위다. 두 와인의 유클리드 거리는 거의 전부 프롤린 차이로 정해진다. 실제로 원래 단위의 와인 데이터에서 거리 제곱의 99.8%가 프롤린 하나에서 나온다. 나머지 12개 특징은 사실상 무시된다. 위 인터랙티브의 데이터 메뉴에서 "스케일 불균형"을 고르고 표준화를 끄고 켜 본다. 미니 프로젝트에서 이 효과를 정확도로 잰다.</p></div>
+<h3>차원의 저주</h3>
+<p>특징이 많아지면 "가깝다"는 개념 자체가 무너진다. 단위 정육면체에 무작위 점 500개를 뿌리고 한 점에서 가장 가까운 점과 가장 먼 점의 거리 비를 재면, 2차원에서는 0.02지만 100차원에서는 0.74, 1000차원에서는 0.90이다. 모든 점이 거의 같은 거리에 있으니 "가장 가까운 이웃"이 별 의미가 없다. 이미지(수만 차원)에 kNN을 바로 쓰기 어려운 이유이며, 신경망이 저차원의 의미 있는 표현을 학습하는 이유 중 하나다(36일차 이후의 임베딩).</p>
+
+<h2 data-min="22" data-kind="concept">결정 트리</h2>
+<p>"최악 오목점 수가 0.145 이하인가?"처럼 특징 하나에 대한 예/아니오 질문을 반복해 데이터를 나누는 모델이 <dfn data-t="decision-tree">결정 트리</dfn>다. 각 질문이 입력 공간을 축에 평행한 직선으로 자르므로, 트리는 공간을 직사각형 조각들로 나눈다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 270" width="640" role="img" aria-label="깊이 2 결정 트리와 그에 해당하는 공간 분할">
+  <g font-size="12">
+  <rect x="80" y="14" width="180" height="40" rx="8" class="s-acs" stroke-width="1.4"/>
+  <text x="170" y="31" text-anchor="middle" class="s-tx" font-weight="700">최악 오목점 수</text><text x="170" y="47" text-anchor="middle" class="s-tx">≤ 0.145 ?</text>
+  <rect x="10" y="104" width="150" height="40" rx="8" class="s-f2"/><text x="85" y="121" text-anchor="middle" class="s-tx">최악 넓이</text><text x="85" y="137" text-anchor="middle" class="s-tx">≤ 957 ?</text>
+  <rect x="180" y="104" width="150" height="40" rx="8" class="s-f2"/><text x="255" y="121" text-anchor="middle" class="s-tx">최악 넓이</text><text x="255" y="137" text-anchor="middle" class="s-tx">≤ 710 ?</text>
+  <g class="s-ln" stroke-width="1.3"><line x1="140" y1="54" x2="85" y2="104"/><line x1="200" y1="54" x2="255" y2="104"/><line x1="55" y1="144" x2="40" y2="194"/><line x1="115" y1="144" x2="130" y2="194"/><line x1="225" y1="144" x2="210" y2="194"/><line x1="285" y1="144" x2="300" y2="194"/></g>
+  <g class="s-txm"><text x="100" y="78">예</text><text x="232" y="78">아니오</text></g>
+  <rect x="5" y="194" width="70" height="30" rx="6" class="s-f"/><text x="40" y="214" text-anchor="middle" class="s-tx">양성</text>
+  <rect x="95" y="194" width="70" height="30" rx="6" class="s-redf" opacity=".3"/><text x="130" y="214" text-anchor="middle" class="s-tx" font-weight="700">악성</text>
+  <rect x="175" y="194" width="70" height="30" rx="6" class="s-f"/><text x="210" y="214" text-anchor="middle" class="s-tx">양성</text>
+  <rect x="265" y="194" width="70" height="30" rx="6" class="s-redf" opacity=".3"/><text x="300" y="214" text-anchor="middle" class="s-tx" font-weight="700">악성</text>
+  <g transform="translate(390,14)">
+    <rect x="0" y="0" width="230" height="210" class="s-bg" stroke-width="1"/>
+    <rect x="0" y="0" width="100" height="70" class="s-redf" opacity=".28"/>
+    <rect x="0" y="70" width="100" height="140" class="s-f" opacity=".9"/>
+    <rect x="100" y="0" width="130" height="120" class="s-redf" opacity=".28"/>
+    <rect x="100" y="120" width="130" height="90" class="s-f" opacity=".9"/>
+    <line x1="100" y1="0" x2="100" y2="210" class="s-ln" stroke-width="2"/>
+    <line x1="0" y1="70" x2="100" y2="70" class="s-ln" stroke-width="1.6"/>
+    <line x1="100" y1="120" x2="230" y2="120" class="s-ln" stroke-width="1.6"/>
+    <text x="50" y="40" text-anchor="middle" class="s-tx">악성</text><text x="50" y="145" text-anchor="middle" class="s-tx">양성</text>
+    <text x="165" y="65" text-anchor="middle" class="s-tx">악성</text><text x="165" y="170" text-anchor="middle" class="s-tx">양성</text>
+    <text x="115" y="232" text-anchor="middle" class="s-txm">최악 오목점 수 →</text>
+    <text x="-8" y="105" text-anchor="middle" class="s-txm" transform="rotate(-90 -8 105)">최악 넓이 →</text>
+  </g>
+  </g>
+</svg>
+<figcaption>유방암 학습 데이터에서 실제로 학습한 깊이 2 트리(코드 실습에서 재현한다)와 그 분할. 질문 하나가 축에 평행한 선 하나다. 테스트 정확도는 93.9%다.</figcaption>
+</figure>
+<h3>좋은 질문 고르기: 지니 불순도</h3>
+<p>좋은 질문은 나눈 뒤 각 쪽이 한 클래스로 순수해지는 질문이다. 순수하지 않은 정도를 지니 불순도로 잰다. 노드의 클래스 비율이 $p_k$이면</p>
+$$G = 1 - \sum_k p_k^2$$
+<p>한 클래스뿐이면 0, 두 클래스가 반반이면 0.5다. 분할의 점수는 두 자식 노드 불순도를 표본 수로 가중평균한 값이며, 모든 특징과 모든 임계값을 시도해 가장 낮은 것을 고른다.</p>
+<div class="box ex" data-title="분할 계산"><p>노드에 10개(A 6, B 4): $G = 1 - 0.6^2 - 0.4^2 = 0.48$. 어떤 질문으로 나눴더니 왼쪽 (A 5, B 0), 오른쪽 (A 1, B 4). 왼쪽 $G = 0$, 오른쪽 $G = 1 - 0.2^2 - 0.8^2 = 0.32$. 가중평균 $0.5\times0 + 0.5\times0.32 = 0.16$. 불순도가 0.48에서 0.16으로 0.32 줄었다.</p></div>
+<div class="box key"><ul>
+<li>트리를 끝까지 키우면 학습 데이터를 100% 맞힐 수 있다. 깊이 제한, 노드의 최소 표본 수로 과적합을 막는다. 유방암 데이터에서 깊이 2는 테스트 93.9%, 깊이 10은 89.6%다.</li>
+<li>질문이 특징 하나의 대소 비교라 스케일링이 필요 없다. 결과를 사람이 읽을 수 있다.</li>
+<li>트리 하나는 불안정하다(데이터가 조금 바뀌면 구조가 크게 바뀐다). 수백 개의 트리를 합친 랜덤 포레스트와 그래디언트 부스팅은 표 데이터에서 지금도 가장 강력한 모델에 속한다.</li>
+</ul></div>
+
+<h2 data-min="15" data-kind="concept">서포트 벡터 머신</h2>
+<p>두 클래스를 가르는 직선은 무수히 많다. 그중 양쪽 클래스의 가장 가까운 점까지의 거리(마진)가 가장 넓은 직선을 고르는 모델이 <dfn data-t="svm">서포트 벡터 머신</dfn>(SVM)이다. 경계에 가장 가까이 있어 경계를 결정하는 점들을 서포트 벡터라 한다. 나머지 점은 아무리 움직여도(마진 밖에 있는 한) 경계가 변하지 않는다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 240" width="640" role="img" aria-label="최대 마진 경계와 서포트 벡터">
+  <g transform="translate(60,10)">
+  <line x1="60" y1="220" x2="330" y2="0" class="s-ln" stroke-width="2.4"/>
+  <line x1="10" y1="200" x2="270" y2="-10" class="s-mu" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <line x1="120" y1="230" x2="380" y2="20" class="s-mu" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <g class="s-orgf"><circle cx="60" cy="60" r="6"/><circle cx="100" cy="40" r="6"/><circle cx="40" cy="120" r="6"/><circle cx="90" cy="100" r="6"/><circle cx="150" cy="40" r="6"/></g>
+  <g class="s-acf"><circle cx="300" cy="120" r="6"/><circle cx="330" cy="170" r="6"/><circle cx="260" cy="190" r="6"/><circle cx="350" cy="80" r="6"/><circle cx="220" cy="215" r="6"/></g>
+  <circle cx="150" cy="40" r="10" class="s-ln" stroke-width="1.6" fill="none"/>
+  <circle cx="90" cy="100" r="10" class="s-ln" stroke-width="1.6" fill="none"/>
+  <circle cx="260" cy="190" r="10" class="s-ln" stroke-width="1.6" fill="none"/>
+  <circle cx="300" cy="120" r="10" class="s-ln" stroke-width="1.6" fill="none"/>
+  </g>
+  <g transform="translate(470,50)" font-size="12.5">
+    <text x="0" y="0" class="s-tx" font-weight="700">읽는 법</text>
+    <text x="0" y="24" class="s-txm">실선: 결정 경계</text>
+    <text x="0" y="44" class="s-txm">점선 사이: 마진 (최대화)</text>
+    <text x="0" y="64" class="s-txm">원 표시: 서포트 벡터</text>
+    <text x="0" y="96" class="s-txm">힌지 손실</text>
+    <text x="0" y="114" class="s-txm">max(0, 1 − y·z), y = ±1</text>
+  </g>
+</svg>
+<figcaption>마진이 넓을수록 새 데이터가 조금 흔들려도 같은 쪽에 남을 가능성이 크다는 것이 SVM의 직관이다.</figcaption>
+</figure>
+<p>손실 함수로 보면 SVM은 로지스틱 회귀와 가깝다. 레이블을 $y \in \{-1, +1\}$로 쓰고 점수를 $z = \mathbf w\cdot\mathbf x + b$라 하면, SVM은 힌지 손실 $\max(0, 1 - yz)$에 L2 규제를 더해 최소화한다. 로지스틱 회귀의 손실은 $\ln(1 + e^{-yz})$다.</p>
+<table>
+  <thead><tr><th>$yz$ (정답 방향의 점수)</th><th>−1</th><th>0</th><th>0.5</th><th>1</th><th>2</th></tr></thead>
+  <tbody>
+    <tr><td>힌지 $\max(0, 1 - yz)$</td><td>2</td><td>1</td><td>0.5</td><td>0</td><td>0</td></tr>
+    <tr><td>로지스틱 $\ln(1 + e^{-yz})$</td><td>1.313</td><td>0.693</td><td>0.474</td><td>0.313</td><td>0.127</td></tr>
+  </tbody>
+</table>
+<p>힌지 손실은 점수가 1을 넘으면 정확히 0이 되어 그 표본을 더 이상 신경 쓰지 않는다. 그래서 서포트 벡터만 해에 영향을 준다. 로지스틱 손실은 결코 0이 되지 않아 모든 표본이 조금씩 영향을 준다. SVM은 커널 기법으로 고차원 특징 공간에서의 선형 경계(원래 공간에서는 곡선)를 효율적으로 계산할 수 있어 2000년대에 널리 쓰였다.</p>
+
+<h2 data-min="18" data-kind="concept">k-평균 군집</h2>
+<p>정답 레이블 없이 데이터를 비슷한 것끼리 $k$개 무리로 묶는 비지도 학습의 대표가 <dfn data-t="kmeans">k-평균</dfn>이다. 각 무리의 중심을 두고, 모든 점에서 자기 중심까지의 거리 제곱합(군집 내 제곱합)을 최소화한다.</p>
+$$J = \sum_{i=1}^N \|\mathbf x_i - \boldsymbol\mu_{c(i)}\|^2$$
+<ol class="steps">
+<li>중심 $k$개를 무작위 표본으로 초기화한다.</li>
+<li><b>할당</b>: 각 점을 가장 가까운 중심의 무리에 넣는다.</li>
+<li><b>갱신</b>: 각 중심을 자기 무리 점들의 평균으로 옮긴다.</li>
+<li>할당이 더 이상 바뀌지 않을 때까지 2~3을 반복한다.</li>
+</ol>
+<div class="flow"><div>중심 초기화</div><div class="hl">할당<br>가장 가까운 중심</div><div class="hl">갱신<br>무리의 평균</div><div>변화 없으면 종료</div></div>
+<p>두 단계 모두 $J$를 줄이므로(할당은 중심을 고정한 최적, 갱신은 할당을 고정한 최적) 반드시 멈춘다. 다만 초기값에 따라 다른 국소 최적에 멈출 수 있어 여러 번 실행해 $J$가 가장 작은 결과를 쓴다. $k$를 늘리면 $J$는 항상 줄어들므로, $J$의 감소가 갑자기 완만해지는 "팔꿈치"에서 $k$를 고른다.</p>
+<div class="box note"><p>k-평균의 중심은 7일차 최근접 중심 분류기의 중심과 같은 것이다. 차이는 레이블이 없다는 점뿐이다. 레이블 없이도 붓꽃 꽃잎 데이터를 세 무리로 나누면 실제 품종과 약 95% 일치한다(코드 실습).</p></div>
+
+<h2 data-min="16" data-kind="concept">데이터 전처리 파이프라인</h2>
+<p>실제 데이터는 이 강의의 데이터처럼 깨끗하지 않다. 모델에 넣기 전의 처리 과정을 파이프라인으로 정리한다.</p>
+<div class="flow"><div>원본 표</div><div>결측치 처리</div><div>범주형<br>원-핫</div><div>스케일링</div><div class="hl">모델</div></div>
+<ul>
+<li>값이 비어 있는 칸을 <dfn data-t="missing-value">결측치</dfn>라 한다. 처리 방법: 결측이 많은 행이나 열 삭제, 평균·중앙값으로 채우기, "비어 있었음" 지시 특징(0/1)을 추가하고 채우기. 비어 있다는 사실 자체가 정보일 때가 많아 지시 특징이 유용하다.</li>
+<li>범주형 특징(색, 도시)은 원-핫으로 바꾼다(11일차). 학습 세트에 없던 범주가 테스트에 나오면 모두 0인 벡터로 둔다.</li>
+<li>거리나 경사하강법을 쓰는 모델(kNN, SVM, 회귀, 신경망)은 스케일링한다. 트리는 필요 없다.</li>
+<li>이상치는 지우기 전에 측정 오류인지 진짜 드문 값인지 확인한다. 8일차의 플라보노이드 5.08처럼 진짜 값이면 남긴다.</li>
+</ul>
+<div class="box key" data-title="fit과 transform"><p>모든 단계는 "학습 세트에서 통계를 배우는 fit"과 "그 통계로 변환하는 transform"으로 나뉜다. 채울 평균, 원-핫의 범주 목록, 표준화의 평균·표준편차는 학습 세트에서만 fit하고, 검증·테스트에는 transform만 한다. 교차검증에서는 겹마다 fit을 다시 한다(12일차의 데이터 누수).</p></div>
+
+<h2 data-min="20" data-kind="practice">코드 실습: 트리, 군집, 차원</h2>
+<p>먼저 차원의 저주를 숫자로 확인한다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+r = np.random.default_rng(0)
+for dim in [2, 10, 100, 1000]:
+    P = r.random((500, dim)); q = r.random(dim)
+    dist = np.sqrt(((P - q) ** 2).sum(axis=1))
+    print(f"{dim:5d}차원: 가장 가까운 거리 / 가장 먼 거리 = "
+          f"{dist.min() / dist.max():.3f}")
+</code></pre>
+<p>다음은 지니 불순도로 결정 트리를 만든다. 특징마다 값을 정렬해 두면 모든 임계값의 불순도를 누적합으로 한 번에 계산할 수 있다.</p>
+<pre class="run"><code>d = load_data("breast_cancer")
+X, y = d["X"].astype(float), d["y"]; names = d["feature_names_ko"]
+rng = np.random.default_rng(0); tr, te = [], []
+for c in [0, 1]:
+    idx = rng.permutation(np.where(y == c)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+
+def gini(t_):
+    p = np.mean(t_) if len(t_) else 0
+    return 1 - p ** 2 - (1 - p) ** 2
+def best_split(X_, y_):
+    n = len(y_); best = (gini(y_), None, None)             # (가중 지니, 특징, 임계값)
+    for j in range(X_.shape[1]):
+        o = np.argsort(X_[:, j]); xs, ys = X_[o, j], y_[o]
+        nl = np.arange(1, n); nr = n - nl                    # 왼쪽에 1~n−1개를 둘 때
+        pl = np.cumsum(ys)[:-1] / nl; pr = (ys.sum() - np.cumsum(ys)[:-1]) / nr
+        g = (nl * (1 - pl ** 2 - (1 - pl) ** 2)
+             + nr * (1 - pr ** 2 - (1 - pr) ** 2)) / n
+        # 같은 값 사이는 자를 수 없다
+        g = np.where(xs[1:] &gt; xs[:-1], g, np.inf)
+        i = np.argmin(g)
+        if g[i] &lt; best[0]: best = (g[i], j, (xs[i] + xs[i + 1]) / 2)
+    return best
+def build(X_, y_, depth, max_depth, min_n=5):
+    if depth == max_depth or len(y_) &lt; min_n or gini(y_) == 0:
+        return int(round(np.mean(y_)))                       # 잎: 다수 클래스
+    g, j, t_ = best_split(X_, y_)
+    if j is None: return int(round(np.mean(y_)))
+    m = X_[:, j] &lt;= t_
+    return (j, t_, build(X_[m], y_[m], depth + 1, max_depth, min_n),
+            build(X_[~m], y_[~m], depth + 1, max_depth, min_n))
+def predict_one(node, x):
+    while isinstance(node, tuple):
+        node = node[2] if x[node[0]] &lt;= node[1] else node[3]
+    return node
+def accuracy(T, X_, y_):
+    return np.mean([predict_one(T, x) == t_ for x, t_ in zip(X_, y_)])
+for md in [1, 2, 3, 4, 6, 10]:
+    T = build(X[tr], y[tr], 0, md)
+    print(f"깊이 {md:2d}: 학습 {accuracy(T, X[tr], y[tr]):.3f}  테스트 "
+          f"{accuracy(T, X[te], y[te]):.3f}")
+def show(node, ind="", tag=""):
+    if isinstance(node, tuple):
+        print(f"{ind}{tag}{names[node[0]]} ≤ {node[1]:.3f} ?")
+        show(node[2], ind + "    ", "예 → "); show(node[3], ind + "    ", "아니오 → ")
+    else: print(f"{ind}{tag}" + ("악성" if node == 1 else "양성"))
+show(build(X[tr], y[tr], 0, 2))
+</code></pre>
+<p>마지막으로 k-평균을 구현해 붓꽃 꽃잎 데이터를 레이블 없이 묶고, 실제 품종과 비교한다.</p>
+<pre class="run"><code>iris = load_data("iris"); Xi, yi = iris["X"][:, 2:4], iris["y"]
+def kmeans(X_, k, seed=0, iters=100):
+    r = np.random.default_rng(seed)
+    C = X_[r.choice(len(X_), k, replace=False)]                 # 1. 초기 중심
+    for _ in range(iters):
+        # 2. 할당
+        lab = ((X_[:, None, :] - C[None, :, :]) ** 2).sum(-1).argmin(axis=1)
+        # 3. 갱신
+        C_new = np.array([X_[lab == j].mean(axis=0) if np.any(lab == j) else C[j]
+                          for j in range(k)])
+        if np.allclose(C_new, C): break
+        C = C_new
+    return C, lab, ((X_ - C[lab]) ** 2).sum()
+J = [kmeans(Xi, k)[2] for k in range(1, 7)]
+C, lab, _ = kmeans(Xi, 3)
+fig, axs = plt.subplots(1, 2, figsize=(9.4, 3.5))
+axs[0].plot(range(1, 7), J, "o-")
+axs[0].set_xlabel("k")
+axs[0].set_ylabel("군집 내 제곱합 J")
+axs[0].grid(alpha=.3)
+axs[0].set_title("팔꿈치")
+axs[1].scatter(Xi[:, 0], Xi[:, 1], c=lab, cmap="viridis", s=14)
+axs[1].scatter(C[:, 0], C[:, 1], c="red", marker="X", s=120)
+axs[1].set_xlabel("꽃잎 길이 (cm)")
+axs[1].set_ylabel("꽃잎 너비 (cm)")
+axs[1].set_title("k = 3 군집 (레이블 미사용)")
+plt.tight_layout(); plt.show()
+M = np.zeros((3, 3), int)
+for a, b in zip(yi, lab): M[a, b] += 1
+print("J:", np.round(J, 1)); print("행: 실제 품종, 열: 군집\n", M)
+print("품종과 일치하는 비율: %.3f" % (M.max(axis=1).sum() / len(yi)))
+</code></pre>
+
+<h2 data-min="8" data-kind="concept">고전 머신러닝과 딥러닝</h2>
+<table>
+  <thead><tr><th></th><th>고전 머신러닝</th><th>딥러닝</th></tr></thead>
+  <tbody>
+    <tr><td>강한 데이터</td><td>표 데이터, 수백~수십만 행</td><td>이미지·음성·텍스트, 대량 데이터</td></tr>
+    <tr><td>특징</td><td>사람이 설계 (다항 특징, 비율, 통계량)</td><td>모델이 원시 입력에서 학습</td></tr>
+    <tr><td>계산</td><td>CPU 몇 초~몇 분</td><td>GPU 몇 시간~몇 주</td></tr>
+    <tr><td>해석</td><td>트리·선형 모델은 읽기 쉬움</td><td>어려움 (35일차의 Grad-CAM 같은 도구 필요)</td></tr>
+  </tbody>
+</table>
+<p>실무의 출발점은 항상 단순한 기준선이다. 로지스틱 회귀나 트리 앙상블로 먼저 점수를 내고, 딥러닝이 그 점수를 의미 있게 넘는지 확인한다. 14일차 주간 프로젝트에서 이 순서를 그대로 밟는다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>kNN: 가까운 $k$개의 다수결. 학습 없음, 예측이 비쌈. 스케일링 필수. 고차원에서는 거리가 무의미해진다.</li>
+  <li>결정 트리: 지니 불순도가 가장 많이 줄어드는 질문으로 반복 분할. 스케일링 불필요, 깊으면 과적합.</li>
+  <li>SVM: 최대 마진, 힌지 손실 + L2. 서포트 벡터만 경계를 정한다.</li>
+  <li>k-평균: 할당과 갱신을 반복해 군집 내 제곱합 최소화. 초기값 여러 번, 팔꿈치로 $k$ 선택.</li>
+  <li>전처리: 결측치 → 원-핫 → 스케일링. 모든 통계는 학습 세트에서만 fit.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"중복 표본이 없을 때 k = 1인 kNN의 학습 데이터 정확도는?","o":["50%","100%","k에 따라 다름","0%"],"a":1,"e":"각 학습 표본의 가장 가까운 이웃은 자기 자신이다. 과적합의 극단이다."},
+ {"q":"kNN 전에 특징을 표준화해야 하는 이유는?","o":["계산이 빨라진다","값의 범위가 큰 특징이 거리를 독차지하기 때문","정답 레이블이 바뀐다","k를 고를 수 없다"],"a":1,"e":"와인의 프롤린이 거리 제곱의 99.8%를 차지했다."},
+ {"q":"A 5개, B 5개인 노드의 지니 불순도는?","o":["0","0.25","0.5","1"],"a":2,"e":"$1 - 0.5^2 - 0.5^2 = 0.5$."},
+ {"q":"결정 트리에 특징 스케일링이 필요 없는 이유는?","o":["트리는 거리를 쓰지 않고 특징 하나의 대소 비교만 하므로","트리가 자동으로 표준화하므로","스케일링하면 정확도가 떨어지므로","트리는 연속 특징을 쓰지 않으므로"],"a":0,"e":"단조 변환은 대소 순서를 바꾸지 않아 분할 결과가 같다."},
+ {"q":"SVM에서 서포트 벡터를 제외한 점을 조금 움직이면(마진 밖에 머무는 한) 경계는?","o":["크게 바뀐다","바뀌지 않는다","사라진다","두 배로 넓어진다"],"a":1,"e":"힌지 손실이 0인 점은 해에 영향을 주지 않는다."},
+ {"q":"k-평균에서 k를 계속 늘리면 군집 내 제곱합 J는?","o":["항상 줄어든다(늘지 않는다)","항상 늘어난다","변하지 않는다","k = 3에서 최소"],"a":0,"e":"그래서 J의 최솟값이 아니라 감소가 완만해지는 팔꿈치로 k를 고른다."},
+ {"q":"결측치를 평균으로 채울 때 그 평균은 어디서 계산하는가?","o":["전체 데이터","학습 세트","테스트 세트","결측이 없는 테스트 행"],"a":1,"e":"전처리 통계도 학습 세트에서만 fit한다."},
+ {"q":"표본 3천 개의 표 데이터(고객 정보)로 이탈을 예측한다. 첫 모델로 가장 적절한 것은?","o":["대형 트랜스포머","로지스틱 회귀나 트리 앙상블 기준선","GAN","확산 모델"],"a":1,"e":"표 데이터에서는 고전 모델이 강하고, 기준선이 먼저다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>1차원 점 $1, 2, 3, 10, 11, 12$를 초기 중심 1과 2로 k-평균($k = 2$)을 손으로 돌려라. 몇 번 만에 수렴하고 최종 $J$는 얼마인가?
+    <details class="sol"><summary>풀이</summary><p>1회: 할당 {1}, {2, 3, 10, 11, 12} → 중심 1, 7.6. 2회: 3은 1까지 2, 7.6까지 4.6이므로 첫 무리. 할당 {1, 2, 3}, {10, 11, 12} → 중심 2, 11. 3회: 할당 변화 없음 → 종료. $J = (1 + 0 + 1) + (1 + 0 + 1) = 4$.</p></details></li>
+  <li>노드 (A 8, B 8)를 나누는 두 후보가 있다. (가) 왼쪽 (A 6, B 2), 오른쪽 (A 2, B 6). (나) 왼쪽 (A 8, B 4), 오른쪽 (A 0, B 4). 지니 기준으로 어느 쪽이 나은가?
+    <details class="sol"><summary>풀이</summary><p>(가) 양쪽 모두 $1 - 0.75^2 - 0.25^2 = 0.375$, 가중평균 0.375. (나) 왼쪽 $1 - (2/3)^2 - (1/3)^2 = 0.444$, 오른쪽 0, 가중평균 $\frac{12}{16}0.444 = 0.333$. (나)가 낫다. 한쪽을 완전히 순수하게 만드는 분할이 유리할 수 있다.</p></details></li>
+  <li>$d$차원 단위 정육면체에 고르게 퍼진 데이터의 1%를 담는 작은 정육면체의 한 변 길이를 $d = 1, 10, 100$에 대해 구하라. 이것이 kNN에 어떤 의미인가?
+    <details class="sol"><summary>풀이</summary><p>부피 $s^d = 0.01$에서 $s = 0.01^{1/d}$: 0.01, 0.631, 0.955. 100차원에서는 이웃 1%를 모으려면 각 축 범위의 95%를 덮어야 한다. "가까운 이웃"이 사실상 전체 데이터라서 국소적인 판단이 불가능하다.</p></details></li>
+</ol>
+
+<h2 data-min="40" data-kind="project">미니 프로젝트: kNN 구현과 스케일링의 영향</h2>
+<section class="project" data-title="와인 품종 kNN 분류기: 거리 계산, k 선택, 스케일링 비교" data-min="40">
+<p class="lead">와인 178병의 13가지 화학 성분으로 품종(3종)을 분류하는 kNN을 벡터화해서 구현한다. 원래 단위, 표준화, 최소-최대 정규화 세 가지 입력에서 $k$를 5겹 교차검증으로 고르고, 원래 단위에서 성능이 낮은 이유를 거리 분해로 밝힌다.</p>
+<ol class="steps">
+<li><b>데이터와 분할.</b> 층화 80:20 분할(시드 0)과 층화 5겹을 만든다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("wine")
+X, y = d["X"].astype(float), d["y"]; names = d["feature_names_ko"]
+rng = np.random.default_rng(0); tr, te = [], []
+for c in range(3):
+    idx = rng.permutation(np.where(y == c)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+Xtr, ytr = X[tr], y[tr]
+def stratified_folds(t_, k=5, seed=0):
+    r = np.random.default_rng(seed); f = [[] for _ in range(k)]
+    for c in np.unique(t_):
+        for i, j in enumerate(r.permutation(np.where(t_ == c)[0])): f[i % k].append(j)
+    return [np.array(sorted(a)) for a in f]
+folds = stratified_folds(ytr)
+print("학습", Xtr.shape, " 테스트", X[te].shape, " 클래스별 개수", np.bincount(y))
+</code></pre></li>
+<li><b>벡터화한 kNN.</b> 질의 $Q$개와 학습 $A$개 사이의 거리 제곱 행렬 $(Q, A)$를 한 번에 계산한다. $\|\mathbf q - \mathbf a\|^2 = \|\mathbf q\|^2 + \|\mathbf a\|^2 - 2\,\mathbf q\cdot\mathbf a$를 쓰면 행렬곱 하나로 끝난다.
+<pre class="run"><code>def sq_dists(Q, A):
+    # TODO 확인: (Q, A)
+    return (Q ** 2).sum(1)[:, None] + (A ** 2).sum(1)[None, :] - 2 * Q @ A.T
+def knn_predict(A, yA, Q, k):
+    nn = np.argsort(sq_dists(Q, A), axis=1)[:, :k]            # 가까운 k개의 인덱스
+    votes = yA[nn]                                            # (Q, k) 이웃의 레이블
+    counts = np.stack([(votes == c).sum(1) for c in range(3)], axis=1)
+    return counts.argmax(axis=1)
+D_loop = np.array([[((q - a) ** 2).sum() for a in Xtr[:5]] for q in Xtr[:3]])
+print("반복문과 차이:", np.abs(sq_dists(Xtr[:3], Xtr[:5]) - D_loop).max())
+</code></pre></li>
+<li><b>스케일링 × k 교차검증.</b> 겹마다 학습 겹으로 스케일러를 fit한다. 세 방식의 교차검증 정확도를 $k$에 대해 그린다.
+<pre class="run"><code>def scaler(kind, A):
+    if kind == "원래 단위": return lambda M: M
+    if kind == "표준화": mu, sd = A.mean(0), A.std(0); return lambda M: (M - mu) / sd
+    mn, mx = A.min(0), A.max(0); return lambda M: (M - mn) / (mx - mn)
+ks = [1, 3, 5, 7, 9, 11, 15, 21]
+results = {}
+plt.figure(figsize=(5.8, 3.4))
+for kind in ["원래 단위", "표준화", "최소-최대"]:
+    accs = []
+    for k in ks:
+        s = []
+        for f in folds:
+            trn = np.setdiff1d(np.arange(len(ytr)), f)
+            # TODO 확인: 학습 겹으로만 fit
+            T = scaler(kind, Xtr[trn])
+            s.append((knn_predict(T(Xtr[trn]), ytr[trn], T(Xtr[f]),
+                                  k) == ytr[f]).mean())
+        accs.append(np.mean(s))
+    results[kind] = accs
+    plt.plot(ks, accs, "o-", label=kind)
+    print(f"{kind:6s}", " ".join(f"k={k}:{a:.3f}" for k, a in zip(ks, accs)))
+plt.xlabel("k")
+plt.ylabel("5겹 교차검증 정확도")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+<li><b>원인 분석: 거리 분해.</b> 원래 단위에서 모든 학습 표본 쌍의 거리 제곱을 특징별로 나눠, 각 특징이 차지하는 비율을 구하라. 표준화 후와 비교한다.
+<pre class="run"><code>def share(M):
+    diff2 = (M[:, None, :] - M[None, :, :]) ** 2               # (N, N, 13)
+    s = diff2.sum(axis=(0, 1)); return s / s.sum()
+raw, std = share(Xtr), share((Xtr - Xtr.mean(0)) / Xtr.std(0))
+o = np.argsort(-raw)[:4]
+for j in o: print(f"{names[j]:10s} 원래 단위 {raw[j]:.4f}   표준화 후 {std[j]:.4f}")
+</code></pre></li>
+<li><b>최종 평가.</b> 교차검증으로 고른 방식과 $k$로 학습 세트 전체를 저장하고 테스트 세트를 한 번 평가한다. 원래 단위 + 같은 $k$의 결과도 함께 적는다.
+<pre class="run"><code>kind_best = max(results, key=lambda kk: max(results[kk]))
+k_best = ks[int(np.argmax(results[kind_best]))]
+T = scaler(kind_best, Xtr)
+acc_best = (knn_predict(T(Xtr), ytr, T(X[te]), k_best) == y[te]).mean()
+acc_raw = (knn_predict(Xtr, ytr, X[te], k_best) == y[te]).mean()
+print(f"선택: {kind_best}, k = {k_best} → 테스트 정확도 {acc_best:.3f}  (원래 단위 "
+      f"같은 k: {acc_raw:.3f})")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>3단계: 원래 단위의 교차검증 정확도는 0.69~0.79에 머물고, 표준화와 최소-최대는 0.93~0.96이다. 스케일링 방법보다 "스케일링을 하는가"가 훨씬 중요하다. 원래 단위에서는 $k = 1$이 가장 낫고 $k$를 늘려도 나아지지 않는데, 거리가 프롤린 하나로 정해져 이웃 투표가 품종 정보를 거의 담지 못하기 때문이다.</li>
+<li>4단계: 원래 단위에서 프롤린이 거리 제곱의 약 99.8%, 마그네슘이 0.2%를 차지하고 나머지 11개 특징은 합쳐도 0.1% 미만이다. 표준화 후에는 모든 특징이 정확히 $1/13 \approx 0.077$씩 기여한다(표준화하면 각 특징의 분산이 1로 같아지므로).</li>
+<li>5단계: 교차검증 점수가 같은 후보가 여럿이면 먼저 나온 것(표준화, $k = 3$)이 선택된다. 테스트 정확도는 0.973(37병 중 36병)이고, 원래 단위의 같은 $k$는 0.784다. 같은 데이터, 같은 알고리즘에서 전처리 한 줄이 약 19%p의 차이를 만든다.</li>
+</ul></details>
+</section>

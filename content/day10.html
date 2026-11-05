@@ -1,0 +1,354 @@
+<ul class="goals">
+  <li>선형회귀로 분류 문제를 풀 때의 문제점을 설명할 수 있다.</li>
+  <li>시그모이드, 오즈, 로짓의 관계를 이용해 로지스틱 회귀의 출력과 가중치를 해석할 수 있다.</li>
+  <li>결정 경계가 $\mathbf w\cdot\mathbf x + b = 0$인 초평면임을 설명하고 그릴 수 있다.</li>
+  <li>이진 교차 엔트로피를 베르누이 최대우도에서 유도하고, MSE보다 나은 이유를 그래디언트로 설명할 수 있다.</li>
+  <li>그래디언트 $\mathbf X^\top(\mathbf p - \mathbf y)/N$을 유도하고 수치적으로 안정한 형태로 구현할 수 있다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="concept">분류를 회귀로 풀면 생기는 문제</h2>
+<p>이진 분류는 정답이 0 또는 1인 문제다. 유방 종양이 양성(0)인가 악성(1)인가, 메일이 정상(0)인가 스팸(1)인가. 0과 1을 숫자로 보고 8일차의 선형회귀로 맞춘 뒤 예측이 0.5보다 크면 1로 판정하면 어떨까?</p>
+<figure class="fig">
+<svg viewBox="0 0 640 260" width="640" role="img" aria-label="0과 1 레이블에 직선을 맞추면 멀리 있는 점이 경계를 옮긴다">
+  <g font-size="12">
+  <line x1="60" y1="215" x2="580" y2="215" class="s-mu" stroke-width="1.2"/>
+  <line x1="60" y1="215" x2="60" y2="30" class="s-mu" stroke-width="1.2"/>
+  <line x1="60" y1="130" x2="580" y2="130" class="s-mu" stroke-width="1" stroke-dasharray="4 4"/>
+  <g class="s-txm" text-anchor="end"><text x="52" y="204">0</text><text x="52" y="134">0.5</text><text x="52" y="64">1</text></g>
+  <text x="320" y="240" text-anchor="middle" class="s-txm">종양 크기</text>
+  <line x1="60" y1="231.75" x2="420" y2="33.75" class="s-ac" stroke-width="2.2"/>
+  <line x1="60" y1="205.9" x2="580" y2="34.3" class="s-red" stroke-width="2.2" stroke-dasharray="7 5"/>
+  <g class="s-tx"><circle cx="100" cy="200" r="5"/><circle cx="140" cy="200" r="5"/><circle cx="170" cy="200" r="5"/><circle cx="200" cy="200" r="5"/><circle cx="230" cy="200" r="5"/></g>
+  <g class="s-redf"><circle cx="262" cy="60" r="5"/><circle cx="290" cy="60" r="5"/><circle cx="320" cy="60" r="5"/><circle cx="350" cy="60" r="5"/><circle cx="380" cy="60" r="5"/><circle cx="555" cy="60" r="6"/></g>
+  <line x1="245" y1="125" x2="245" y2="215" class="s-ac" stroke-width="1.4"/>
+  <line x1="290" y1="125" x2="290" y2="215" class="s-red" stroke-width="1.4" stroke-dasharray="4 3"/>
+  <text x="240" y="230" text-anchor="end" class="s-txa">경계 (원래)</text>
+  <text x="296" y="230" class="s-tx">경계 (이상치 추가 후)</text>
+  <text x="555" y="88" text-anchor="middle" class="s-tx">아주 큰 악성 종양 하나</text>
+  <text x="262" y="48" text-anchor="middle" class="s-tx">오분류</text>
+  </g>
+</svg>
+<figcaption>파란 직선은 0.5를 지나는 곳에서 두 무리를 잘 가른다. 아주 큰 악성 종양(오른쪽 끝)이 하나 추가되면 직선이 눕고(빨간 점선) 경계가 오른쪽으로 밀려 원래 맞히던 악성 종양을 놓친다.</figcaption>
+</figure>
+<p>문제는 두 가지다. 첫째, 직선의 출력은 0보다 작거나 1보다 클 수 있어 확률로 읽을 수 없다. 둘째, 이미 확실히 맞힌 먼 점(크기가 아주 큰 악성)이 "1보다 훨씬 큰 예측을 1로 낮추라"는 큰 잔차를 만들어 경계를 엉뚱하게 옮긴다. 필요한 것은 출력을 0과 1 사이로 눌러 주는 함수와, 분류에 맞는 손실이다.</p>
+
+<h2 data-min="22" data-kind="concept">시그모이드와 로지스틱 회귀</h2>
+<p>임의의 실수를 0과 1 사이로 매끄럽게 옮기는 함수가 <dfn data-t="sigmoid">시그모이드</dfn>다.</p>
+$$\sigma(z) = \frac{1}{1 + e^{-z}}$$
+<table>
+  <thead><tr><th>$z$</th><th>−4</th><th>−2</th><th>0</th><th>2</th><th>4</th></tr></thead>
+  <tbody><tr><td>$\sigma(z)$</td><td>0.018</td><td>0.119</td><td>0.5</td><td>0.881</td><td>0.982</td></tr></tbody>
+</table>
+<p>성질 세 가지: $\sigma(0) = 0.5$, $\sigma(-z) = 1 - \sigma(z)$(0을 중심으로 대칭), $\sigma'(z) = \sigma(z)(1 - \sigma(z))$(5일차에서 유도). 선형 점수 $z = \mathbf w\cdot\mathbf x + b$에 시그모이드를 씌운 모델이 <dfn data-t="logistic-regression">로지스틱 회귀</dfn>다.</p>
+$$p = P(y = 1 \mid \mathbf x) = \sigma(\mathbf w\cdot\mathbf x + b)$$
+<div class="flow"><div>입력 $\mathbf x$</div><div>선형 점수<br>$z = \mathbf w\cdot\mathbf x + b$</div><div class="hl">시그모이드<br>$p = \sigma(z)$</div><div>$p &gt; 0.5$이면 1</div></div>
+<p>이름에 "회귀"가 들어 있지만 분류 모델이다. 확률이라는 연속값을 회귀하고, 그것을 임계값으로 잘라 분류한다.</p>
+<h3>오즈와 로짓: 가중치의 해석</h3>
+<p>확률 $p$ 대신 "일어날 확률 대 안 일어날 확률의 비"를 쓰기도 한다. 이를 <dfn data-t="odds">오즈</dfn>라 한다. $p = 0.8$이면 오즈는 $0.8/0.2 = 4$, 즉 "4 대 1"이다. 오즈에 로그를 취한 것이 <dfn data-t="logit">로짓</dfn>이다.</p>
+$$\text{odds} = \frac{p}{1-p}, \qquad \mathrm{logit}(p) = \ln\frac{p}{1-p}$$
+<p>시그모이드를 거꾸로 풀면 $\ln\frac{p}{1-p} = z$다. 즉 로지스틱 회귀는 <b>로그 오즈를 선형 모델로 예측</b>한다. 그래서 신경망에서도 시그모이드나 소프트맥스에 들어가기 전의 점수 $z$를 로짓이라 부른다.</p>
+<div class="box ex" data-title="가중치 읽기"><p>표준화한 특징 $x_j$의 가중치가 $w_j = 0.7$이면, $x_j$가 1(표준편차 하나만큼) 늘 때 로그 오즈가 0.7 늘고, 오즈는 $e^{0.7} \approx 2.01$배가 된다. 다른 특징이 같을 때 "악성일 오즈가 약 두 배"라는 뜻이다. $z = 2$인 표본은 $p = \sigma(2) = 0.881$, 오즈 $e^2 = 7.39$다.</p></div>
+
+<h2 data-min="18" data-kind="concept">결정 경계</h2>
+<p>$p &gt; 0.5 \iff z &gt; 0$이다. 따라서 두 클래스를 가르는 <dfn data-t="decision-boundary">결정 경계</dfn>는</p>
+$$\mathbf w\cdot\mathbf x + b = 0$$
+<p>인 점들의 집합이다. 입력이 2개면 직선, 3개면 평면, 그 이상이면 초평면이다. 3일차에서 본 대로 $\mathbf w$는 이 경계에 수직인 법선 벡터이고, $\mathbf w$가 가리키는 쪽이 $p &gt; 0.5$인 쪽이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 280" width="640" role="img" aria-label="결정 경계와 등확률선, 법선 벡터 w">
+  <defs><marker id="d10a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker></defs>
+  <rect x="40" y="20" width="400" height="240" class="s-bg" stroke-width="1"/>
+  <path d="M40 260 L40 140 L200 20 L440 20 L440 260 Z" fill="none"/>
+  <line x1="120" y1="260" x2="360" y2="20" class="s-ln" stroke-width="2.6"/>
+  <line x1="40" y1="230" x2="250" y2="20" class="s-mu" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <line x1="230" y1="260" x2="440" y2="50" class="s-mu" stroke-width="1.4" stroke-dasharray="6 4"/>
+  <line x1="240" y1="140" x2="300" y2="200" class="s-ac" stroke-width="2.4" marker-end="url(#d10a)"/>
+  <text x="306" y="214" class="s-txa" font-size="14" font-weight="700">w</text>
+  <g font-size="12">
+  <text x="355" y="40" class="s-tx" font-weight="700">z = 0 (p = 0.5)</text>
+  <text x="178" y="104" class="s-txm">p = 0.1</text>
+  <text x="384" y="130" class="s-txm">p = 0.9</text>
+  <text x="50" y="44" class="s-tx" font-size="13">p &lt; 0.5 → 0으로 판정</text>
+  <text x="300" y="250" class="s-tx" font-size="13">p &gt; 0.5 → 1</text>
+  </g>
+  <g transform="translate(465,40)" font-size="12.5">
+    <text x="0" y="0" class="s-tx" font-weight="700">읽는 법</text>
+    <text x="0" y="24" class="s-txm">굵은 선: 경계 w·x + b = 0</text>
+    <text x="0" y="44" class="s-txm">점선: p = 0.1, 0.9인 선</text>
+    <text x="0" y="64" class="s-txm">(z = ±2.2)</text>
+    <text x="0" y="88" class="s-txm">화살표 w: 경계에 수직,</text>
+    <text x="0" y="106" class="s-txm">p가 커지는 방향</text>
+    <text x="0" y="130" class="s-txm">‖w‖가 클수록 점선이</text>
+    <text x="0" y="148" class="s-txm">경계에 가까워짐</text>
+    <text x="0" y="166" class="s-txm">(확신이 급격히 변함)</text>
+  </g>
+</svg>
+<figcaption>등확률선은 모두 경계와 평행하다. $p$는 경계로부터 $\mathbf w$ 방향으로 떨어진 거리에만 의존한다.</figcaption>
+</figure>
+<div class="viz-mount" data-viz="logistic"></div>
+<p>결정 경계가 직선이므로, 원 안과 밖처럼 직선으로 나눌 수 없는 데이터는 맞히지 못한다. 8일차의 다항 특징처럼 $x_1^2, x_2^2$을 특징에 추가하면 원래 공간에서 원·타원 모양의 경계를 만들 수 있다. 위 인터랙티브의 "제곱 특징 추가"가 이것이다. 신경망은 이런 특징 변환을 스스로 학습한다(16일차).</p>
+
+<h2 data-min="25" data-kind="concept">이진 교차 엔트로피</h2>
+<p>모델이 확률을 출력하므로 6일차의 최대우도를 그대로 쓴다. 정답이 1일 확률이 $p$인 베르누이 분포에서 관측 $y \in \{0, 1\}$의 확률은</p>
+$$P(y \mid \mathbf x) = p^{\,y}(1-p)^{1-y}$$
+<p>이다($y = 1$이면 $p$, $y = 0$이면 $1 - p$). 표본들이 독립이면 우도는 곱이고, 음의 로그우도를 평균하면 손실이 된다.</p>
+$$L = -\frac1N\sum_{i=1}^N\Big[y_i\ln p_i + (1 - y_i)\ln(1 - p_i)\Big]$$
+<p>이것이 <dfn data-t="bce">이진 교차 엔트로피</dfn>(BCE)다. 6일차의 교차 엔트로피 $H(p, q) = -\sum p\ln q$에서 정답 분포 $(y, 1-y)$와 예측 분포 $(p, 1-p)$를 넣은 것과 같다.</p>
+<table>
+  <thead><tr><th>정답 $y = 1$일 때 예측 $p$</th><th>0.99</th><th>0.9</th><th>0.5</th><th>0.1</th><th>0.01</th></tr></thead>
+  <tbody><tr><td>손실 $-\ln p$</td><td>0.010</td><td>0.105</td><td>0.693</td><td>2.303</td><td>4.605</td></tr></tbody>
+</table>
+<p>맞으면 0에 가깝고, 확신을 갖고 틀릴수록 끝없이 커진다. 아무것도 모르고 항상 0.5를 말하는 모델의 손실이 $\ln2 \approx 0.693$이라는 것은 학습 곡선을 읽을 때 기준점이 된다.</p>
+<h3>왜 MSE를 쓰지 않는가</h3>
+<figure class="fig">
+<svg viewBox="0 0 640 260" width="640" role="img" aria-label="정답이 1일 때 예측 확률에 따른 BCE와 MSE">
+  <g font-size="12">
+  <line x1="70" y1="220" x2="480" y2="220" class="s-mu" stroke-width="1.2"/>
+  <line x1="70" y1="220" x2="70" y2="15" class="s-mu" stroke-width="1.2"/>
+  <g class="s-txm" text-anchor="middle"><text x="70" y="238">0</text><text x="270" y="238">0.5</text><text x="470" y="238">1</text></g>
+  <text x="275" y="255" text-anchor="middle" class="s-txm">예측 확률 p (정답 y = 1)</text>
+  <g class="s-txm" text-anchor="end"><text x="62" y="224">0</text><text x="62" y="180">1</text><text x="62" y="137">2</text><text x="62" y="93">3</text><text x="62" y="50">4</text></g>
+  <polyline points="74,20 78,50 82,67.4 90,89.5 110,119.8 130,137.5 150,150 190,167.6 230,180.2 270,189.9 350,204.5 430,215.4 470,220" class="s-ac" stroke-width="2.6" fill="none"/>
+  <polyline points="70,176.5 110,182.4 150,192.2 190,199 230,204.2 270,209.1 310,212.9 350,215.8 390,218.3 430,219.6 470,220" class="s-org" stroke-width="2.6" fill="none"/>
+  <text x="96" y="40" class="s-txa" font-weight="700">BCE: −ln p</text>
+  <text x="96" y="170" class="s-tx" font-weight="700">MSE: (1 − p)²</text>
+  </g>
+  <g transform="translate(498,50)" font-size="12.5">
+    <text x="0" y="0" class="s-tx" font-weight="700">p = 0.01로 틀리면</text>
+    <text x="0" y="24" class="s-txm">BCE 손실 4.6</text>
+    <text x="0" y="44" class="s-txm">MSE 손실 0.98</text>
+    <text x="0" y="76" class="s-tx" font-weight="700">z에 대한 기울기</text>
+    <text x="0" y="100" class="s-txm">BCE: p − 1 ≈ −0.99</text>
+    <text x="0" y="120" class="s-txm">MSE: 2(p − 1)p(1 − p)</text>
+    <text x="0" y="138" class="s-txm">      ≈ −0.02</text>
+  </g>
+</svg>
+<figcaption>MSE는 최대 1로 막혀 있어, 심하게 틀린 예측에서도 학습 신호가 약하다. BCE는 틀릴수록 강하게 끌어당긴다.</figcaption>
+</figure>
+<div class="box key"><ul>
+<li>MSE에 시그모이드를 붙이면 그래디언트에 $\sigma'(z) = p(1-p)$가 곱해진다. 심하게 틀려 $p \approx 0$이면 이 값이 0에 가까워 학습이 멈춘다.</li>
+<li>BCE는 $\ln$이 시그모이드의 지수를 상쇄해 그래디언트가 $p - y$로 깔끔해진다(다음 절). 틀린 만큼 그대로 신호가 간다.</li>
+<li>로지스틱 회귀의 BCE는 파라미터에 대해 볼록 함수다. 바닥이 하나뿐이므로 경사하강법이 전역 최솟값을 찾는다. MSE + 시그모이드는 볼록하지 않다.</li>
+</ul></div>
+
+<h2 data-min="15" data-kind="concept">그래디언트 유도</h2>
+<p>표본 하나의 손실 $\ell = -[y\ln p + (1-y)\ln(1-p)]$, $p = \sigma(z)$, $z = \mathbf w\cdot\mathbf x + b$. 연쇄법칙으로 사슬을 따라간다.</p>
+$$\frac{\partial\ell}{\partial p} = -\frac{y}{p} + \frac{1-y}{1-p} = \frac{p - y}{p(1-p)}, \qquad \frac{\partial p}{\partial z} = p(1-p)$$
+$$\frac{\partial\ell}{\partial z} = \frac{p - y}{p(1-p)}\cdot p(1-p) = p - y$$
+<p>$p(1-p)$가 정확히 상쇄된다. 나머지는 $\partial z/\partial\mathbf w = \mathbf x$, $\partial z/\partial b = 1$이다. $N$개를 평균하고 행렬로 쓰면</p>
+$$\nabla_{\mathbf w}L = \frac1N X^\top(\mathbf p - \mathbf y), \qquad \frac{\partial L}{\partial b} = \frac1N\sum_i (p_i - y_i)$$
+<table>
+  <thead><tr><th></th><th>선형회귀 + MSE</th><th>로지스틱 회귀 + BCE</th></tr></thead>
+  <tbody>
+    <tr><td>예측</td><td>$\hat y = X\boldsymbol\theta$</td><td>$\mathbf p = \sigma(X\boldsymbol\theta)$</td></tr>
+    <tr><td>그래디언트</td><td>$\frac2N X^\top(\hat{\mathbf y} - \mathbf y)$</td><td>$\frac1N X^\top(\mathbf p - \mathbf y)$</td></tr>
+    <tr><td>닫힌 형태의 해</td><td>있음 (정규방정식)</td><td>없음 → 경사하강법</td></tr>
+  </tbody>
+</table>
+<p>형태가 같다: (예측 − 정답)에 입력을 곱해 평균한다. 11일차의 소프트맥스 회귀도, 신경망의 마지막 층도 같은 모양이다.</p>
+<div class="box ex" data-title="한 걸음 계산"><p>표본 하나 $\mathbf x = (1, 2)$, $y = 1$, 현재 $\mathbf w = (0, 0)$, $b = 0$. $z = 0$, $p = 0.5$, $p - y = -0.5$. 그래디언트 $\nabla_{\mathbf w} = -0.5\cdot(1, 2) = (-0.5, -1)$, $\partial/\partial b = -0.5$. $\eta = 1$로 갱신하면 $\mathbf w = (0.5, 1)$, $b = 0.5$. 새 점수 $z = 0.5 + 2 + 0.5 = 3$, $p = \sigma(3) = 0.953$. 정답 1에 가까워졌다.</p></div>
+
+<h2 data-min="8" data-kind="concept">수치적으로 안전하게 계산하기</h2>
+<p>식을 그대로 코드로 옮기면 두 가지 사고가 난다. $p$가 정확히 0이나 1이 되면 $\ln 0 = -\infty$가 되고, $z = -1000$이면 $e^{1000}$이 넘쳐(overflow) <code>inf</code>가 된다. 로짓 $z$로 직접 손실을 쓰면 둘 다 피할 수 있다.</p>
+$$\ell = \ln(1 + e^{z}) - yz$$
+<p>(대입해 정리하면 원래 식과 같다.) $\ln(1 + e^z)$는 NumPy의 <code>np.logaddexp(0, z)</code>가 큰 $z$에서도 안전하게 계산한다. PyTorch에서는 시그모이드와 BCE를 합친 <code>BCEWithLogitsLoss</code>를 쓰는 것이 같은 이유다.</p>
+<pre class="run"><code>import numpy as np
+z = np.array([-1000.0, -5.0, 0.0, 5.0, 1000.0])
+y = np.array([1.0, 1.0, 1.0, 0.0, 0.0])
+with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+    p = 1 / (1 + np.exp(-z))
+    naive = -(y * np.log(p) + (1 - y) * np.log(1 - p))
+stable = np.logaddexp(0, z) - y * z
+print("p        :", p)
+print("그대로   :", naive)
+print("로짓 형태:", stable)
+</code></pre>
+
+<h2 data-min="22" data-kind="practice">코드 실습: 두 특징으로 종양 분류</h2>
+<p>유방 종양 데이터에서 두 특징(평균 반지름, 평균 오목점 수)만 써서 로지스틱 회귀를 학습하고 결정 경계를 그린다. 세포핵이 크고 윤곽이 오목하게 파인 곳이 많을수록 악성일 것이다.</p>
+<pre class="run"><code>import matplotlib.pyplot as plt
+d = load_data("breast_cancer")
+names = d["feature_names_ko"]
+i, j = names.index("평균 반지름"), names.index("평균 오목점 수")
+X2 = d["X"][:, [i, j]].astype(float); y = d["y"].astype(float)
+mu, sd = X2.mean(axis=0), X2.std(axis=0)
+# 열: 1, 반지름, 오목점 (표준화)
+Z = np.c_[np.ones(len(y)), (X2 - mu) / sd]
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+th = np.zeros(3)
+for step in range(2000):
+    p = sigmoid(Z @ th)
+    th = th - 0.5 * Z.T @ (p - y) / len(y)                  # BCE의 그래디언트
+p = sigmoid(Z @ th)
+print("θ = (b, w_반지름, w_오목점):", th.round(3))
+print("학습 데이터 정확도:", ((p &gt; 0.5) == y).mean().round(4), "  BCE:",
+      (np.logaddexp(0, Z @ th) - y * (Z @ th)).mean().round(4))
+g1, g2 = np.meshgrid(np.linspace(-2.2, 4, 200), np.linspace(-1.3, 4.2, 200))
+P = sigmoid(th[0] + th[1] * g1 + th[2] * g2)
+plt.figure(figsize=(5.8, 4.5))
+cf = plt.contourf(g1, g2, P, levels=np.linspace(0, 1, 11), cmap="RdBu_r", alpha=.35)
+cs = plt.contour(g1, g2, P, levels=[0.1, 0.5, 0.9], colors="k", linewidths=[1, 2, 1],
+                 linestyles=["--", "-", "--"])
+plt.clabel(cs, fmt="p=%.1f", fontsize=8)
+plt.scatter(Z[y == 0, 1], Z[y == 0, 2], s=9, c="C0", label="양성 (y=0)")
+plt.scatter(Z[y == 1, 1], Z[y == 1, 2], s=9, c="C3", label="악성 (y=1)")
+plt.colorbar(cf, label="P(악성)")
+plt.xlabel("평균 반지름 (표준화)")
+plt.ylabel("평균 오목점 수 (표준화)")
+plt.legend(loc="upper left")
+plt.show()
+</code></pre>
+<p>두 가중치가 모두 양수이고, 오목점 쪽이 더 크다. 경계 근처의 점들은 두 특징만으로는 가를 수 없는 표본이다. 다음으로 MSE와 BCE의 그래디언트 크기를 비교한다.</p>
+<pre class="run"><code>zz = np.linspace(-8, 8, 200); s = sigmoid(zz)
+plt.figure(figsize=(5.6, 3.3))
+plt.plot(zz, np.abs(s - 1), lw=2, label="BCE: |∂ℓ/∂z| = |p − 1|")
+plt.plot(zz, np.abs(2 * (s - 1) * s * (1 - s)), lw=2, label="MSE: |2(p − 1)p(1 − p)|")
+plt.axvspan(-8, 0, color="C3", alpha=.07)
+plt.text(-7.5, 0.9, "틀린 쪽 (z &lt; 0)", fontsize=9)
+plt.xlabel("로짓 z (정답 y = 1)")
+plt.ylabel("기울기의 크기")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
+s6 = sigmoid(-6)
+print("z = −6일 때  BCE 기울기 %.4f,  MSE 기울기 %.4f"
+      % (s6 - 1, 2 * (s6 - 1) * s6 * (1 - s6)))
+</code></pre>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>로지스틱 회귀: $p = \sigma(\mathbf w\cdot\mathbf x + b)$. 출력은 확률, $p &gt; 0.5$이면 1.</li>
+  <li>로짓 = 로그 오즈 = 선형 점수 $z$. 가중치 $w_j$는 특징 1단위당 로그 오즈 변화, 오즈는 $e^{w_j}$배.</li>
+  <li>결정 경계 $\mathbf w\cdot\mathbf x + b = 0$은 초평면, $\mathbf w$는 법선. 다항 특징으로 곡선 경계.</li>
+  <li>손실은 BCE = 베르누이 음의 로그우도. 볼록하고, MSE와 달리 크게 틀릴 때 신호가 강하다.</li>
+  <li>그래디언트 $\frac1N X^\top(\mathbf p - \mathbf y)$. 구현은 로짓 형태 $\ln(1 + e^z) - yz$로 안전하게.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"σ(0)의 값은?","o":["0","0.5","1","e"],"a":1,"e":"$1/(1 + e^0) = 1/2$."},
+ {"q":"p = 0.75일 때 오즈는?","o":["0.75","1.33","3","0.25"],"a":2,"e":"$0.75/0.25 = 3$, 즉 3 대 1."},
+ {"q":"로지스틱 회귀에서 가중치 w_j = ln 2 ≈ 0.69이다. x_j가 1 증가하면 오즈는?","o":["0.69 증가","2배","0.5배","변하지 않음"],"a":1,"e":"로그 오즈가 ln 2만큼 늘면 오즈는 $e^{\\ln 2} = 2$배."},
+ {"q":"입력이 2개인 로지스틱 회귀의 결정 경계 모양은?","o":["원","직선","포물선","점"],"a":1,"e":"$w_1x_1 + w_2x_2 + b = 0$은 직선이다."},
+ {"q":"정답이 1인 표본을 p = 0.1로 예측했을 때 BCE 손실은?","o":["0.1","0.9","2.303","0.105"],"a":2,"e":"$-\\ln 0.1 \\approx 2.303$."},
+ {"q":"BCE와 시그모이드를 함께 쓸 때 로짓 z에 대한 그래디언트는?","o":["p(1 − p)","p − y","(p − y)²","y/p"],"a":1,"e":"$\\sigma'$이 상쇄되어 $p - y$만 남는다."},
+ {"q":"분류에 MSE + 시그모이드보다 BCE를 쓰는 이유로 옳은 것은?","o":["계산이 빠르다","크게 틀린 예측에서 기울기가 거의 0이 되는 문제가 없고, 손실이 볼록하다","항상 정확도가 100%가 된다","확률을 출력하지 않아도 된다"],"a":1,"e":"MSE에는 $p(1-p)$가 곱해져 틀린 쪽에서 학습이 멈춘다."},
+ {"q":"항상 p = 0.5를 출력하는 모델의 BCE는?","o":["0","0.5","ln 2 ≈ 0.693","1"],"a":2,"e":"모든 표본에서 $-\\ln 0.5 = \\ln 2$."}
+]</script>
+
+<h2 data-min="8" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>$\ell = -[y\ln\sigma(z) + (1-y)\ln(1-\sigma(z))]$가 $\ln(1 + e^z) - yz$와 같음을 보여라.
+    <details class="sol"><summary>풀이</summary><p>$\ln\sigma(z) = -\ln(1 + e^{-z})$, $\ln(1 - \sigma(z)) = \ln\frac{e^{-z}}{1 + e^{-z}} = -z - \ln(1 + e^{-z})$. 대입하면 $\ell = y\ln(1+e^{-z}) + (1-y)(z + \ln(1+e^{-z})) = \ln(1 + e^{-z}) + z - yz$. 그리고 $\ln(1 + e^{-z}) + z = \ln(e^z + 1)$이므로 $\ell = \ln(1 + e^z) - yz$.</p></details></li>
+  <li>2차원 로지스틱 회귀 $\mathbf w = (2, -1)$, $b = 1$에서 (a) 결정 경계의 식, (b) 점 $(1, 1)$의 확률, (c) 경계 위의 한 점에서 $\mathbf w$ 방향으로 거리 1만큼 이동했을 때의 확률을 구하라.
+    <details class="sol"><summary>풀이</summary><p>(a) $2x_1 - x_2 + 1 = 0$, 즉 $x_2 = 2x_1 + 1$. (b) $z = 2 - 1 + 1 = 2$, $p = 0.881$. (c) 경계 위에서 $z = 0$, 단위 방향 $\mathbf w/\|\mathbf w\|$로 1만큼 가면 $z$는 $\|\mathbf w\| = \sqrt5 \approx 2.236$ 증가, $p = \sigma(2.236) \approx 0.903$.</p></details></li>
+  <li>데이터가 완벽하게 선형 분리 가능할 때(두 클래스를 직선 하나로 오류 없이 나눌 수 있을 때) BCE를 경사하강법으로 계속 최소화하면 $\|\mathbf w\|$는 어떻게 되는가? 왜 문제인가?
+    <details class="sol"><summary>풀이</summary><p>경계를 고정한 채 $\mathbf w$를 키우면 모든 표본의 $p$가 정답 쪽으로 더 극단적이 되어 손실이 계속 줄어든다. 손실의 최솟값이 무한대 크기의 $\mathbf w$에서야 달성되므로 $\|\mathbf w\|$가 끝없이 커진다. 확률이 0과 1로 극단화되어 새로운 데이터에 과신하게 된다. 12일차의 L2 규제가 이를 막는다.</p></details></li>
+  <li>MSE + 시그모이드의 그래디언트 $\partial\ell/\partial z = 2(p - y)p(1 - p)$를 유도하고, $y = 1$일 때 이 값의 크기가 가장 큰 $p$를 구하라.
+    <details class="sol"><summary>풀이</summary><p>$\ell = (p - y)^2$, $\partial\ell/\partial p = 2(p - y)$, $\partial p/\partial z = p(1-p)$. $y = 1$이면 크기 $2(1-p)^2p$. $p$로 미분해 0으로 두면 $(1-p)(1-3p) = 0$, $p = 1/3$에서 최대 $2\cdot\frac49\cdot\frac13 \approx 0.296$. 즉 MSE의 학습 신호는 $p$가 아주 작을 때(가장 크게 틀릴 때) 오히려 약해진다.</p></details></li>
+</ol>
+
+<h2 data-min="40" data-kind="project">미니 프로젝트: 유방암 진단 이진 분류기</h2>
+<section class="project" data-title="30개 특징으로 악성 종양을 판정하는 로지스틱 회귀 분류기" data-min="40">
+<p class="lead">유방 종양 569개의 30개 특징으로 악성 여부를 판정하는 로지스틱 회귀를 처음부터 구현한다. 층화 분할, 표준화, 안정한 손실, 그래디언트 검증, 학습 곡선, 오류 유형 분석, 가중치 해석까지 분류 프로젝트의 전 과정을 거친다. 이 분류기는 14일차 주간 프로젝트의 출발점이 된다.</p>
+<ol class="steps">
+<li><b>층화 분할과 표준화.</b> 악성 비율(약 37%)이 학습·테스트에서 같도록 클래스마다 따로 섞어 80:20으로 나눈다. 표준화 통계는 학습 세트에서만 계산한다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("breast_cancer")
+X, y = d["X"].astype(float), d["y"].astype(float)
+names = d["feature_names_ko"]
+rng = np.random.default_rng(0)
+tr, te = [], []
+for c in [0, 1]:
+    idx = rng.permutation(np.where(y == c)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+mu, sd = X[tr].mean(axis=0), X[tr].std(axis=0)
+design = lambda M: np.c_[np.ones(len(M)), (M - mu) / sd]
+Ztr, Zte, ytr, yte = design(X[tr]), design(X[te]), y[tr], y[te]
+print("학습", Ztr.shape, "악성 비율 %.3f" % ytr.mean(), " 테스트", Zte.shape,
+      "악성 비율 %.3f" % yte.mean())
+</code></pre></li>
+<li><b>손실과 그래디언트.</b> 로짓 형태의 안정한 BCE와 그래디언트를 구현하고 수치 미분으로 검증한다.
+<pre class="run"><code>def sigmoid(z):
+    # 넘침 없는 시그모이드 (수학적으로 동일)
+    return 0.5 * (1 + np.tanh(0.5 * z))
+def bce(th, Z, t_):
+    z = Z @ th
+    # TODO 확인: ln(1 + e^z) − yz
+    return np.mean(np.logaddexp(0, z) - t_ * z)
+def grad(th, Z, t_):
+    return Z.T @ (sigmoid(Z @ th) - t_) / len(t_)         # TODO 확인: Xᵀ(p − y)/N
+
+th0 = np.random.default_rng(1).normal(size=Ztr.shape[1]) * 0.1
+h = 1e-5; gn = np.zeros_like(th0)
+for k in range(len(th0)):
+    e = np.zeros_like(th0); e[k] = h
+    gn[k] = (bce(th0 + e, Ztr, ytr) - bce(th0 - e, Ztr, ytr)) / (2 * h)
+print("그래디언트 상대 오차:",
+      np.abs(grad(th0, Ztr, ytr) - gn).max() / np.abs(gn).max())
+</code></pre></li>
+<li><b>학습과 학습 곡선.</b> 학습률 0.5로 3000스텝 학습하며 학습·테스트 BCE와 정확도를 기록한다. 테스트 곡선은 관찰용으로만 그리고, 학습 길이는 미리 정한 1000스텝으로 한다.
+<pre class="run"><code>th = np.zeros(Ztr.shape[1]); log = []
+for step in range(1, 3001):
+    th = th - 0.5 * grad(th, Ztr, ytr)
+    if step == 1000: th_final = th.copy()
+    if step % 20 == 0:
+        acc = lambda Z, t_: ((sigmoid(Z @ th) &gt; 0.5) == t_).mean()
+        log.append((step, bce(th, Ztr, ytr), bce(th, Zte, yte), acc(Ztr, ytr),
+                    acc(Zte, yte)))
+log = np.array(log)
+fig, axs = plt.subplots(1, 2, figsize=(9.5, 3.3))
+axs[0].plot(log[:, 0], log[:, 1], label="학습")
+axs[0].plot(log[:, 0], log[:, 2], label="테스트")
+axs[0].axhline(np.log(2), color="gray", ls=":", lw=1); axs[0].set_ylim(0, 0.2)
+axs[0].set_xlabel("스텝")
+axs[0].set_ylabel("BCE")
+axs[0].legend()
+axs[0].grid(alpha=.3)
+axs[1].plot(log[:, 0], log[:, 3], label="학습")
+axs[1].plot(log[:, 0], log[:, 4], label="테스트")
+axs[1].set_xlabel("스텝")
+axs[1].set_ylabel("정확도")
+axs[1].legend()
+axs[1].grid(alpha=.3)
+plt.tight_layout(); plt.show()
+k = np.argmin(log[:, 2])
+print(f"테스트 BCE 최소: {log[k, 2]:.4f} (스텝 {int(log[k, 0])}),  3000스텝: "
+      f"{log[-1, 2]:.4f}")
+</code></pre></li>
+<li><b>오류의 종류.</b> 1000스텝 모델로 테스트 세트를 판정하고, 악성을 양성으로 놓친 경우(거짓 음성)와 양성을 악성으로 판정한 경우(거짓 양성)를 센다. 임계값을 낮추면 두 오류가 어떻게 바뀌는지 표로 만들어라.
+<pre class="run"><code>p_te = sigmoid(Zte @ th_final)
+print("1000스텝 모델  테스트 정확도: %.4f" % ((p_te &gt; 0.5) == yte).mean())
+print("임계값  놓친 악성(FN)  잘못 경보(FP)")
+for t_ in [0.5, 0.3, 0.2, 0.1]:
+    pred = p_te &gt; t_
+    fn = int(((pred == 0) &amp; (yte == 1)).sum())
+    fp = int(((pred == 1) &amp; (yte == 0)).sum())
+    print(f"  {t_:.1f}        {fn:2d}              {fp:2d}")
+plt.figure(figsize=(5.6, 3)); bins = np.linspace(0, 1, 21)
+plt.hist(p_te[yte == 0], bins, alpha=.6, label="실제 양성")
+plt.hist(p_te[yte == 1], bins, alpha=.6, label="실제 악성")
+plt.xlabel("예측 확률 P(악성)"); plt.ylabel("개수"); plt.legend(); plt.show()
+</code></pre></li>
+<li><b>가중치 해석.</b> 표준화 가중치의 절댓값 상위 10개를 막대그래프로 그리고, 각 특징이 1 표준편차 늘 때 오즈가 몇 배가 되는지 계산하라.
+<pre class="run"><code>w = th_final[1:]
+o = np.argsort(np.abs(w))[::-1][:10][::-1]
+plt.figure(figsize=(5.8, 3.8))
+plt.barh(np.array(names)[o], w[o], color=["C3" if v &gt; 0 else "C0" for v in w[o]])
+plt.xlabel("표준화 가중치 (로그 오즈 변화)")
+plt.grid(alpha=.3, axis="x")
+plt.tight_layout()
+plt.show()
+for k in o[::-1][:5]:
+    print(f"{names[k]:12s} w = {w[k]:+.2f}  → 오즈 × {np.exp(w[k]):.2f}")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>1단계: 학습 454개, 테스트 115개, 악성 비율은 둘 다 약 0.37이다.</li>
+<li>3단계: 학습 BCE는 계속 줄지만 테스트 BCE는 약 780스텝에서 최소(0.062)가 된 뒤 천천히 다시 커져 3000스텝에서 0.071이 된다. 가중치가 계속 커지며 학습 데이터에 과하게 맞춰지는 과적합의 시작이다(연습 문제 3). 테스트 곡선을 보고 학습 길이를 고르면 테스트 세트가 학습에 관여한 셈이 되어 성능이 부풀려진다. 그래서 12일차에서 검증 세트를 따로 떼는 방법과 규제를 배운다.</li>
+<li>4단계: 1000스텝 모델의 테스트 정확도는 99.1%이고, 임계값 0.5에서 오류는 놓친 악성 1개뿐이다. 임계값을 0.2로 낮추면 놓친 악성이 0이 되는 대신 거짓 경보가 6개로 늘고, 0.1이면 9개가 된다. 암 진단에서는 놓친 악성(FN)의 비용이 거짓 경보(FP)보다 훨씬 크므로 임계값을 낮추는 쪽을 택한다. 정확도 하나로는 이 차이를 볼 수 없다. 12일차의 정밀도·재현율·ROC가 이 문제를 다룬다.</li>
+<li>5단계: 반지름, 넓이, 둘레의 표준오차와 최악 오목점 수, 최악 질감 등이 큰 양의 가중치를 받는다. 다만 반지름·둘레·넓이처럼 서로 거의 같은 정보를 담은 특징이 많아, 개별 가중치는 분할이나 학습 길이에 따라 크게 바뀔 수 있다. 상관이 강한 특징들 사이에서는 "누가 중요한가"보다 "그 묶음이 중요하다"고 읽는 것이 안전하다.</li>
+</ul></details>
+</section>

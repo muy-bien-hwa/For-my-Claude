@@ -1,0 +1,309 @@
+<ul class="goals">
+  <li>벡터를 화살표(기하)와 숫자 목록(대수) 두 관점으로 다룰 수 있다.</li>
+  <li>노름, 내적, 코사인 유사도, 투영을 계산하고 기하학적 의미를 설명할 수 있다.</li>
+  <li>행렬곱의 형상 규칙과 계산 방법을 알고, 교환법칙이 성립하지 않음을 설명할 수 있다.</li>
+  <li>신경망 층의 계산 $XW + b$를 형상과 함께 읽을 수 있다.</li>
+</ul>
+
+<h2 data-min="15" data-kind="concept">벡터: 화살표이자 숫자 목록</h2>
+<p>벡터 $\mathbf v = (3, 2)$는 원점에서 점 $(3, 2)$로 향하는 화살표다. 동시에 어떤 대상을 설명하는 숫자 목록이기도 하다. 붓꽃 한 송이는 (꽃받침 길이, 꽃받침 너비, 꽃잎 길이, 꽃잎 너비)라는 4차원 벡터이고, 손글씨 이미지 하나는 64차원 벡터다. 딥러닝에서 단어, 이미지, 사용자는 모두 수백~수천 차원의 벡터로 표현된다.</p>
+<figure class="fig">
+<svg viewBox="0 0 600 220" width="600" role="img" aria-label="벡터 덧셈과 스칼라배">
+  <defs><marker id="d3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker>
+  <marker id="d3r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-redf"/></marker>
+  <marker id="d3k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--text)"/></marker></defs>
+  <g transform="translate(30,190)">
+    <line x1="0" y1="0" x2="250" y2="0" class="s-mu"/><line x1="0" y1="0" x2="0" y2="-170" class="s-mu"/>
+    <line x1="0" y1="0" x2="120" y2="-40" class="s-ac" stroke-width="2.5" marker-end="url(#d3a)"/>
+    <line x1="120" y1="-40" x2="180" y2="-130" class="s-red" stroke-width="2.5" marker-end="url(#d3r)"/>
+    <line x1="0" y1="0" x2="60" y2="-90" class="s-red" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <line x1="60" y1="-90" x2="180" y2="-130" class="s-ac" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <line x1="0" y1="0" x2="180" y2="-130" class="s-ln" stroke-width="2.5" marker-end="url(#d3k)"/>
+    <text x="64" y="-6" class="s-txa" font-weight="700">a</text><text x="160" y="-80" style="fill:var(--bad)" font-weight="700">b</text><text x="188" y="-132" class="s-tx" font-weight="700">a + b</text>
+    <text x="125" y="22" text-anchor="middle" class="s-txm" font-size="12">덧셈: 끝에 이어 붙이기 (성분끼리 더하기)</text>
+  </g>
+  <g transform="translate(330,190)">
+    <line x1="0" y1="0" x2="250" y2="0" class="s-mu"/><line x1="0" y1="0" x2="0" y2="-170" class="s-mu"/>
+    <line x1="0" y1="0" x2="200" y2="-120" class="s-ln" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#d3k)"/>
+    <line x1="0" y1="0" x2="100" y2="-60" class="s-ac" stroke-width="3" marker-end="url(#d3a)"/>
+    <line x1="0" y1="0" x2="-50" y2="30" class="s-red" stroke-width="2.5" marker-end="url(#d3r)"/>
+    <text x="96" y="-70" class="s-txa" font-weight="700">v</text><text x="200" y="-128" class="s-tx" font-weight="700">2v</text><text x="-40" y="16" style="fill:var(--bad)" font-weight="700" text-anchor="end">−0.5v</text>
+    <text x="125" y="22" text-anchor="middle" class="s-txm" font-size="12">스칼라배: 같은 직선 위에서 늘이기·뒤집기</text>
+  </g>
+</svg>
+<figcaption>벡터의 두 기본 연산. 대수적으로는 성분별 계산이고 기하적으로는 화살표의 이동과 늘이기다.</figcaption>
+</figure>
+<p>벡터의 크기는 <dfn data-t="norm">노름</dfn>으로 잰다. 가장 흔한 L2 노름은 피타고라스 정리로 구한 길이이고, L1 노름은 성분 절댓값의 합이다.</p>
+$$\|\mathbf v\|_2 = \sqrt{\textstyle\sum_i v_i^2}, \qquad \|\mathbf v\|_1 = \textstyle\sum_i |v_i|$$
+<div class="box ex" data-title="노름 계산"><p>$\mathbf v = (3, -4)$이면 $\|\mathbf v\|_2 = \sqrt{9 + 16} = 5$, $\|\mathbf v\|_1 = 3 + 4 = 7$이다. 길이로 나눈 $\mathbf v / \|\mathbf v\|_2 = (0.6, -0.8)$은 같은 방향의 <b>단위벡터</b>(길이 1)다.</p></div>
+<pre class="run"><code>import numpy as np
+v = np.array([3.0, -4.0])
+print("L2 노름:", np.linalg.norm(v), "  L1 노름:", np.abs(v).sum())
+u = v / np.linalg.norm(v)
+print("단위벡터:", u, "길이", np.linalg.norm(u))
+a, b = np.array([1.0, 2.0]), np.array([3.0, -1.0])
+print("a + b =", a + b, "  2a =", 2 * a, "  a - b =", a - b)
+</code></pre>
+
+<h2 data-min="25" data-kind="concept">내적과 코사인 유사도</h2>
+<p><dfn data-t="dot-product">내적</dfn>은 같은 길이의 두 벡터에서 하나의 수를 만든다. 정의는 두 가지이며, 둘은 항상 같은 값을 준다.</p>
+$$\mathbf a\cdot\mathbf b = \sum_{i} a_i b_i = \|\mathbf a\|\,\|\mathbf b\|\cos\theta$$
+<p>왼쪽은 <b>계산 방법</b>이고 오른쪽은 <b>의미</b>다. $\theta$는 두 화살표 사이의 각이다. 내적은 두 벡터가 같은 방향을 가리키는 정도를 잰다.</p>
+<figure class="fig">
+<svg viewBox="0 0 600 170" width="600" role="img" aria-label="내적의 부호와 각도">
+  <defs><marker id="d3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker>
+  <marker id="d3c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-redf"/></marker></defs>
+  <g transform="translate(50,110)"><line x1="0" y1="0" x2="120" y2="0" class="s-ac" stroke-width="2.5" marker-end="url(#d3b)"/><line x1="0" y1="0" x2="95" y2="-55" class="s-red" stroke-width="2.5" marker-end="url(#d3c)"/>
+    <text x="60" y="40" text-anchor="middle" class="s-tx" font-weight="700">예각: a·b &gt; 0</text><text x="60" y="58" text-anchor="middle" class="s-txm" font-size="12">비슷한 방향</text></g>
+  <g transform="translate(250,110)"><line x1="0" y1="0" x2="120" y2="0" class="s-ac" stroke-width="2.5" marker-end="url(#d3b)"/><line x1="0" y1="0" x2="0" y2="-80" class="s-red" stroke-width="2.5" marker-end="url(#d3c)"/>
+    <path d="M0 -12 H12 V0" class="s-ln"/>
+    <text x="60" y="40" text-anchor="middle" class="s-tx" font-weight="700">직각: a·b = 0</text><text x="60" y="58" text-anchor="middle" class="s-txm" font-size="12">서로 무관(직교)</text></g>
+  <g transform="translate(470,110)"><line x1="0" y1="0" x2="100" y2="0" class="s-ac" stroke-width="2.5" marker-end="url(#d3b)"/><line x1="0" y1="0" x2="-70" y2="-55" class="s-red" stroke-width="2.5" marker-end="url(#d3c)"/>
+    <text x="30" y="40" text-anchor="middle" class="s-tx" font-weight="700">둔각: a·b &lt; 0</text><text x="30" y="58" text-anchor="middle" class="s-txm" font-size="12">반대 방향</text></g>
+</svg>
+<figcaption>내적의 부호는 두 벡터 사이 각이 90°보다 작은지, 같은지, 큰지를 알려 준다.</figcaption>
+</figure>
+<p>내적이 0인 두 벡터는 <dfn data-t="orthogonal">직교</dfn>한다고 한다. 내적은 길이에도 비례하므로, 방향만 비교하려면 두 길이로 나눈다. 이것이 <dfn data-t="cosine-similarity">코사인 유사도</dfn>이며 $-1$(정반대)에서 $1$(같은 방향) 사이 값을 가진다.</p>
+$$\cos\theta = \frac{\mathbf a\cdot\mathbf b}{\|\mathbf a\|\,\|\mathbf b\|}$$
+<div class="viz-mount" data-viz="vectors"></div>
+<div class="box ex" data-title="내적과 각도">
+<p>$\mathbf a = (3, 1)$, $\mathbf b = (1, 2)$: $\mathbf a\cdot\mathbf b = 3\cdot1 + 1\cdot2 = 5$, $\|\mathbf a\| = \sqrt{10}$, $\|\mathbf b\| = \sqrt5$, $\cos\theta = 5/\sqrt{50} \approx 0.707$, 즉 $\theta = 45°$.</p>
+</div>
+<div class="box key" data-title="딥러닝 속의 내적">
+<ul>
+<li>뉴런 하나의 계산 $z = \mathbf w\cdot\mathbf x + b$: 입력 $\mathbf x$가 가중치 패턴 $\mathbf w$와 얼마나 닮았는가.</li>
+<li>어텐션(43일차)의 $QK^\top$: 모든 질의(Query)와 키(Key) 쌍의 내적 = 유사도 표.</li>
+<li>임베딩 검색, 추천: 벡터 사이 코사인 유사도로 비슷한 항목을 찾는다.</li>
+</ul></div>
+<pre class="run"><code>def cos_sim(u, v):
+    return (u @ v) / (np.linalg.norm(u) * np.linalg.norm(v))
+a, b = np.array([3.0, 1.0]), np.array([1.0, 2.0])
+print("a·b =", a @ b, " cos =", round(cos_sim(a, b), 4), " 각도 =",
+      round(np.degrees(np.arccos(cos_sim(a, b))), 1), "도")
+print("직교 예:", np.array([1, 2]) @ np.array([-2, 1]))
+print("길이를 10배 해도 코사인 유사도는 같다:", round(cos_sim(10 * a, b), 4))
+</code></pre>
+
+<h2 data-min="12" data-kind="concept">투영</h2>
+<p>벡터 $\mathbf a$를 다른 벡터 $\mathbf b$ 방향의 성분과 그에 수직인 성분으로 나눌 수 있다. $\mathbf b$ 방향 성분을 <dfn data-t="projection">투영</dfn>이라 한다.</p>
+$$\text{투영 길이} = \frac{\mathbf a\cdot\mathbf b}{\|\mathbf b\|}, \qquad \mathrm{proj}_{\mathbf b}\,\mathbf a = \frac{\mathbf a\cdot\mathbf b}{\|\mathbf b\|^2}\,\mathbf b$$
+<figure class="fig">
+<svg viewBox="0 0 420 200" width="420" role="img" aria-label="투영">
+  <defs><marker id="d3p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker>
+  <marker id="d3q" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-redf"/></marker></defs>
+  <line x1="40" y1="160" x2="380" y2="160" class="s-red" stroke-width="2.5" marker-end="url(#d3q)"/>
+  <line x1="40" y1="160" x2="230" y2="40" class="s-ac" stroke-width="2.5" marker-end="url(#d3p)"/>
+  <line x1="230" y1="40" x2="230" y2="160" class="s-mu" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <line x1="40" y1="160" x2="230" y2="160" class="s-grn" stroke-width="5" opacity=".8"/>
+  <path d="M218 160 V148 H230" class="s-ln"/>
+  <text x="120" y="88" class="s-txa" font-weight="700">a</text><text x="386" y="164" style="fill:var(--bad)" font-weight="700">b</text>
+  <text x="135" y="184" text-anchor="middle" style="fill:var(--ok)" font-weight="700">a의 b 방향 성분</text>
+</svg>
+<figcaption>$\mathbf a$에서 $\mathbf b$의 직선으로 수선을 내린 발까지가 투영이다.</figcaption>
+</figure>
+<div class="box ex" data-title="투영 계산"><p>$\mathbf a = (2, 3)$, $\mathbf b = (4, 0)$이면 $\mathbf a\cdot\mathbf b = 8$, $\|\mathbf b\| = 4$이므로 투영 길이는 2이고 투영 벡터는 $(2, 0)$이다. 수직 성분은 $\mathbf a - (2, 0) = (0, 3)$이며 $\mathbf b$와의 내적이 0이다.</p></div>
+<p>4일차의 PCA는 데이터를 분산이 가장 큰 방향으로 투영해 차원을 줄인다.</p>
+
+<h2 data-min="25" data-kind="concept">행렬과 행렬곱</h2>
+<p>$m\times n$ 행렬은 $m$개의 행과 $n$개의 열로 배열한 수의 표다. $m\times n$ 행렬 $A$와 $n\times p$ 행렬 $B$의 <dfn data-t="matmul">행렬곱</dfn> $C = AB$는 $m\times p$ 행렬이며, 각 원소는 <b>A의 행과 B의 열의 내적</b>이다.</p>
+$$C_{ij} = \sum_{k=1}^{n} A_{ik}B_{kj}$$
+<figure class="fig">
+<svg viewBox="0 0 600 200" width="600" role="img" aria-label="행렬곱 원소 계산">
+  <g transform="translate(30,40)">
+    <g class="s-f"><rect width="40" height="34"/><rect x="40" width="40" height="34"/><rect x="0" y="34" width="40" height="34"/><rect x="40" y="34" width="40" height="34"/><rect y="68" width="40" height="34"/><rect x="40" y="68" width="40" height="34"/></g>
+    <g class="s-acs" stroke-width="1.5"><rect y="34" width="40" height="34"/><rect x="40" y="34" width="40" height="34"/></g>
+    <g class="s-tx mono" font-size="13" text-anchor="middle"><text x="20" y="22">1</text><text x="60" y="22">2</text><text x="20" y="56">3</text><text x="60" y="56">4</text><text x="20" y="90">5</text><text x="60" y="90">6</text></g>
+    <text x="40" y="-12" text-anchor="middle" class="s-tx" font-weight="700">A (3×2)</text></g>
+  <text x="138" y="96" class="s-tx" font-size="20">×</text>
+  <g transform="translate(170,57)">
+    <g class="s-f"><rect width="40" height="34"/><rect x="40" width="40" height="34"/><rect x="80" width="40" height="34"/><rect y="34" width="40" height="34"/><rect x="40" y="34" width="40" height="34"/><rect x="80" y="34" width="40" height="34"/></g>
+    <g class="s-acs" stroke-width="1.5"><rect x="80" width="40" height="34"/><rect x="80" y="34" width="40" height="34"/></g>
+    <g class="s-tx mono" font-size="13" text-anchor="middle"><text x="20" y="22">1</text><text x="60" y="22">0</text><text x="100" y="22">-1</text><text x="20" y="56">2</text><text x="60" y="56">1</text><text x="100" y="56">0</text></g>
+    <text x="60" y="-12" text-anchor="middle" class="s-tx" font-weight="700">B (2×3)</text></g>
+  <text x="312" y="96" class="s-tx" font-size="20">=</text>
+  <g transform="translate(340,40)">
+    <g class="s-f"><rect width="44" height="34"/><rect x="44" width="44" height="34"/><rect x="88" width="44" height="34"/><rect y="34" width="44" height="34"/><rect x="44" y="34" width="44" height="34"/><rect x="88" y="34" width="44" height="34"/><rect y="68" width="44" height="34"/><rect x="44" y="68" width="44" height="34"/><rect x="88" y="68" width="44" height="34"/></g>
+    <rect x="88" y="34" width="44" height="34" class="s-acs" stroke-width="2"/>
+    <g class="s-tx mono" font-size="13" text-anchor="middle"><text x="22" y="22">5</text><text x="66" y="22">2</text><text x="110" y="22">-1</text><text x="22" y="56">11</text><text x="66" y="56">4</text><text x="110" y="56" font-weight="700">-3</text><text x="22" y="90">17</text><text x="66" y="90">6</text><text x="110" y="90">-5</text></g>
+    <text x="66" y="-12" text-anchor="middle" class="s-tx" font-weight="700">C = AB (3×3)</text></g>
+  <text x="300" y="186" text-anchor="middle" class="s-txm" font-size="12.5">C[1, 2] = A의 1행 · B의 2열 = 3×(−1) + 4×0 = −3</text>
+</svg>
+<figcaption>결과의 각 칸은 하나의 내적이다. 강조된 행과 열이 강조된 칸을 만든다.</figcaption>
+</figure>
+<div class="box key" data-title="형상 규칙"><p>$(m\times \underline{n})\,(\underline{n}\times p) = (m\times p)$. 안쪽 크기가 같아야 하고, 바깥쪽 크기가 남는다. 형상 오류가 나면 이 규칙부터 확인한다.</p></div>
+<ul>
+  <li>교환법칙은 성립하지 않는다: $AB \ne BA$ (형상부터 다를 수 있다).</li>
+  <li>결합법칙은 성립한다: $(AB)C = A(BC)$.</li>
+  <li><dfn data-t="transpose">전치</dfn> $A^\top$는 행과 열을 바꾼 행렬이며, 곱의 전치는 순서가 뒤집힌다: $(AB)^\top = B^\top A^\top$.</li>
+  <li><dfn data-t="identity-matrix">단위행렬</dfn> $I$는 곱해도 변화가 없는 행렬이다: $AI = IA = A$.</li>
+</ul>
+<pre class="run"><code>A = np.array([[1, 2], [3, 4], [5, 6]])   # (3, 2)
+B = np.array([[1, 0, -1], [2, 1, 0]])     # (2, 3)
+C = A @ B
+print("C = AB =\n", C, "\n형상", C.shape)
+print("C[1, 2] = A[1] · B[:, 2] =", A[1] @ B[:, 2])
+print("BA 형상:", (B @ A).shape, "→ AB와 형상부터 다르다")
+print("(AB)^T == B^T A^T:", np.array_equal((A @ B).T, B.T @ A.T))
+print("원소별 곱(*)과 행렬곱(@)은 다르다:\n",
+      np.array([[1, 2], [3, 4]]) * np.array([[1, 2], [3, 4]]))
+</code></pre>
+<div class="box warn"><p>NumPy에서 <code>*</code>는 원소별 곱, <code>@</code>는 행렬곱이다. 1차원 배열끼리의 <code>@</code>는 내적이다.</p></div>
+
+<h2 data-min="15" data-kind="concept">신경망 층을 행렬로 읽기</h2>
+<p>샘플 하나 $\mathbf x\in\mathbb R^{d}$에서 출력 $k$개를 만드는 층은 출력마다 내적을 하나씩 계산한다. 샘플 $N$개를 행으로 쌓은 행렬 $X$를 쓰면 이 모든 내적이 행렬곱 한 번이 된다.</p>
+$$H = XW + \mathbf b, \qquad X\in\mathbb R^{N\times d},\; W\in\mathbb R^{d\times k},\; \mathbf b\in\mathbb R^{k},\; H\in\mathbb R^{N\times k}$$
+<figure class="fig">
+<svg viewBox="0 0 620 170" width="620" role="img" aria-label="층 계산의 형상">
+  <g transform="translate(20,30)"><rect width="70" height="110" class="s-acs" stroke-width="1.5"/><text x="35" y="60" text-anchor="middle" class="s-tx" font-weight="700">X</text><text x="35" y="128" text-anchor="middle" class="s-txm" font-size="12">N × d</text><text x="35" y="-8" text-anchor="middle" class="s-txm" font-size="12">샘플 N개</text></g>
+  <text x="104" y="92" class="s-tx" font-size="18">@</text>
+  <g transform="translate(130,52)"><rect width="110" height="70" class="s-f" stroke-width="1.5"/><text x="55" y="40" text-anchor="middle" class="s-tx" font-weight="700">W</text><text x="55" y="88" text-anchor="middle" class="s-txm" font-size="12">d × k</text><text x="55" y="-8" text-anchor="middle" class="s-txm" font-size="12">가중치</text></g>
+  <text x="252" y="92" class="s-tx" font-size="18">+</text>
+  <g transform="translate(276,75)"><rect width="110" height="20" class="s-f2" stroke-width="1.5"/><text x="55" y="15" text-anchor="middle" class="s-tx" font-size="12" font-weight="700">b</text><text x="55" y="40" text-anchor="middle" class="s-txm" font-size="12">(k,) 모든 행에 더함</text></g>
+  <text x="398" y="92" class="s-tx" font-size="18">=</text>
+  <g transform="translate(424,30)"><rect width="110" height="110" class="s-acs" stroke-width="1.5"/><text x="55" y="60" text-anchor="middle" class="s-tx" font-weight="700">H</text><text x="55" y="128" text-anchor="middle" class="s-txm" font-size="12">N × k</text><text x="55" y="-8" text-anchor="middle" class="s-txm" font-size="12">샘플마다 출력 k개</text></g>
+  <text x="560" y="92" class="s-txm" font-size="12">브로드캐스팅</text>
+</svg>
+<figcaption>층 하나의 계산. $H$의 $(i, j)$ 원소는 샘플 $i$와 가중치 열 $j$의 내적에 편향 $b_j$를 더한 값이다.</figcaption>
+</figure>
+<pre class="run"><code>rng = np.random.default_rng(0)
+N, d, k = 4, 3, 2
+X = rng.normal(size=(N, d))
+W = rng.normal(size=(d, k))
+b = np.array([0.5, -0.5])
+H = X @ W + b                                  # (4,3)@(3,2) + (2,) → (4,2)
+H_loop = np.array([[X[i] @ W[:, j] + b[j] for j in range(k)] for i in range(N)])
+print("H 형상", H.shape, " 반복문 결과와 같음:", np.allclose(H, H_loop))
+S = X @ X.T                                    # 모든 샘플 쌍의 내적
+print("유사도 행렬 형상", S.shape, " 대칭:", np.allclose(S, S.T))
+</code></pre>
+<p>PyTorch의 <code>nn.Linear</code>는 가중치를 $(k, d)$로 저장하고 $XW^\top + b$를 계산한다. 저장 방식의 차이일 뿐 계산 내용은 같다.</p>
+
+<h2 data-min="15" data-kind="practice">실제 데이터: 손글씨 숫자의 유사도</h2>
+<p>손글씨 이미지 하나는 64차원 벡터다. 두 이미지의 코사인 유사도는 두 숫자 모양이 얼마나 비슷한지를 잰다. 숫자별 평균 이미지 10개 사이의 유사도를 표로 그려 본다.</p>
+<pre class="run"><code>import matplotlib.pyplot as plt
+d = load_data("digits")
+X, y = d["X"].astype(float), d["y"]
+M = np.stack([X[y == k].mean(axis=0) for k in range(10)])   # (10, 64) 숫자별 평균
+Mn = M / np.linalg.norm(M, axis=1, keepdims=True)             # 각 행을 길이 1로
+# (10, 10) 코사인 유사도 표
+S = Mn @ Mn.T
+plt.figure(figsize=(4.8, 4))
+plt.imshow(S, cmap="Blues", vmin=0.4, vmax=1); plt.colorbar(label="코사인 유사도")
+plt.xticks(range(10)); plt.yticks(range(10)); plt.title("숫자별 평균 이미지의 유사도")
+plt.show()
+S2 = S.copy(); np.fill_diagonal(S2, 0)
+i, j = np.unravel_index(S2.argmax(), S2.shape)
+print(f"가장 비슷한 두 숫자: {i}와 {j} (유사도 {S2[i, j]:.3f})")
+</code></pre>
+<p>대각선은 자기 자신과의 유사도 1이다. 모양이 비슷한 숫자 쌍(예: 3·9, 1·7)의 값이 높다. 7일차에서 이 값으로 새 이미지를 분류한다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>노름 = 벡터의 크기. 내적 = $\sum a_ib_i = \|\mathbf a\|\|\mathbf b\|\cos\theta$, 방향이 비슷한 정도.</li>
+  <li>코사인 유사도는 길이를 무시하고 방향만 비교한다. 직교하면 0.</li>
+  <li>행렬곱의 각 원소는 행과 열의 내적. 형상은 $(m\times n)(n\times p) = (m\times p)$.</li>
+  <li>신경망 층 = $XW + \mathbf b$: 샘플과 가중치 열 사이의 내적들을 한 번에 계산한 것.</li>
+</ul></div>
+
+<h2 data-min="10" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"두 벡터의 내적이 0이면 두 벡터는?","o":["같은 방향이다","직교한다","길이가 같다","평행하다"],"a":1,"e":"$\\cos 90° = 0$이다."},
+ {"q":"A가 (8, 5), B가 (5, 3)일 때 A @ B의 형상은?","o":["(5, 5)","(8, 3)","(3, 8)","오류"],"a":1,"e":"안쪽 5가 일치하고 바깥 8, 3이 남는다."},
+ {"q":"a = (1, 1), b = (1, −1)의 코사인 유사도는?","o":["1","0","−1","0.5"],"a":1,"e":"내적이 1×1 + 1×(−1) = 0이므로 코사인 유사도도 0이다."},
+ {"q":"벡터 a의 길이를 3배로 늘리면 a와 b의 코사인 유사도는?","o":["3배가 된다","변하지 않는다","1/3이 된다","9배가 된다"],"a":1,"e":"코사인 유사도는 길이로 나누므로 방향만 반영한다. 내적은 3배가 된다."},
+ {"q":"(AB)ᵀ와 같은 것은?","o":["AᵀBᵀ","BᵀAᵀ","AB","BA"],"a":1,"e":"전치하면 곱의 순서가 뒤집힌다."},
+ {"q":"X가 (64, 100), W가 (100, 10)일 때 XW + b가 동작하려면 b의 형상은?","o":["(64,)","(10,)","(100,)","(64, 100)"],"a":1,"e":"출력 (64, 10)에 브로드캐스팅되려면 (10,) 또는 (1, 10)이다."}
+]</script>
+
+<h2 data-min="13" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>$\mathbf a = (2, 1, 2)$, $\mathbf b = (1, 0, -1)$의 내적, 각 노름, 코사인 유사도를 손으로 구하라.
+    <details class="sol"><summary>풀이</summary><p>$\mathbf a\cdot\mathbf b = 2 + 0 - 2 = 0$이므로 직교한다. $\|\mathbf a\| = 3$, $\|\mathbf b\| = \sqrt2$, 코사인 유사도 0.</p></details></li>
+  <li>$\mathbf a = (3, 4)$를 $\mathbf b = (1, 1)$ 방향으로 투영한 벡터와, 그에 수직인 성분을 구하라. 두 성분의 내적이 0임을 확인하라.
+    <details class="sol"><summary>풀이</summary><p>$\mathbf a\cdot\mathbf b = 7$, $\|\mathbf b\|^2 = 2$이므로 투영은 $3.5(1, 1) = (3.5, 3.5)$. 수직 성분 $(3, 4) - (3.5, 3.5) = (-0.5, 0.5)$. 내적 $-1.75 + 1.75 = 0$.</p></details></li>
+  <li>$X$(5×3)의 모든 행 쌍의 코사인 유사도 행렬(5×5)을 반복문 없이 구하라.
+    <details class="sol"><summary>풀이</summary><pre><code>X = np.random.default_rng(1).normal(size=(5, 3))
+Xn = X / np.linalg.norm(X, axis=1, keepdims=True)
+C = Xn @ Xn.T          # 대각선은 모두 1
+print(C.round(3))
+</code></pre></details></li>
+  <li>$A$가 (2, 3), $B$가 (3, 4), $C$가 (4, 2)일 때 $ABC$와 $CAB$ 중 계산 가능한 것은 무엇이며 형상은?
+    <details class="sol"><summary>풀이</summary><p>$ABC$: (2,3)(3,4)(4,2) = (2, 2). $CAB$: (4,2)(2,3)(3,4) = (4, 4). 둘 다 가능하지만 형상이 다르다.</p></details></li>
+</ol>
+
+<h2 data-min="45" data-kind="project">미니 프로젝트: 코사인 유사도 추천기</h2>
+<section class="project" data-title="영화 평점 행렬로 추천 목록 만들기" data-min="45">
+<p class="lead">사용자 30명이 영화 12편에 매긴 평점 행렬이 있다(일부는 비어 있다). 영화 벡터 사이의 코사인 유사도로 "이 영화를 좋아한 사람이 좋아할 영화"를 찾고, 사용자마다 보지 않은 영화를 추천한다.</p>
+<ol class="steps">
+<li><b>데이터 만들기.</b> 영화마다 장르 성향(액션, 로맨스, 공포)이 있고, 사용자마다 장르 취향이 있다. 평점은 두 벡터의 내적에 잡음을 더해 만든다. 평점의 40%는 가린다(보지 않은 영화).
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(7)
+movies = ["액션1", "액션2", "액션3", "액션4", "로맨스1", "로맨스2", "로맨스3",
+          "로맨스4", "공포1", "공포2", "공포3", "액션로맨스"]
+# (12, 3) 영화의 장르
+G = np.array([[1, 0, 0]] * 4 + [[0, 1, 0]] * 4 + [[0, 0, 1]] * 3 + [[.7, .7, 0]],
+             float)
+# (30, 3) 사용자의 취향 (합 1)
+U = rng.dirichlet([.6, .6, .6], size=30)
+# (30, 12) 평점 1~5
+R = np.clip(1 + 4 * (U @ G.T) + rng.normal(0, .3, (30, 12)), 1, 5).round()
+# 본 영화 표시
+seen = rng.random((30, 12)) &gt; 0.4
+# 안 본 영화는 0
+R_obs = np.where(seen, R, 0)
+print("평점 행렬 형상:", R_obs.shape, " 관측 비율:", seen.mean().round(2))
+plt.figure(figsize=(6, 4))
+plt.imshow(R_obs, cmap="Blues", aspect="auto")
+plt.colorbar(label="평점 (0 = 안 봄)")
+plt.xticks(range(12), movies, rotation=60, fontsize=8)
+plt.ylabel("사용자")
+plt.show()
+</code></pre></li>
+<li><b>사용자별 평균 빼기.</b> 사람마다 평점을 후하게 주거나 짜게 주는 습관이 다르다. 각 사용자의 평균 평점을 빼서 "평소보다 좋게 봤는가"만 남긴다. 안 본 영화는 0(평소와 같음)으로 둔다.
+<pre class="run"><code>mu = (R_obs.sum(axis=1) / seen.sum(axis=1))[:, None]       # (30, 1) 사용자별 평균
+C = np.where(seen, R_obs - mu, 0.0)                          # (30, 12) 중심화된 평점
+print("사용자 0의 평균:", mu[0, 0].round(2), " 중심화된 평점:", C[0].round(1))
+</code></pre></li>
+<li><b>영화-영화 유사도.</b> 각 영화를 "사용자들의 중심화된 평점" 30차원 벡터로 보고 코사인 유사도 행렬(12×12)을 만든다.
+<pre class="run"><code>Mv = C.T                                                # (12, 30) 영화 벡터
+norms = np.linalg.norm(Mv, axis=1, keepdims=True)       # (12, 1)
+Sim = (Mv @ Mv.T) / (norms @ norms.T)                   # (12, 12) 코사인 유사도
+plt.figure(figsize=(5, 4.2))
+plt.imshow(Sim, cmap="RdBu", vmin=-1, vmax=1)
+plt.colorbar()
+plt.xticks(range(12), movies, rotation=60, fontsize=8)
+plt.yticks(range(12), movies, fontsize=8)
+plt.title("영화 간 코사인 유사도")
+plt.show()
+for m in [0, 4, 8, 11]:
+    order = np.argsort(-Sim[m])[1:4]
+    print(f"'{movies[m]}'와 비슷한 영화:", [movies[j] for j in order])
+</code></pre></li>
+<li><b>추천 점수.</b> 사용자 $u$가 안 본 영화 $j$의 예측 평점은 "사용자 평균 + (본 영화들의 중심화된 평점을 영화 $j$와의 유사도로 가중평균한 값)"이다. 음수 유사도는 0으로 자른다. 행렬곱 한 번으로 모든 사용자·영화의 점수가 나온다.
+<pre class="run"><code># 양의 유사도만, 자기 자신 제외
+W = np.clip(Sim, 0, None); np.fill_diagonal(W, 0)
+pred = mu + (C @ W) / (seen.astype(float) @ W + 1e-9)    # (30,12)@(12,12) → (30, 12)
+u = 3
+cand = np.where(~seen[u])[0]
+top = cand[np.argsort(-pred[u, cand])][:3]
+print(f"사용자 {u}의 취향(액션, 로맨스, 공포):", U[u].round(2))
+print("추천:", [(movies[j], round(float(pred[u, j]), 2)) for j in top])
+</code></pre></li>
+<li><b>평가.</b> 가려 둔 평점(실제로는 매겨진 값)과 예측의 평균절대오차를 구하고, 두 기준선(전체 평균, 사용자 평균)과 비교한다.
+<pre class="run"><code>hidden = ~seen
+mae = np.abs(pred[hidden] - R[hidden]).mean()
+base_all = np.abs(R_obs[seen].mean() - R[hidden]).mean()
+base_user = np.abs(np.broadcast_to(mu, R.shape)[hidden] - R[hidden]).mean()
+print(f"유사도 추천 MAE {mae:.3f}   전체 평균 기준선 {base_all:.3f}   사용자 평균 "
+      f"기준선 {base_user:.3f}")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>중심화 없이 원래 평점(1~5)과 0을 섞어 유사도를 구하면, 모든 영화 벡터가 "양수"라 서로 비슷해지고 장르 구조가 묻힌다. 실제로 중심화를 빼고 실행하면 '액션1'과 비슷한 영화로 공포·로맨스 영화가 섞여 나온다. 평균을 빼는 것은 2일차의 표준화와 같은 생각이며, 내적 기반 방법에서 매우 중요하다.</li>
+<li>중심화 후에는 같은 장르끼리 유사도가 높고, "액션로맨스"는 액션·로맨스와 비슷하게 나온다. 장르 정보를 주지 않았는데도 평점 패턴만으로 장르 구조가 드러난다.</li>
+<li>추천 MAE가 두 기준선보다 크게 작다(약 0.5 대 1.0). 기준선과 비교해야 방법이 쓸모 있는지 판단할 수 있다(12일차).</li>
+<li>실제 추천 시스템은 행렬 분해(4일차 SVD의 응용)나 신경망으로 사용자·영화 벡터를 학습한다.</li>
+</ul></details>
+</section>

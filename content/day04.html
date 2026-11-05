@@ -1,0 +1,309 @@
+<ul class="goals">
+  <li>행렬을 공간의 선형변환으로 해석하고, 행렬의 열이 기저벡터의 행선지임을 설명할 수 있다.</li>
+  <li>행렬식을 넓이 배율로, 역행렬을 되돌리는 변환으로 이해한다.</li>
+  <li>선형변환을 여러 번 해도 하나의 선형변환이라는 사실에서 신경망에 비선형성이 필요한 이유를 설명할 수 있다.</li>
+  <li>고윳값·고유벡터를 계산하고 의미를 설명할 수 있다.</li>
+  <li>SVD와 PCA로 데이터의 주요 방향을 찾고 차원을 줄일 수 있다.</li>
+</ul>
+
+<h2 data-min="25" data-kind="concept">행렬 = 공간의 변환</h2>
+<p>행렬 $A$를 벡터 $\mathbf x$에 곱하면 새 벡터 $A\mathbf x$가 나온다. 모든 점에 같은 행렬을 곱하면 공간 전체가 늘어나고, 돌고, 기울고, 뒤집힌다. 이런 변환을 <dfn data-t="linear-transform">선형변환</dfn>이라 한다. 선형변환에서 직선은 직선으로, 원점은 원점으로, 평행한 격자선은 평행한 격자선으로 옮겨진다.</p>
+<p>공간의 모든 벡터는 기본 방향 벡터들의 조합으로 쓸 수 있다. 2차원에서는 $\hat\imath = (1, 0)$과 $\hat\jmath = (0, 1)$이며, 이렇게 공간을 만드는 기본 벡터의 집합을 <dfn data-t="basis">기저</dfn>라 한다. $\mathbf x = (x_1, x_2) = x_1\hat\imath + x_2\hat\jmath$이므로</p>
+$$A\mathbf x = x_1 (A\hat\imath) + x_2 (A\hat\jmath)$$
+<div class="box key"><p>행렬의 <b>첫째 열은 $\hat\imath$가 옮겨 간 위치</b>, <b>둘째 열은 $\hat\jmath$가 옮겨 간 위치</b>다. 기저벡터 두 개의 행선지만 알면 모든 벡터의 행선지가 정해진다.</p></div>
+<div class="viz-mount" data-viz="matrix-transform"></div>
+<table>
+  <thead><tr><th>변환</th><th>행렬</th><th>$\hat\imath$의 행선지</th><th>$\hat\jmath$의 행선지</th></tr></thead>
+  <tbody>
+    <tr><td>회전 $\theta$</td><td>$\begin{bmatrix}\cos\theta & -\sin\theta\\ \sin\theta & \cos\theta\end{bmatrix}$</td><td>$(\cos\theta, \sin\theta)$</td><td>$(-\sin\theta, \cos\theta)$</td></tr>
+    <tr><td>축 방향 늘이기</td><td>$\begin{bmatrix}2 & 0\\ 0 & 0.5\end{bmatrix}$</td><td>$(2, 0)$</td><td>$(0, 0.5)$</td></tr>
+    <tr><td>기울이기</td><td>$\begin{bmatrix}1 & 1\\ 0 & 1\end{bmatrix}$</td><td>$(1, 0)$</td><td>$(1, 1)$</td></tr>
+    <tr><td>x축 대칭</td><td>$\begin{bmatrix}1 & 0\\ 0 & -1\end{bmatrix}$</td><td>$(1, 0)$</td><td>$(0, -1)$</td></tr>
+    <tr><td>x축으로 투영</td><td>$\begin{bmatrix}1 & 0\\ 0 & 0\end{bmatrix}$</td><td>$(1, 0)$</td><td>$(0, 0)$</td></tr>
+  </tbody>
+</table>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+theta = np.linspace(0, 2 * np.pi, 200)
+# (2, 200): 단위원 위 점들을 열로
+circle = np.stack([np.cos(theta), np.sin(theta)])
+c, s = np.cos(np.pi / 6), np.sin(np.pi / 6)
+mats = {"회전 30°": np.array([[c, -s], [s, c]]),
+        "늘이기": np.array([[2, 0], [0, 0.5]]),
+        "기울이기": np.array([[1, 1], [0, 1]]),
+        "임의": np.array([[1.5, 0.8], [0.3, 1.0]])}
+fig, axs = plt.subplots(1, 4, figsize=(12, 3.2))
+for ax, (name, M) in zip(axs, mats.items()):
+    out = M @ circle                                       # 200개 점을 한 번에 변환
+    ax.plot(*circle, "--", color="gray", lw=1); ax.plot(*out, lw=2)
+    # M의 열 = 기저벡터의 행선지
+    for v, c in zip(M.T, ["tab:red", "tab:green"]):
+        ax.arrow(0, 0, *v, head_width=0.08, color=c, length_includes_head=True)
+    ax.set_title(name)
+    ax.set_aspect("equal")
+    ax.set_xlim(-2.3, 2.3)
+    ax.set_ylim(-2.3, 2.3)
+    ax.grid(alpha=.3)
+plt.tight_layout(); plt.show()
+</code></pre>
+
+<h2 data-min="18" data-kind="concept">행렬식, 역행렬, 랭크</h2>
+<p>변환 후 단위 정사각형(넓이 1)이 차지하는 넓이를 <dfn data-t="determinant">행렬식</dfn> $\det A$라 한다. 넓이 배율이며, 음수면 방향이 뒤집힌 것이다.</p>
+$$\det\begin{bmatrix}a & b\\ c & d\end{bmatrix} = ad - bc$$
+<figure class="fig">
+<svg viewBox="0 0 620 200" width="620" role="img" aria-label="행렬식은 넓이 배율">
+  <g transform="translate(40,160)">
+    <line x1="-10" y1="0" x2="150" y2="0" class="s-mu"/><line x1="0" y1="10" x2="0" y2="-140" class="s-mu"/>
+    <rect x="0" y="-50" width="50" height="50" class="s-acs" stroke-width="2"/>
+    <text x="25" y="-20" text-anchor="middle" class="s-tx" font-size="12">1</text>
+    <text x="70" y="24" text-anchor="middle" class="s-txm" font-size="12">원래 넓이 1</text></g>
+  <g transform="translate(250,160)">
+    <line x1="-10" y1="0" x2="190" y2="0" class="s-mu"/><line x1="0" y1="10" x2="0" y2="-140" class="s-mu"/>
+    <path d="M0 0 L100 0 L150 -50 L50 -50 Z" class="s-acs" stroke-width="2"/>
+    <text x="75" y="-20" text-anchor="middle" class="s-tx" font-size="12">2</text>
+    <text x="90" y="24" text-anchor="middle" class="s-txm" font-size="12">[[2, 1], [0, 1]]: det = 2</text></g>
+  <g transform="translate(470,160)">
+    <line x1="-10" y1="0" x2="140" y2="0" class="s-mu"/><line x1="0" y1="10" x2="0" y2="-140" class="s-mu"/>
+    <line x1="0" y1="0" x2="100" y2="-50" class="s-red" stroke-width="3"/>
+    <text x="70" y="24" text-anchor="middle" class="s-txm" font-size="12">[[2, 1], [1, 0.5]]: det = 0</text>
+    <text x="80" y="-70" text-anchor="middle" style="fill:var(--bad)" font-size="12">선분으로 납작해짐</text></g>
+</svg>
+<figcaption>행렬식은 변환이 넓이를 몇 배로 만드는지 나타낸다. 0이면 공간이 한 차원 줄어든다.</figcaption>
+</figure>
+<p>$A\mathbf x$를 다시 $\mathbf x$로 되돌리는 변환이 <dfn data-t="inverse-matrix">역행렬</dfn> $A^{-1}$이다: $A^{-1}A = I$. 행렬식이 0인 변환은 서로 다른 점을 같은 점으로 보내므로 되돌릴 수 없고, 역행렬이 없다.</p>
+<p>변환 결과가 차지하는 공간의 차원을 <dfn data-t="rank">랭크</dfn>라 한다. 위 오른쪽 행렬은 2차원 평면을 직선으로 보내므로 랭크가 1이다. 랭크는 행렬의 선형독립인 열의 최대 개수와 같다.</p>
+<div class="box ex" data-title="연립방정식 풀기"><p>$2x + y = 5$, $x + 3y = 10$은 $A\mathbf x = \mathbf b$, $A = \begin{bmatrix}2&1\\1&3\end{bmatrix}$, $\mathbf b = (5, 10)$이다. $\det A = 5 \ne 0$이므로 해가 하나 있고 $\mathbf x = A^{-1}\mathbf b = (1, 3)$이다.</p></div>
+<pre class="run"><code>A = np.array([[2.0, 1.0], [1.0, 3.0]])
+b = np.array([5.0, 10.0])
+print("det A =", np.linalg.det(A).round(6), " rank =", np.linalg.matrix_rank(A))
+print("A^-1 =\n", np.linalg.inv(A))
+# 역행렬을 직접 곱하는 것보다 빠르고 정확
+print("해 x =", np.linalg.solve(A, b))
+S = np.array([[2.0, 1.0], [1.0, 0.5]])
+print("납작한 행렬: det =", np.linalg.det(S).round(6), " rank =",
+      np.linalg.matrix_rank(S))
+</code></pre>
+
+<h2 data-min="10" data-kind="concept">변환을 이어 붙이면: 신경망에 비선형성이 필요한 이유</h2>
+<p>변환 $B$를 한 뒤 $A$를 하면 $A(B\mathbf x) = (AB)\mathbf x$이다. 두 변환의 합성은 행렬곱 $AB$라는 <b>하나의 선형변환</b>이다. 따라서 활성화 함수 없이 선형층을 10개 쌓아도 결국 행렬 하나와 같다.</p>
+<div class="flow"><div>x</div><div>W₁</div><div>W₂</div><div>…</div><div>W₁₀</div><div>= (W₁₀⋯W₂W₁)x<small>선형변환 하나</small></div></div>
+<p>층 사이에 비선형 함수(ReLU 등)를 넣어야 깊이가 의미를 가진다. 16일차에서 ReLU가 공간을 "접어" 선형변환만으로는 불가능한 경계를 만드는 모습을 본다.</p>
+<pre class="run"><code>rng = np.random.default_rng(0)
+x = rng.normal(size=3)
+Ws = [rng.normal(size=(3, 3)) for _ in range(10)]
+h = x.copy()
+for W in Ws:
+    h = W @ h                                  # 층 10개를 차례로 통과
+W_total = np.eye(3)
+for W in Ws:
+    W_total = W @ W_total                      # 행렬 하나로 합치기
+print("층 10개:", h.round(3)); print("행렬 1개:", (W_total @ x).round(3))
+</code></pre>
+
+<h2 data-min="20" data-kind="concept">고윳값과 고유벡터</h2>
+<p>변환 후에도 방향이 그대로이고 길이만 바뀌는 특별한 벡터가 있다. $A\mathbf v = \lambda\mathbf v$를 만족하는 $\mathbf v\ne\mathbf 0$을 <dfn data-t="eigenvector">고유벡터</dfn>, 배율 $\lambda$를 <dfn data-t="eigenvalue">고윳값</dfn>이라 한다.</p>
+<figure class="fig">
+<svg viewBox="0 0 560 220" width="560" role="img" aria-label="고유벡터는 방향이 유지된다">
+  <defs><marker id="d4a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker>
+  <marker id="d4r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-redf"/></marker>
+  <marker id="d4g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-grnf"/></marker></defs>
+  <g transform="translate(150,170)">
+    <line x1="-120" y1="0" x2="250" y2="0" class="s-mu"/><line x1="0" y1="40" x2="0" y2="-160" class="s-mu"/>
+    <line x1="-110" y1="110" x2="160" y2="-160" class="s-mu" stroke-dasharray="4 4"/>
+    <line x1="0" y1="0" x2="40" y2="-40" class="s-ac" stroke-width="3" marker-end="url(#d4a)"/>
+    <line x1="0" y1="0" x2="120" y2="-120" class="s-ac" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#d4a)"/>
+    <text x="48" y="-34" class="s-txa" font-weight="700">v₁</text><text x="128" y="-120" class="s-txa" font-weight="700">Av₁ = 3v₁</text>
+    <line x1="0" y1="0" x2="50" y2="0" class="s-red" stroke-width="3" marker-end="url(#d4r)"/>
+    <line x1="0" y1="0" x2="100" y2="-50" class="s-red" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#d4r)"/>
+    <text x="48" y="18" style="fill:var(--bad)" font-weight="700">u</text><text x="106" y="-50" style="fill:var(--bad)" font-weight="700">Au: 방향이 바뀜</text>
+    <line x1="0" y1="0" x2="-40" y2="40" class="s-grn" stroke-width="3" marker-end="url(#d4g)"/>
+    <text x="-48" y="56" style="fill:var(--ok)" font-weight="700" text-anchor="end">v₂, Av₂ = 1·v₂</text>
+  </g>
+  <text x="430" y="60" class="s-tx" font-size="13">A = [[2, 1], [1, 2]]</text>
+  <text x="430" y="82" class="s-txm" font-size="12">λ₁ = 3, v₁ = (1, 1)</text>
+  <text x="430" y="102" class="s-txm" font-size="12">λ₂ = 1, v₂ = (−1, 1)</text>
+</svg>
+<figcaption>대부분의 벡터는 변환 후 방향이 바뀌지만(빨강), 고유벡터는 같은 직선 위에 머문다(파랑, 초록).</figcaption>
+</figure>
+<div class="box ex" data-title="2×2 고윳값 계산">
+<p>$A = \begin{bmatrix}2&1\\1&2\end{bmatrix}$. $(A - \lambda I)\mathbf v = 0$이 $\mathbf v \ne 0$인 해를 가지려면 $\det(A - \lambda I) = 0$이어야 한다.</p>
+$$(2-\lambda)^2 - 1 = 0 \;\Rightarrow\; \lambda = 3 \text{ 또는 } 1$$
+<p>$\lambda = 3$: $\begin{bmatrix}-1&1\\1&-1\end{bmatrix}\mathbf v = 0 \Rightarrow \mathbf v = (1, 1)$. $\lambda = 1$: $\mathbf v = (-1, 1)$. 대칭행렬의 고유벡터는 서로 직교한다.</p>
+</div>
+<p>행렬을 같은 벡터에 계속 곱하면 가장 큰 고윳값 방향의 성분만 살아남는다. $|\lambda| &gt; 1$이면 길이가 폭발하고 $|\lambda| &lt; 1$이면 0으로 사라진다. 36일차에서 순환 신경망의 기울기 폭발·소실이 정확히 이 현상임을 본다.</p>
+<pre class="run"><code>A = np.array([[2.0, 1.0], [1.0, 2.0]])
+vals, vecs = np.linalg.eig(A)
+print("고윳값:", vals, "\n고유벡터(열):\n", vecs.round(3))
+v = vecs[:, 0]
+print("Av =", A @ v, " λv =", vals[0] * v)
+x = np.array([1.0, 0.0])                      # 거듭 곱하기 (거듭제곱법)
+for t in range(6):
+    x = A @ x
+    print(t + 1, "번 곱함:", x, " 방향:", (x / np.linalg.norm(x)).round(4))
+</code></pre>
+
+<h2 data-min="20" data-kind="concept">특잇값 분해</h2>
+<p>고유분해는 정사각행렬에만 쓸 수 있다. 모든 행렬은 <dfn data-t="svd">특잇값 분해</dfn>(SVD)로 세 단계, 즉 회전 → 축 방향 늘이기 → 회전으로 나눌 수 있다.</p>
+$$A = U\Sigma V^\top = \sum_{i=1}^{r}\sigma_i\,\mathbf u_i\mathbf v_i^\top$$
+<div class="flow"><div>x</div><div>Vᵀ<small>회전</small></div><div>Σ<small>축별 늘이기 σᵢ</small></div><div>U<small>회전</small></div><div>Ax</div></div>
+<p>$\sigma_1 \ge \sigma_2 \ge \dots \ge 0$을 특잇값이라 한다. 오른쪽 식은 행렬을 랭크 1 행렬 $\mathbf u_i\mathbf v_i^\top$들의 가중합으로 쓴 것이다. 큰 특잇값 $k$개만 남긴 $A_k$는 랭크 $k$ 행렬 중 $A$에 가장 가까운 행렬이다(에카르트-영 정리). 이미지 압축, 추천 시스템, 47일차의 LoRA가 이 성질을 쓴다.</p>
+<div class="viz-mount" data-viz="svd"></div>
+<pre class="run"><code>M = np.random.default_rng(1).normal(size=(5, 3))
+U, s, Vt = np.linalg.svd(M, full_matrices=False)
+print("U", U.shape, " 특잇값", s.round(3), " Vt", Vt.shape)
+print("복원 확인:", np.allclose(U @ np.diag(s) @ Vt, M))
+M1 = s[0] * np.outer(U[:, 0], Vt[0])            # 랭크 1 근사
+print("랭크 1 근사 상대 오차:", (np.linalg.norm(M - M1) / np.linalg.norm(M)).round(3))
+</code></pre>
+
+<h2 data-min="25" data-kind="concept">주성분 분석</h2>
+<p>고차원 데이터는 대개 일부 방향으로만 크게 퍼져 있다. <dfn data-t="pca">주성분 분석</dfn>(PCA)은 데이터가 가장 크게 퍼진 방향(분산이 최대인 방향)부터 차례로 찾아, 상위 몇 방향으로 투영해 차원을 줄인다.</p>
+<figure class="fig">
+<svg viewBox="0 0 420 260" width="420" role="img" aria-label="2차원 데이터의 주성분">
+  <defs><marker id="d4p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker>
+  <marker id="d4q" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-redf"/></marker></defs>
+  <g class="s-acf" opacity=".45">
+    <circle cx="110" cy="190" r="4"/><circle cx="130" cy="170" r="4"/><circle cx="150" cy="178" r="4"/><circle cx="160" cy="150" r="4"/><circle cx="175" cy="160" r="4"/><circle cx="190" cy="140" r="4"/><circle cx="205" cy="128" r="4"/><circle cx="215" cy="138" r="4"/><circle cx="232" cy="112" r="4"/><circle cx="245" cy="120" r="4"/><circle cx="262" cy="96" r="4"/><circle cx="280" cy="90" r="4"/><circle cx="295" cy="72" r="4"/><circle cx="310" cy="80" r="4"/><circle cx="140" cy="160" r="4"/><circle cx="225" cy="98" r="4"/><circle cx="200" cy="150" r="4"/><circle cx="270" cy="110" r="4"/>
+  </g>
+  <line x1="210" y1="130" x2="320" y2="56" class="s-ac" stroke-width="3" marker-end="url(#d4p)"/>
+  <line x1="210" y1="130" x2="236" y2="168" class="s-red" stroke-width="3" marker-end="url(#d4q)"/>
+  <text x="326" y="52" class="s-txa" font-weight="700">제1 주성분</text>
+  <text x="244" y="182" style="fill:var(--bad)" font-weight="700">제2 주성분</text>
+  <text x="210" y="240" text-anchor="middle" class="s-txm" font-size="12">분산이 큰 방향 = 정보가 많은 방향</text>
+</svg>
+<figcaption>제1 주성분 하나로 투영해도 점들 사이의 관계 대부분이 유지된다.</figcaption>
+</figure>
+<ol class="steps">
+  <li>각 특징의 평균을 뺀다(중심화): $X_c = X - \bar{\mathbf x}$.</li>
+  <li>특징 사이의 <dfn data-t="covariance">공분산</dfn> 행렬 $\Sigma = \frac{1}{N-1}X_c^\top X_c$를 구한다. 공분산은 두 특징이 함께 변하는 정도다.</li>
+  <li>$\Sigma$의 고유벡터가 주성분, 고윳값이 그 방향의 분산이다. 실제로는 $X_c$를 SVD해서 $V$의 행을 쓰는 것이 더 정확하다.</li>
+  <li>상위 $k$개 주성분 $V_k$로 투영한다: $Z = X_c V_k^\top$ (형상 $N\times k$).</li>
+</ol>
+<pre class="run"><code>iris = load_data("iris")
+X, y = iris["X"], iris["y"]
+Xc = X - X.mean(axis=0)                                   # 1. 중심화
+U, s, Vt = np.linalg.svd(Xc, full_matrices=False)         # 3. SVD: Vt의 행 = 주성분
+var = s ** 2 / (len(X) - 1)                               # 각 주성분 방향의 분산
+print("설명된 분산 비율:", (var / var.sum()).round(3))
+Z = Xc @ Vt[:2].T                                         # 4. 2차원으로 투영 (150, 2)
+plt.figure(figsize=(5.2, 3.8))
+for k, name in enumerate(iris["target_names"]):
+    plt.scatter(Z[y == k, 0], Z[y == k, 1], s=16, label=name)
+plt.xlabel("제1 주성분")
+plt.ylabel("제2 주성분")
+plt.legend()
+plt.title("붓꽃 4차원 → 2차원")
+plt.show()
+</code></pre>
+<p>4차원 데이터의 분산 중 약 98%가 처음 두 주성분에 담겨 있다. 2차원 그림만으로 세 품종의 구조가 보인다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>행렬 = 선형변환. 열은 기저벡터의 행선지. 합성은 행렬곱이며 여전히 선형이다.</li>
+  <li>행렬식 = 넓이 배율. 0이면 납작해져 역행렬이 없다. 랭크 = 결과 공간의 차원.</li>
+  <li>고유벡터는 방향이 유지되는 벡터, 고윳값은 그 방향의 배율. 거듭 곱하면 큰 고윳값 방향이 지배한다.</li>
+  <li>SVD: 모든 행렬 = 회전·늘이기·회전. 상위 $k$개로 최적 저랭크 근사.</li>
+  <li>PCA: 중심화 → SVD → 분산이 큰 방향으로 투영.</li>
+</ul></div>
+
+<h2 data-min="10" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"행렬 [[2, 0], [0, 3]]의 첫째 열 (2, 0)이 뜻하는 것은?","o":["y축 방향 늘이기","기저벡터 (1, 0)이 변환 후 (2, 0)으로 간다","회전 각도","행렬식"],"a":1,"e":"행렬의 각 열은 각 기저벡터의 행선지다."},
+ {"q":"행렬식이 0인 2×2 행렬에 대한 설명으로 틀린 것은?","o":["평면을 직선이나 점으로 납작하게 만든다","역행렬이 없다","랭크가 2보다 작다","넓이를 보존한다"],"a":3,"e":"넓이 배율이 0이므로 넓이를 보존하지 않는다."},
+ {"q":"활성화 함수 없이 선형층 10개를 쌓은 신경망의 표현력은?","o":["선형층 1개와 같다","10배가 된다","무한하다","학습할 수 없다"],"a":0,"e":"행렬곱의 합성은 하나의 행렬곱이다."},
+ {"q":"A = [[3, 0], [0, 0.5]]의 고윳값은?","o":["3과 0.5","1과 1","3.5","0"],"a":0,"e":"대각행렬의 고윳값은 대각 원소이고, 고유벡터는 축 방향이다."},
+ {"q":"PCA에서 데이터의 평균을 먼저 빼는 이유는?","o":["계산을 빠르게 하려고","분산(퍼진 정도)은 평균 기준으로 정의되므로, 원점이 데이터 중심이어야 주성분이 퍼진 방향을 가리킨다","값을 양수로 만들려고","필요 없다"],"a":1,"e":"중심화하지 않으면 첫 주성분이 '원점에서 데이터 중심으로 향하는 방향'에 끌려간다."},
+ {"q":"SVD로 상위 k개 특잇값만 남겨 근사할 때 버린 정보의 크기와 관련된 것은?","o":["버린 특잇값들의 크기","남긴 특잇값의 개수만","행렬식","대각합"],"a":0,"e":"근사 오차의 제곱은 버린 특잇값 제곱의 합이다."}
+]</script>
+
+<h2 data-min="12" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>각도 $\theta$만큼 회전하는 행렬 $R(\theta)$를 만들고, $R(30°)$를 세 번 곱한 것이 $R(90°)$와 같음을 코드로 확인하라. 회전 행렬의 행렬식은 얼마인가?
+    <details class="sol"><summary>풀이</summary><pre><code>R = lambda t: np.array([[np.cos(t), -np.sin(t)], [np.sin(t), np.cos(t)]])
+print(np.allclose(R(np.pi/6) @ R(np.pi/6) @ R(np.pi/6), R(np.pi/2)), np.linalg.det(R(0.7)))
+</code></pre><p>회전은 넓이를 보존하므로 행렬식은 1이다.</p></details></li>
+  <li>$A = \begin{bmatrix}4 & 1\\ 2 & 3\end{bmatrix}$의 고윳값과 고유벡터를 손으로 구하고 <code>np.linalg.eig</code>와 비교하라.
+    <details class="sol"><summary>풀이</summary><p>$(4-\lambda)(3-\lambda) - 2 = \lambda^2 - 7\lambda + 10 = 0$, $\lambda = 5, 2$. $\lambda=5$: $\mathbf v = (1, 1)$. $\lambda = 2$: $\mathbf v = (1, -2)$. 이 행렬은 대칭이 아니므로 두 고유벡터가 직교하지 않는다.</p></details></li>
+  <li>붓꽃 데이터의 공분산 행렬을 <code>np.cov</code>로 구하고, 그 고윳값이 위 코드의 <code>var</code>와 같음을 확인하라.
+    <details class="sol"><summary>풀이</summary><pre><code>C = np.cov(X, rowvar=False)                 # (4, 4)
+ev = np.sort(np.linalg.eigvalsh(C))[::-1]
+print(ev.round(4), var.round(4))
+</code></pre></details></li>
+</ol>
+
+<h2 data-min="35" data-kind="project">미니 프로젝트: PCA로 손글씨 숫자 시각화와 압축</h2>
+<section class="project" data-title="64차원 손글씨 숫자를 2차원 지도와 압축 이미지로" data-min="35">
+<p class="lead">8×8 손글씨 숫자 1797장(64차원)에 PCA를 직접 구현한다. 2차원 지도로 숫자들의 배치를 보고, 주성분 몇 개로 이미지를 얼마나 잘 복원할 수 있는지 측정한다.</p>
+<ol class="steps">
+<li><b>PCA 구현.</b> 중심화와 SVD로 주성분과 각 성분의 설명 분산 비율을 구한다.
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("digits")
+X, y = d["X"].astype(float), d["y"]
+mean = X.mean(axis=0)                                  # (64,)
+Xc = X - mean
+U, s, Vt = np.linalg.svd(Xc, full_matrices=False)      # Vt: (64, 64), 각 행이 주성분
+ratio = s ** 2 / (s ** 2).sum()
+cum = np.cumsum(ratio)
+print("처음 5개 성분의 설명 비율:", ratio[:5].round(3))
+for target in [0.5, 0.8, 0.9, 0.95]:
+    print(f"분산의 {target:.0%} 설명에 필요한 성분 수:",
+          int(np.searchsorted(cum, target)) + 1)
+plt.figure(figsize=(5, 3)); plt.plot(np.arange(1, 65), cum, "o-", ms=3)
+plt.xlabel("주성분 수 k")
+plt.ylabel("누적 설명 분산 비율")
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+<li><b>2차원 지도.</b> 처음 두 주성분으로 투영해 숫자별 색으로 그린다. 어떤 숫자끼리 겹치는지 관찰한다.
+<pre class="run"><code>Z = Xc @ Vt[:2].T                                       # (1797, 2)
+plt.figure(figsize=(6, 5))
+sc = plt.scatter(Z[:, 0], Z[:, 1], c=y, cmap="tab10", s=8)
+plt.colorbar(sc, ticks=range(10), label="숫자")
+for k in range(10):                                     # 숫자별 중심에 레이블
+    cx, cy = Z[y == k].mean(axis=0)
+    plt.text(cx, cy, str(k), fontsize=14, weight="bold", ha="center", va="center")
+plt.xlabel("제1 주성분")
+plt.ylabel("제2 주성분")
+plt.title("손글씨 숫자의 PCA 지도")
+plt.show()
+</code></pre></li>
+<li><b>주성분 이미지.</b> 주성분 자체도 64차원이므로 8×8 이미지로 볼 수 있다. 평균 이미지에 주성분을 더하고 빼며 무엇을 나타내는지 해석한다.
+<pre class="run"><code>fig, axs = plt.subplots(1, 6, figsize=(10, 1.9))
+axs[0].imshow(mean.reshape(8, 8), cmap="gray_r")
+axs[0].set_title("평균")
+axs[0].axis("off")
+for i in range(5):
+    axs[i + 1].imshow(Vt[i].reshape(8, 8), cmap="RdBu")
+    axs[i + 1].set_title(f"성분 {i + 1}")
+    axs[i + 1].axis("off")
+plt.show()
+</code></pre></li>
+<li><b>압축과 복원.</b> 상위 $k$개 성분 좌표(이미지당 $k$개 수)만 저장했다가 복원한다. $k$에 따른 복원 이미지와 오차를 비교하라. TODO 줄을 완성한다.
+<pre class="run"><code>def reconstruct(k):
+    Zk = Xc @ Vt[:k].T                 # (N, k) 압축된 좌표
+    return Zk @ Vt[:k] + mean          # TODO 확인: (N, 64) 복원
+ks = [1, 3, 8, 16, 32]
+idx = [0, 7, 15]
+fig, axs = plt.subplots(len(idx), len(ks) + 1, figsize=(9, 4.6))
+for r, i in enumerate(idx):
+    axs[r, 0].imshow(X[i].reshape(8, 8), cmap="gray_r")
+    axs[r, 0].set_title("원본" if r == 0 else "")
+    axs[r, 0].axis("off")
+    for c, k in enumerate(ks):
+        axs[r, c + 1].imshow(reconstruct(k)[i].reshape(8, 8), cmap="gray_r")
+        axs[r, c + 1].axis("off")
+        if r == 0: axs[r, c + 1].set_title(f"k={k}")
+plt.tight_layout(); plt.show()
+for k in ks:
+    err = np.linalg.norm(X - reconstruct(k)) / np.linalg.norm(X)
+    print(f"k={k:2d}  저장 비율 {k / 64:.0%}  상대 복원 오차 {err:.3f}")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>분산의 90%를 설명하려면 약 21개, 95%에는 약 29개 성분이 필요하다. 64개 픽셀 중 절반 이하로 대부분의 정보가 표현된다. 가장자리 픽셀은 거의 항상 0이라 정보가 없기 때문이다.</li>
+<li>2차원 지도에서 0, 4, 6 같은 숫자는 비교적 잘 떨어지지만 1·7·9, 3·5·8은 겹친다. 선형 투영 2개로는 10개 범주를 다 나눌 수 없다. 이후 주차의 신경망은 비선형 변환으로 이 문제를 푼다.</li>
+<li>$k = 16$(25%)만으로도 숫자를 알아볼 수 있게 복원된다. 이것이 손실 압축의 원리이며, 50일차의 오토인코더는 PCA를 비선형으로 확장한 것이다.</li>
+</ul></details>
+</section>

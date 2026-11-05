@@ -1,0 +1,256 @@
+<ul class="goals">
+  <li>가중치를 모두 같게 초기화하면 안 되는 이유(대칭성)를 설명하고 확인할 수 있다.</li>
+  <li>분산 보존 조건으로 Xavier와 He 초기화를 유도할 수 있다.</li>
+  <li>기울기 소실과 폭발이 층별 배율의 곱에서 생김을 설명하고 증상을 진단할 수 있다.</li>
+  <li>기울기 클리핑을 구현하고 그 효과와 한계를 설명할 수 있다.</li>
+  <li>깊은 망에서 초기화와 활성화 함수의 조합에 따른 학습 성패를 실험으로 비교할 수 있다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="concept">초기화가 왜 중요한가</h2>
+<p>경사하강법은 출발점에서 시작해 조금씩 움직인다. 그 출발점을 정하는 것이 <dfn data-t="initialization">가중치 초기화</dfn>다. 얕은 모델에서는 대충 정해도 되지만, 깊은 신경망에서는 출발점이 학습의 성패를 가른다. 20일차 프로젝트에서 가중치 표준편차를 0.001로 두었을 때 첫 에폭의 손실이 $\ln10$에 머물렀던 것을 기억한다. 오늘은 그 이유를 수식으로 밝히고, 층이 10개 넘는 신경망에서 실험한다.</p>
+<div class="viz-mount" data-viz="init"></div>
+
+<h2 data-min="12" data-kind="concept">대칭성 문제</h2>
+<p>가중치를 모두 0(또는 모두 같은 값)으로 시작하면 어떻게 될까? 같은 층의 모든 뉴런이 같은 입력에 같은 가중치를 곱하므로 출력이 같다. 역전파에서 받는 기울기도 같고, 갱신량도 같다. 그래서 학습이 끝나도 모든 뉴런이 똑같다. 뉴런 100개가 있어도 사실상 1개인 셈이다. 이것이 <dfn data-t="symmetry">대칭성 문제</dfn>다.</p>
+<p>해결책은 단순하다. 가중치를 작은 무작위 값으로 시작해 뉴런들이 처음부터 서로 다르게 한다. 편향은 0으로 시작해도 된다(가중치가 이미 대칭을 깨므로). 남은 질문은 "무작위 값의 크기를 얼마로 할 것인가"다.</p>
+
+<h2 data-min="25" data-kind="concept">분산 보존: Xavier와 He</h2>
+<p>층 하나의 출력 $z = \sum_{i=1}^{n}w_ix_i$를 생각한다($n$은 입력 개수). 가중치와 입력이 서로 독립이고 평균이 0이면</p>
+$$\mathrm{Var}(z) = \sum_{i=1}^{n}\mathrm{Var}(w_i)\,\mathrm{Var}(x_i) = n\,\mathrm{Var}(w)\,\mathrm{Var}(x)$$
+<p>이다. 층마다 분산이 $n\mathrm{Var}(w)$배가 되므로, 층 $L$개를 지나면 $(n\mathrm{Var}(w))^L$배다. 이 배율이 1보다 조금만 작아도 신호는 지수적으로 사라지고, 조금만 커도 폭발한다. 따라서 $n\,\mathrm{Var}(w) = 1$, 즉</p>
+$$\mathrm{Var}(w) = \frac{1}{n_{\text{in}}}\qquad(\text{표준편차 } 1/\sqrt{n_{\text{in}}})$$
+<p>로 잡으면 순전파에서 분산이 보존된다. 역전파의 기울기는 같은 논리로 $n_{\text{out}}\mathrm{Var}(w)$배씩 변하므로 $1/n_{\text{out}}$이 필요하다. 둘을 절충한 $\mathrm{Var}(w) = \frac{2}{n_{\text{in}} + n_{\text{out}}}$가 <dfn data-t="xavier">Xavier 초기화</dfn>(Glorot &amp; Bengio, 2010)다. 실무에서는 $1/n_{\text{in}}$도 Xavier(또는 LeCun) 초기화라 부른다. tanh처럼 0 근처에서 기울기가 1인 활성화에 맞다.</p>
+<p>ReLU는 음수 절반을 0으로 만들어 출력의 제곱 평균을 절반으로 줄인다: $\mathbb E[\mathrm{ReLU}(z)^2] = \frac12\mathrm{Var}(z)$. 그 손실을 보상하려면 분산을 두 배로 키워야 한다.</p>
+$$\mathrm{Var}(w) = \frac{2}{n_{\text{in}}}\qquad(\text{표준편차 } \sqrt{2/n_{\text{in}}})$$
+<p>이것이 <dfn data-t="he-init">He 초기화</dfn>(He 등, 2015)다. 17일차부터 써 온 <code>np.sqrt(2 / d_in)</code>이 이것이다.</p>
+<div class="box ex" data-title="숫자로 보기"><p>입력 256, ReLU 층 20개. He 초기화면 표준편차 $\sqrt{2/256} = 0.088$이고 층마다 활성값의 제곱 평균이 유지된다. Xavier($\sqrt{1/256} = 0.0625$)를 ReLU에 쓰면 층마다 제곱 평균이 절반이 되어, 20층 뒤 $2^{-20} \approx 10^{-6}$배가 된다. 표준편차 0.01이면 층마다 $256\times0.0001/2 = 0.0128$배라 3층만 지나도 $2\times10^{-6}$배다.</p></div>
+<table>
+  <thead><tr><th>활성화</th><th>초기화</th><th>표준편차</th><th>PyTorch</th></tr></thead>
+  <tbody>
+    <tr><td>tanh, 시그모이드, 선형</td><td>Xavier</td><td>$\sqrt{1/n_{\text{in}}}$ 또는 $\sqrt{2/(n_{\text{in}} + n_{\text{out}})}$</td><td><code>nn.init.xavier_normal_</code></td></tr>
+    <tr><td>ReLU 계열</td><td>He</td><td>$\sqrt{2/n_{\text{in}}}$</td><td><code>nn.init.kaiming_normal_</code></td></tr>
+  </tbody>
+</table>
+
+<h2 data-min="20" data-kind="concept">기울기 소실과 폭발</h2>
+<p>역전파에서 앞쪽 층의 기울기는 뒤쪽 층들에서 받은 배율의 곱이다(18일차). 층 하나를 지날 때마다 가중치 행렬 $W^\top$과 활성화의 도함수 $\phi'(z)$가 곱해진다.</p>
+$$\frac{\partial L}{\partial\mathbf h_1} = \frac{\partial L}{\partial\mathbf h_L}\prod_{l=2}^{L}\left(\mathrm{diag}(\phi'(\mathbf z_l))\,W_l^\top\right)$$
+<p>이 곱의 "평균 배율"이 1보다 작으면 앞쪽 층으로 갈수록 기울기가 지수적으로 작아진다. 이것이 <dfn data-t="vanishing-gradient">기울기 소실</dfn>이다. 앞쪽 층은 거의 학습되지 않는다. 1보다 크면 지수적으로 커지는 <dfn data-t="exploding-gradient">기울기 폭발</dfn>이 일어나 갱신이 너무 커지고 손실이 NaN이 된다.</p>
+<table>
+  <thead><tr><th>원인</th><th>예</th><th>결과</th></tr></thead>
+  <tbody>
+    <tr><td>포화하는 활성화</td><td>시그모이드: $\phi' \le 0.25$</td><td>층마다 1/4 이하 → 소실</td></tr>
+    <tr><td>작은 초기화</td><td>표준편차 0.01</td><td>순전파 신호와 기울기 모두 소실</td></tr>
+    <tr><td>큰 초기화</td><td>표준편차 1.0, 폭 128</td><td>$\sqrt{128}\approx11$배씩 → 폭발 (또는 tanh 포화)</td></tr>
+    <tr><td>긴 시간 반복</td><td>RNN의 같은 가중치 반복 곱(36일차)</td><td>소실 또는 폭발</td></tr>
+  </tbody>
+</table>
+<div class="box key" data-title="증상"><ul>
+<li>소실: 손실이 거의 줄지 않는다. 층별 기울기 노름을 찍어 보면 앞쪽 층이 뒤쪽보다 수십~수만 배 작다.</li>
+<li>폭발: 손실이 갑자기 튀거나 NaN이 된다. 기울기 노름이 학습 중 급격히 커진다.</li>
+<li>점검법: 학습 초반에 층별 활성값 표준편차와 기울기 노름을 기록한다(27일차의 점검표).</li>
+</ul></div>
+
+<h2 data-min="10" data-kind="concept">기울기 클리핑</h2>
+<p>기울기가 갑자기 커지는 것을 막는 가장 간단한 방법은 크기에 상한을 두는 것이다. 모든 파라미터의 기울기를 하나의 벡터로 보고 그 노름이 임계값 $c$를 넘으면 방향은 유지한 채 크기만 $c$로 줄인다. 이것이 <dfn data-t="gradient-clipping">기울기 클리핑</dfn>이다.</p>
+$$\mathbf g \leftarrow \begin{cases}\mathbf g &amp; \|\mathbf g\| \le c\\ c\,\dfrac{\mathbf g}{\|\mathbf g\|} &amp; \|\mathbf g\| &gt; c\end{cases}$$
+<p>RNN과 트랜스포머 학습에서 거의 항상 쓴다($c = 1$이 흔하다). PyTorch에서는 <code>torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)</code>을 <code>backward()</code>와 <code>step()</code> 사이에 호출한다. 클리핑은 폭발의 피해를 막는 안전장치이지, 잘못된 초기화나 구조를 고치는 처방은 아니다(미니 프로젝트).</p>
+
+<h2 data-min="8" data-kind="concept">다른 해결책 미리 보기</h2>
+<p>기울기 흐름을 개선하는 기법은 이 과정 곳곳에 나온다.</p>
+<table>
+  <thead><tr><th>기법</th><th>원리</th><th>강의</th></tr></thead>
+  <tbody>
+    <tr><td>ReLU 계열 활성화</td><td>양수 구간 도함수 1</td><td>16일차</td></tr>
+    <tr><td>정규화 층</td><td>층마다 활성값 분포를 다시 맞춤</td><td>25일차</td></tr>
+    <tr><td>잔차 연결</td><td>$\mathbf h + F(\mathbf h)$: 기울기가 지나가는 고속도로</td><td>33일차</td></tr>
+    <tr><td>LSTM의 게이트</td><td>덧셈으로 갱신하는 셀 상태</td><td>37일차</td></tr>
+  </tbody>
+</table>
+
+<h2 data-min="28" data-kind="practice">코드 실습: 대칭성과 분산 전파</h2>
+<p>먼저 대칭성을 확인한다. 은닉층 가중치를 모두 0.5로 시작해 학습하면 은닉 뉴런들의 가중치가 끝까지 같은지 본다.</p>
+<pre class="run"><code>import numpy as np
+import math
+import matplotlib.pyplot as plt
+d = load_data("digits"); X, y = d["X"].astype(float) / 16, d["y"]
+def train_tiny(W1, steps=200, lr=0.5):
+    W1 = W1.copy(); W2 = np.full((8, 10), 0.1)
+    for _ in range(steps):
+        H = np.tanh(X[:256] @ W1); Z = H @ W2
+        Zs = Z - Z.max(1, keepdims=True)
+        P = np.exp(Zs) / np.exp(Zs).sum(1, keepdims=True)
+        G = P.copy(); G[np.arange(256), y[:256]] -= 1; G /= 256
+        dW2 = H.T @ G; dW1 = X[:256].T @ ((G @ W2.T) * (1 - H ** 2))
+        W1 -= lr * dW1; W2 -= lr * dW2
+    return W1
+W_same = train_tiny(np.full((64, 8), 0.5))
+W_rand = train_tiny(np.random.default_rng(0).normal(0, 0.125, (64, 8)))
+print("같은 값 초기화: 은닉 뉴런 8개의 가중치 열이 모두 같은가?",
+      np.allclose(W_same, W_same[:, :1]))
+print("무작위 초기화: 서로 다른 열의 수 =",
+      len({tuple(np.round(c, 6)) for c in W_rand.T}))
+</code></pre>
+<p>다음은 분산 전파 실험이다. 폭 256인 층 20개에 표준정규 입력을 넣고, 초기화와 활성화에 따라 층별 활성값 표준편차가 어떻게 변하는지 그린다.</p>
+<pre class="run"><code>def propagate(init, act, depth=20, n=256, B=512, seed=0):
+    r = np.random.default_rng(seed); A = r.normal(size=(B, n)); stds = []
+    for _ in range(depth):
+        std = {"0.01": 0.01, "Xavier": math.sqrt(1 / n), "He": math.sqrt(2 / n)}[init]
+        Z = A @ r.normal(0, std, (n, n))
+        A = np.maximum(0, Z) if act == "ReLU" else np.tanh(Z)
+        stds.append(A.std())
+    return stds
+plt.figure(figsize=(6, 3.4))
+for act in ["ReLU", "tanh"]:
+    for init in ["0.01", "Xavier", "He"]:
+        s = propagate(init, act)
+        plt.semilogy(range(1, 21), s, "o-" if act == "ReLU" else "s--", ms=3,
+                     label=f"{act} + {init}")
+        print(f"{act:4s} + {init:6s}: 1층 {s[0]:.3f} → 20층 {s[-1]:.2e}")
+plt.xlabel("층")
+plt.ylabel("활성값 표준편차")
+plt.legend(fontsize=8)
+plt.grid(alpha=.3)
+plt.show()
+</code></pre>
+<p>ReLU + He는 깊이 20까지 표준편차가 1 근처로 유지되고, tanh + Xavier는 천천히 줄어(0.63 → 0.15) 크게 무너지지 않는다. 0.01 초기화는 20층 뒤 $10^{-16}$ 이하로 사라진다. ReLU + Xavier는 층마다 표준편차가 약 $1/\sqrt2$배가 되어 20층 뒤 약 $10^{-3}$ 수준이 된다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>같은 값 초기화는 뉴런을 복제한다(대칭성). 가중치는 작은 무작위 값, 편향은 0으로.</li>
+  <li>분산 보존: $n\mathrm{Var}(w) = 1$. Xavier $1/n_{\text{in}}$ 또는 $2/(n_{\text{in}} + n_{\text{out}})$ (tanh), He $2/n_{\text{in}}$ (ReLU).</li>
+  <li>역전파 기울기는 층별 배율의 곱: 1보다 작으면 소실, 크면 폭발. 포화 활성화와 잘못된 초기화가 주원인.</li>
+  <li>기울기 클리핑은 노름 상한으로 폭발을 막는 안전장치(RNN·트랜스포머의 표준).</li>
+  <li>ReLU, 정규화 층, 잔차 연결, 게이트가 기울기 흐름을 개선한다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"은닉층 가중치를 모두 0으로 초기화하면?","o":["학습이 빨라진다","같은 층의 뉴런들이 똑같이 학습되어 하나처럼 동작한다","기울기가 폭발한다","과적합이 줄어든다"],"a":1,"e":"출력과 기울기가 모두 같아 대칭이 깨지지 않는다."},
+ {"q":"입력 512개인 층에 ReLU를 쓴다. He 초기화의 표준편차는?","o":["1/512","√(1/512) ≈ 0.044","√(2/512) = 0.0625","2/512"],"a":2,"e":"분산 $2/n_{in}$, 표준편차 $\\sqrt{2/512}$."},
+ {"q":"He 초기화가 Xavier보다 분산을 2배로 잡는 이유는?","o":["학습을 빠르게 하려고","ReLU가 음수 절반을 0으로 만들어 출력의 제곱 평균을 절반으로 줄이므로","편향이 없어서","출력층 때문에"],"a":1,"e":"$\\mathbb E[\\mathrm{ReLU}(z)^2] = \\mathrm{Var}(z)/2$를 보상한다."},
+ {"q":"층마다 기울기에 평균 0.5가 곱해진다면 20층 앞의 기울기는 대략 몇 배인가?","o":["0.5","10⁻¹","10⁻⁶","10⁻²⁰"],"a":2,"e":"$0.5^{20} \\approx 9.5\\times10^{-7}$. 기울기 소실이다."},
+ {"q":"학습 중 손실이 갑자기 NaN이 되었다. 가장 먼저 의심할 것은?","o":["기울기 소실","기울기 폭발 또는 학습률 과대","데이터 부족","과소적합"],"a":1,"e":"기울기 노름을 기록하고 클리핑이나 학습률 감소를 시도한다."},
+ {"q":"기울기 노름이 5, 임계값 c = 1일 때 클리핑 후의 기울기는?","o":["방향은 같고 크기 1","모든 원소를 1로 자름","0","그대로"],"a":0,"e":"$\\mathbf g \\leftarrow \\mathbf g/5$. 방향은 유지한다."},
+ {"q":"10층 시그모이드 MLP가 학습되지 않는 가장 큰 이유는?","o":["파라미터가 너무 많아서","시그모이드 도함수가 0.25 이하라 기울기가 층마다 크게 줄어서","출력층이 소프트맥스라서","배치가 커서"],"a":1,"e":"앞쪽 층의 기울기가 뒤쪽보다 수만 배 작아진다."},
+ {"q":"PyTorch에서 기울기 클리핑을 호출하는 위치는?","o":["forward 전","backward()와 optimizer.step() 사이","zero_grad 전","에폭이 끝난 뒤"],"a":1,"e":"기울기가 계산된 뒤, 갱신하기 전에 자른다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>$z = \sum_{i=1}^n w_ix_i$에서 $w_i \sim \mathcal N(0, \sigma^2)$, $x_i \sim \mathcal N(0, 1)$이 모두 독립일 때 $\mathrm{Var}(z) = n\sigma^2$임을 보여라.
+    <details class="sol"><summary>풀이</summary><p>$\mathbb E[w_ix_i] = 0$이고 $\mathrm{Var}(w_ix_i) = \mathbb E[w_i^2]\mathbb E[x_i^2] = \sigma^2$. 독립인 항의 분산은 더해지므로 $n\sigma^2$.</p></details></li>
+  <li>$z \sim \mathcal N(0, s^2)$일 때 $\mathbb E[\mathrm{ReLU}(z)^2] = s^2/2$임을 대칭성으로 설명하라.
+    <details class="sol"><summary>풀이</summary><p>$z$의 분포는 0에 대해 대칭이므로 $\mathbb E[z^2\mathbb 1_{z&gt;0}] = \mathbb E[z^2\mathbb 1_{z&lt;0}] = \frac12\mathbb E[z^2] = s^2/2$. ReLU는 양수 쪽만 남기므로 제곱 평균이 절반이 된다.</p></details></li>
+  <li>기울기 클리핑 함수를 작성하라. 입력은 기울기 배열들의 리스트, 반환은 클리핑 전 전체 노름이다.
+    <details class="sol"><summary>풀이</summary><pre><code>def clip_grad_norm(grads, c):
+    norm = math.sqrt(sum(float((g ** 2).sum()) for g in grads))
+    if norm &gt; c:
+        for g in grads: g *= c / norm          # 제자리 수정
+    return norm
+gs = [np.array([3.0, 4.0]), np.array([12.0])]
+print(clip_grad_norm(gs, 1.0), gs)              # 13.0, 크기 1로 줄어듦
+</code></pre></details></li>
+</ol>
+
+<h2 data-min="45" data-kind="project">미니 프로젝트: 깊은 망 초기화 실험</h2>
+<section class="project" data-title="은닉층 10개 MLP에서 초기화 × 활성화 조합의 학습 성패와 층별 기울기 비교" data-min="45">
+<p class="lead">은닉층 10개(폭 64)인 깊은 MLP를 손글씨 숫자로 학습시키며, 초기화 4가지(0.01, Xavier, He, 1.0)와 활성화 3가지(ReLU, tanh, 시그모이드)의 조합을 비교한다. 첫 스텝의 층별 기울기 노름으로 소실과 폭발을 직접 확인하고, 기울기 클리핑이 무엇을 해결하고 무엇을 해결하지 못하는지 본다. 학습을 14번 하므로 수십 초 걸린다.</p>
+<ol class="steps">
+<li><b>깊은 MLP.</b> 층을 리스트로 만들고 순전파·역전파를 함수 하나로 쓴다. 입력은 표준화한다.
+<pre class="run"><code>Xs = (X - X.mean(0)) / (X.std(0) + 1e-8)
+rng = np.random.default_rng(0); tr, te = [], []
+for k in range(10):
+    idx = rng.permutation(np.where(y == k)[0])
+    cut = int(0.8 * len(idx))
+    tr += list(idx[:cut])
+    te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+ACT = {"relu": (lambda z: np.maximum(0, z), lambda a, z: (z &gt; 0).astype(float)),
+       "tanh": (np.tanh, lambda a, z: 1 - a * a),
+       "sigmoid": (lambda z: 1 / (1 + np.exp(-z)), lambda a, z: a * (1 - a))}
+def build(init, depth=10, width=64, seed=1):
+    r = np.random.default_rng(seed)
+    sizes = [64] + [width] * depth + [10]
+    Ws, bs = [], []
+    for a, b in zip(sizes[:-1], sizes[1:]):
+        std = {"0.01": 0.01, "Xavier": math.sqrt(1 / a), "He": math.sqrt(2 / a),
+               "1.0": 1.0}[init]
+        Ws.append(r.normal(0, std, (a, b))); bs.append(np.zeros(b))
+    return Ws, bs
+def fwd_bwd(Ws, bs, Xb, yb, act):
+    phi, dphi = ACT[act]; As, Zs = [Xb], []
+    for l, (W, b) in enumerate(zip(Ws, bs)):
+        Z = As[-1] @ W + b; Zs.append(Z); As.append(phi(Z) if l &lt; len(Ws) - 1 else Z)
+    Zm = As[-1] - As[-1].max(1, keepdims=True)
+    P = np.exp(Zm) / np.exp(Zm).sum(1, keepdims=True)
+    L = -np.log(P[np.arange(len(yb)), yb] + 1e-12).mean()
+    G = P.copy(); G[np.arange(len(yb)), yb] -= 1; G /= len(yb)
+    gW, gb = [None] * len(Ws), [None] * len(Ws)
+    for l in range(len(Ws) - 1, -1, -1):
+        gW[l] = As[l].T @ G; gb[l] = G.sum(0)
+        if l &gt; 0: G = (G @ Ws[l].T) * dphi(As[l], Zs[l - 1])
+    return L, gW, gb
+print("준비 완료")
+</code></pre></li>
+<li><b>첫 스텝의 층별 기울기.</b> 학습 전에 배치 하나로 층별 가중치 기울기 노름을 구해 그린다. 앞쪽 층과 뒤쪽 층의 비를 비교하라.
+<pre class="run"><code>plt.figure(figsize=(6.4, 3.4))
+for act, init in [("sigmoid", "Xavier"), ("tanh", "Xavier"), ("relu", "He"),
+                  ("relu", "0.01"), ("relu", "1.0")]:
+    Ws, bs = build(init)
+    with np.errstate(all="ignore"):
+        _, gW, _ = fwd_bwd(Ws, bs, Xs[tr[:64]], y[tr[:64]], act)
+    norms = [np.linalg.norm(g) for g in gW]
+    plt.semilogy(range(1, len(norms) + 1), norms, "o-", ms=3, label=f"{act} + {init}")
+    print(f"{act:7s} + {init:6s}: 1층 {norms[0]:.1e}, 10층 {norms[-2]:.1e}, 비 "
+          f"{norms[0] / norms[-2]:.1e}")
+plt.xlabel("층 (1 = 입력 쪽)")
+plt.ylabel("기울기 노름")
+plt.legend(fontsize=8)
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+<li><b>학습 비교.</b> 조합마다 학습률 0.05, 배치 32로 10에폭 학습하고 에폭별 손실과 테스트 정확도를 기록한다.
+<pre class="run"><code>def train(init, act, lr=0.05, epochs=10, clip=None, seed=1):
+    Ws, bs = build(init, seed=seed); r = np.random.default_rng(seed); curve = []
+    for ep in range(epochs):
+        order = r.permutation(len(tr)); tot = 0.0
+        for s in range(0, len(order), 32):
+            i = tr[order[s:s + 32]]
+            with np.errstate(all="ignore"):
+                L, gW, gb = fwd_bwd(Ws, bs, Xs[i], y[i], act)
+                if clip:
+                    norm = math.sqrt(sum(float((g ** 2).sum()) for g in gW + gb))
+                    if norm &gt; clip:
+                        gW = [g * clip / norm for g in gW]
+                        gb = [g * clip / norm for g in gb]
+                for l in range(len(Ws)):
+                    Ws[l] -= lr * gW[l]; bs[l] -= lr * gb[l]
+            tot += L * len(i)
+        curve.append(tot / len(tr))
+    with np.errstate(all="ignore"):
+        Z = Xs[te]
+        for l, (W, b) in enumerate(zip(Ws, bs)):
+            Z = Z @ W + b; Z = ACT[act][0](Z) if l &lt; len(Ws) - 1 else Z
+    return np.array(curve), (Z.argmax(1) == y[te]).mean()
+results = {}
+for act in ["relu", "tanh", "sigmoid"]:
+    for init in ["0.01", "Xavier", "He", "1.0"]:
+        c, acc = train(init, act); results[(act, init)] = (c, acc)
+        print(f"{act:7s} + {init:6s}: 손실 1에폭 {c[0]:.3f} → 10에폭 {c[-1]:.3f},  "
+              f"테스트 정확도 {acc:.3f}")
+</code></pre></li>
+<li><b>클리핑의 효과와 한계.</b> ReLU + 1.0 초기화(폭발)를 학습률 0.01로, 클리핑 없이와 노름 1로 클리핑해서 비교한다.
+<pre class="run"><code>for clip in [None, 1.0]:
+    c, acc = train("1.0", "relu", lr=0.01, clip=clip)
+    print(f"클리핑 {clip}: 손실 {np.round(c[[0, 4, 9]], 3)},  "
+          f"테스트 정확도 {acc:.3f}")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>2단계: 시그모이드 + Xavier는 1층의 기울기가 10층보다 약 40만 배 작다(비 $2\times10^{-6}$, 소실). tanh + Xavier와 ReLU + He는 비가 1 근처다. ReLU + 0.01은 모든 층의 기울기가 $10^{-12}$ 수준이고, ReLU + 1.0은 $10^{8}$ 수준이다(폭발).</li>
+<li>3단계: ReLU + He(약 97.5%)와 tanh + Xavier(약 97.3%)만 잘 학습된다. ReLU + Xavier는 학습되기는 하지만 느리다(10에폭 손실 약 0.5, 85%). 0.01 초기화는 활성화와 무관하게 손실이 $\ln10 = 2.303$에서 움직이지 않는다. 시그모이드는 Xavier, He 모두 10층에서는 학습되지 않는다. 1.0 초기화는 ReLU에서 NaN, tanh에서 포화로 실패한다.</li>
+<li>4단계: 클리핑이 없으면 첫 스텝에 NaN이 된다. 클리핑하면 NaN은 사라지지만 손실이 20 이상에서 아주 천천히 줄 뿐이다. 초기 출력 자체가 거대해서 생긴 문제이므로 기울기 크기를 제한하는 것만으로는 고칠 수 없다. 클리핑은 가끔 튀는 기울기로부터 학습을 보호하는 안전장치로 쓰고, 근본 원인(초기화, 학습률, 구조)은 따로 고친다.</li>
+</ul></details>
+</section>

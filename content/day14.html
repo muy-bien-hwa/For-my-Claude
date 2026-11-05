@@ -1,0 +1,300 @@
+<ul class="goals">
+  <li>데이터 탐색부터 최종 보고까지 분류 프로젝트의 전 과정을 한 번에 수행한다.</li>
+  <li>전처리를 포함한 모델을 같은 인터페이스(<code>fit</code>, <code>predict_proba</code>)로 구현하고 교차검증으로 비교한다.</li>
+  <li>운영 기준(악성 재현율 98% 이상)에 맞는 임계값을 학습 데이터만으로 정하고, 테스트 세트로 한 번 평가한다.</li>
+  <li>2주차의 개념(로지스틱 회귀, 경사하강법, 규제, 교차검증, 지표, kNN, 결정 트리)을 하나의 작업 흐름으로 연결한다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="review">프로젝트 개요</h2>
+<p>유방 종양 569개의 세포핵 측정값 30가지로 악성 여부를 판정하는 진단 보조 분류기를 만든다. 10일차에 로지스틱 회귀 하나를 만들었고, 12일차에 규제 강도를 교차검증으로 골랐다. 이번에는 세 종류의 모델을 같은 조건에서 비교하고, "악성을 거의 놓치지 않는다"는 운영 기준을 세워 그에 맞는 판정 규칙까지 완성한다.</p>
+<div class="flow"><div>탐색</div><div>분할과<br>평가 계획</div><div>기준선</div><div class="hl">세 모델<br>교차검증</div><div>운영<br>임계값</div><div>최종 평가<br>보고서</div></div>
+<div class="box warn" data-title="이 프로젝트의 규칙"><p>테스트 세트(115개)는 7단계 전까지 열지 않는다. 모델, 하이퍼파라미터, 임계값은 모두 학습 세트 안의 교차검증으로 정한다. 실제 의료 기기는 훨씬 큰 데이터와 임상 검증이 필요하다. 이 프로젝트는 방법을 익히기 위한 것이다.</p></div>
+<h3>완료 기준</h3>
+<ul class="checklist" data-id="w2-project">
+  <li>클래스 비율, 결측치, 특징의 범위를 확인하고 클래스별 분포를 그렸다.</li>
+  <li>특징 사이의 상관을 보고 중복 정보가 많은 특징 묶음을 찾았다.</li>
+  <li>층화 80:20 분할과 학습 세트의 층화 5겹을 만들었다.</li>
+  <li>최빈 클래스와 특징 하나짜리 기준선의 성능을 구했다.</li>
+  <li>로지스틱 회귀, kNN, 결정 트리를 같은 인터페이스로 구현했다.</li>
+  <li>13개 후보의 교차검증 AUC를 표와 그래프로 비교하고 최종 모델을 골랐다.</li>
+  <li>겹 밖 예측으로 재현율 98% 이상의 임계값을 정했다.</li>
+  <li>테스트 세트로 한 번 평가하고, 틀린 표본을 분석했다.</li>
+  <li>결과를 다섯 문장 이내의 보고서로 정리했다.</li>
+</ul>
+
+<h2 data-min="25" data-kind="project">1단계: 데이터 탐색</h2>
+<p>형상, 클래스 비율, 결측치, 값의 범위를 먼저 본다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("breast_cancer")
+X, y = d["X"].astype(float), d["y"].astype(int)
+names = d["feature_names_ko"]
+print("X:", X.shape, " y:", y.shape, " 악성(1) 비율: %.3f" % y.mean())
+print("결측치 개수:", int(np.isnan(X).sum()))
+lo, hi = X.min(axis=0), X.max(axis=0)
+o = np.argsort(hi)
+print("범위가 가장 작은 특징:", names[o[0]], f"{lo[o[0]]:.4f} ~ {hi[o[0]]:.4f}")
+print("범위가 가장 큰 특징:  ", names[o[-1]], f"{lo[o[-1]]:.1f} ~ {hi[o[-1]]:.1f}")
+</code></pre>
+<p>결측치는 없고, 특징의 범위가 $10^{-3}$부터 $10^3$까지 다르다. 거리나 경사하강법을 쓰는 모델에는 표준화가 필요하다(9일차, 13일차). 다음으로 클래스별 분포를 특징 몇 개에 대해 겹쳐 그린다.</p>
+<pre class="run"><code>show = ["평균 반지름", "평균 질감", "최악 오목점 수", "평균 프랙탈 차원"]
+fig, axs = plt.subplots(1, 4, figsize=(11, 2.8))
+for ax, nm in zip(axs, show):
+    j = names.index(nm); bins = np.linspace(X[:, j].min(), X[:, j].max(), 25)
+    ax.hist(X[y == 0, j], bins, alpha=.6, label="양성")
+    ax.hist(X[y == 1, j], bins, alpha=.6, label="악성")
+    ax.set_title(nm, fontsize=10); ax.set_yticks([])
+axs[0].legend(fontsize=8); plt.tight_layout(); plt.show()
+</code></pre>
+<p>최악 오목점 수와 평균 반지름은 두 클래스가 잘 갈리고, 평균 프랙탈 차원은 거의 겹친다. 특징 사이의 상관도 본다. "평균" 10개 특징의 상관 행렬을 그린다.</p>
+<pre class="run"><code>C = np.corrcoef(X[:, :10].T)
+plt.figure(figsize=(5.6, 4.8))
+plt.imshow(C, cmap="RdBu_r", vmin=-1, vmax=1); plt.colorbar(label="상관계수")
+plt.xticks(range(10), [n.replace("평균 ", "") for n in names[:10]], rotation=60,
+           fontsize=8)
+plt.yticks(range(10), [n.replace("평균 ", "") for n in names[:10]], fontsize=8)
+plt.title("평균 특징 10개의 상관"); plt.tight_layout(); plt.show()
+print("반지름-둘레 %.3f, 반지름-넓이 %.3f" % (C[0, 2], C[0, 3]))
+</code></pre>
+<p>반지름, 둘레, 넓이는 상관이 0.99 수준으로 사실상 같은 정보다. 이런 특징이 많으면 로지스틱 회귀의 개별 가중치가 불안정해지고(10일차 해설), L2 규제가 도움이 된다.</p>
+
+<h2 data-min="15" data-kind="project">2단계: 분할과 평가 계획</h2>
+<p>10일차·12일차와 같은 층화 80:20 분할을 쓰고, 학습 세트 안에서 층화 5겹을 만든다.</p>
+<pre class="run"><code>rng = np.random.default_rng(0); tr, te = [], []
+for c in [0, 1]:
+    idx = rng.permutation(np.where(y == c)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+Xtr, ytr = X[tr], y[tr]
+def stratified_folds(t_, k=5, seed=0):
+    r = np.random.default_rng(seed); f = [[] for _ in range(k)]
+    for c in [0, 1]:
+        for i, j in enumerate(r.permutation(np.where(t_ == c)[0])): f[i % k].append(j)
+    return [np.array(sorted(a)) for a in f]
+folds = stratified_folds(ytr)
+print("학습", Xtr.shape, " 테스트", X[te].shape, " 겹 크기", [len(f) for f in folds])
+</code></pre>
+<div class="box key" data-title="평가 계획 (모델을 보기 전에 정한다)"><ol>
+<li>모델 비교 지표: 교차검증의 겹 밖 예측으로 계산한 <b>AUC</b>. 임계값과 무관하게 양성과 음성을 얼마나 잘 줄 세우는지 잰다. 확률의 품질이 모델마다 달라(kNN과 트리는 0과 1에 몰린 확률을 낸다) BCE보다 공정하다.</li>
+<li>운영 기준: <b>악성 재현율 0.98 이상</b>. 그 조건에서 정밀도가 가장 높은 임계값을 쓴다.</li>
+<li>최종 보고: 테스트 세트의 혼동 행렬, 정밀도, 재현율, AUC. 한 번만 계산한다.</li>
+</ol></div>
+
+<h2 data-min="10" data-kind="project">3단계: 기준선</h2>
+<p>모델이 넘어야 할 바닥을 정한다. 항상 양성(0)이라고 말하는 모델과, 특징 하나의 값을 그대로 점수로 쓰는 모델이다. 특징 하나의 AUC는 "그 특징의 값으로만 줄 세웠을 때의 성능"이다.</p>
+<pre class="run"><code>def auc(p, t_):
+    pos, neg = p[t_ == 1], p[t_ == 0]
+    return ((pos[:, None] &gt; neg[None, :]).mean()
+            + 0.5 * (pos[:, None] == neg[None, :]).mean())
+print("항상 양성: 정확도 %.3f, 재현율 0, AUC 0.5" % (1 - ytr.mean()))
+single = sorted([(auc(Xtr[:, j], ytr), names[j]) for j in range(30)], reverse=True)
+for a, nm in single[:3]: print(f"특징 하나: {nm:10s} AUC {a:.4f}")
+print(f"가장 약한 특징: {single[-1][1]} AUC {single[-1][0]:.4f}")
+</code></pre>
+<p>특징 하나만으로도 AUC가 0.97을 넘는다. 이 데이터는 쉬운 편이며, 모델들의 차이는 소수점 둘째·셋째 자리에서 난다. AUC가 0.5보다 작은 특징은 값이 작을수록 악성이라는 뜻이다(부호를 뒤집으면 1 − AUC).</p>
+
+<h2 data-min="30" data-kind="project">4단계: 세 모델을 같은 틀로 구현</h2>
+<p>모든 모델이 <code>fit(X, y)</code>로 학습하고 <code>predict_proba(X)</code>로 악성 확률을 내도록 만든다. 표준화는 모델 안에서 <code>fit</code>할 때 학습 데이터로만 계산하므로, 교차검증의 겹마다 자동으로 다시 계산된다(누수 방지).</p>
+<pre class="run"><code>sigmoid = lambda z: 0.5 * (1 + np.tanh(0.5 * z))
+class Standardize:
+    def fit(self, A): self.mu, self.sd = A.mean(axis=0), A.std(axis=0); return self
+    def transform(self, A): return (A - self.mu) / self.sd
+
+# 10·12일차: L2 로지스틱 회귀
+class LogReg:
+    def __init__(self, lam=0.0, steps=1000, lr=0.5):
+        self.lam, self.steps, self.lr = lam, steps, lr
+    def fit(self, A, t_):
+        self.sc = Standardize().fit(A)
+        Z = np.c_[np.ones(len(A)), self.sc.transform(A)]; th = np.zeros(Z.shape[1])
+        for _ in range(self.steps):
+            g = Z.T @ (sigmoid(Z @ th) - t_) / len(t_); g[1:] += 2 * self.lam * th[1:]
+            th -= self.lr * g
+        self.th = th; return self
+    def predict_proba(self, A):
+        return sigmoid(np.c_[np.ones(len(A)), self.sc.transform(A)] @ self.th)
+
+def sq_dists(Q, A):
+    return (Q ** 2).sum(1)[:, None] + (A ** 2).sum(1)[None, :] - 2 * Q @ A.T
+# 13일차: 이웃 중 악성 비율을 확률로
+class KNN:
+    def __init__(self, k): self.k = k
+    def fit(self, A, t_):
+        self.sc = Standardize().fit(A)
+        self.A = self.sc.transform(A)
+        self.t = t_
+        return self
+    def predict_proba(self, Q):
+        nn = np.argsort(sq_dists(self.sc.transform(Q), self.A), axis=1)[:, :self.k]
+        return self.t[nn].mean(axis=1)
+
+def gini(t_): p = np.mean(t_) if len(t_) else 0; return 1 - p ** 2 - (1 - p) ** 2
+def best_split(A, t_):
+    n = len(t_); best = (gini(t_), None, None)
+    for j in range(A.shape[1]):
+        o = np.argsort(A[:, j])
+        xs, ys = A[o, j], t_[o]
+        nl = np.arange(1, n)
+        nr = n - nl
+        pl = np.cumsum(ys)[:-1] / nl; pr = (ys.sum() - np.cumsum(ys)[:-1]) / nr
+        g = (nl * (1 - pl ** 2 - (1 - pl) ** 2)
+             + nr * (1 - pr ** 2 - (1 - pr) ** 2)) / n
+        g = np.where(xs[1:] &gt; xs[:-1], g, np.inf); i = np.argmin(g)
+        if g[i] &lt; best[0]: best = (g[i], j, (xs[i] + xs[i + 1]) / 2)
+    return best
+# 13일차: 잎의 악성 비율을 확률로
+class Tree:
+    def __init__(self, max_depth, min_n=5): self.md, self.mn = max_depth, min_n
+    def _build(self, A, t_, depth):
+        if depth == self.md or len(t_) &lt; self.mn or gini(t_) == 0:
+            return float(np.mean(t_))
+        g, j, th = best_split(A, t_)
+        if j is None: return float(np.mean(t_))
+        m = A[:, j] &lt;= th
+        return (j, th, self._build(A[m], t_[m], depth + 1),
+                self._build(A[~m], t_[~m], depth + 1))
+    def fit(self, A, t_): self.root = self._build(A, t_, 0); return self
+    def predict_proba(self, A):
+        out = []
+        for x in A:
+            node = self.root
+            while isinstance(node, tuple):
+                node = node[2] if x[node[0]] &lt;= node[1] else node[3]
+            out.append(node)
+        return np.array(out)
+
+def oof_proba(make_model, A, t_):
+    """5겹 교차검증의 겹 밖 예측: 모든 학습 표본이 한 번씩 검증 겹에서 예측된다."""
+    p = np.zeros(len(t_))
+    for f in folds:
+        trn = np.setdiff1d(np.arange(len(t_)), f)
+        p[f] = make_model().fit(A[trn], t_[trn]).predict_proba(A[f])
+    return p
+print("겹 밖 예측 시험:",
+      oof_proba(lambda: LogReg(0.0, steps=50), Xtr, ytr)[:5].round(3))
+</code></pre>
+
+<h2 data-min="30" data-kind="project">5단계: 교차검증으로 모델 비교</h2>
+<p>세 계열에서 하이퍼파라미터 후보 13개를 만든다. 각 후보의 겹 밖 예측으로 AUC, 임계값 0.5의 정확도, BCE를 구한다.</p>
+<pre class="run"><code>def bce(p, t_):
+    p = np.clip(p, 1e-6, 1 - 1e-6)
+    return -np.mean(t_ * np.log(p) + (1 - t_) * np.log(1 - p))
+cands = {}
+for lam in [0, 1e-3, 3e-3, 1e-2, 3e-2]:
+    cands[f"로지스틱 λ={lam:g}"] = lambda lam=lam: LogReg(lam)
+for k in [3, 5, 9, 15]: cands[f"kNN k={k}"] = lambda k=k: KNN(k)
+for md in [2, 3, 4, 6]: cands[f"트리 깊이={md}"] = lambda md=md: Tree(md)
+oof = {}
+print(f"{'후보':14s}  AUC     정확도   BCE")
+for nm, make in cands.items():
+    oof[nm] = p = oof_proba(make, Xtr, ytr)
+    print(f"{nm:14s}  {auc(p, ytr):.4f}  {((p &gt;= 0.5) == ytr).mean():.4f}  "
+          f"{bce(p, ytr):.4f}")
+</code></pre>
+<pre class="run"><code>labels = list(oof); aucs = [auc(oof[k], ytr) for k in labels]
+colors = ["C0" if k.startswith("로지") else "C1" if k.startswith("kNN") else "C2"
+          for k in labels]
+plt.figure(figsize=(6.4, 3.6))
+plt.barh(labels[::-1], aucs[::-1], color=colors[::-1])
+plt.xlim(0.9, 1.0)
+plt.xlabel("5겹 교차검증 AUC")
+plt.grid(alpha=.3, axis="x")
+plt.tight_layout()
+plt.show()
+best = labels[int(np.argmax(aucs))]
+print("최종 모델:", best, " AUC %.4f" % max(aucs))
+</code></pre>
+<p>결과를 해석한다. 로지스틱 회귀가 가장 높고, kNN은 $k$가 클수록 좋아지며, 트리 하나는 확연히 낮다. 정확도로는 세 계열의 차이가 1~5%p 정도로 보이지만, AUC와 BCE로 보면 확률의 품질 차이가 더 분명하다. 트리의 BCE가 큰 것은 잎이 순수해 0이나 1에 가까운 확률을 내다가 틀리면 큰 벌점을 받기 때문이다.</p>
+
+<h2 data-min="15" data-kind="project">6단계: 운영 임계값 정하기</h2>
+<p>최종 모델의 겹 밖 예측에서, 재현율이 0.98 이상인 임계값 중 가장 높은 것을 고른다. 임계값이 높을수록 오경보가 적다.</p>
+<pre class="run"><code>def confusion(p, t_, thr):
+    pr = p &gt;= thr
+    return dict(TP=int((pr &amp; (t_ == 1)).sum()), FN=int((~pr &amp; (t_ == 1)).sum()),
+                FP=int((pr &amp; (t_ == 0)).sum()), TN=int((~pr &amp; (t_ == 0)).sum()))
+def prec_rec(c):
+    return c["TP"] / max(c["TP"] + c["FP"], 1), c["TP"] / max(c["TP"] + c["FN"], 1)
+p = oof[best]
+thr = next(t_ for t_ in np.sort(np.unique(p))[::-1]
+           if prec_rec(confusion(p, ytr, t_))[1] &gt;= 0.98)
+for t_ in [0.5, thr]:
+    P_, R_ = prec_rec(confusion(p, ytr, t_))
+    print(f"겹 밖 예측, 임계값 {t_:.3f}: 정밀도 {P_:.3f}, 재현율 {R_:.3f}")
+ts = np.linspace(0.01, 0.99, 99)
+pr_curve = np.array([prec_rec(confusion(p, ytr, t_)) for t_ in ts])
+plt.figure(figsize=(5.6, 3.2))
+plt.plot(ts, pr_curve[:, 0], label="정밀도")
+plt.plot(ts, pr_curve[:, 1], label="재현율")
+plt.axvline(thr, color="C3", ls="--", label=f"선택 {thr:.3f}")
+plt.axhline(0.98, color="gray", ls=":", lw=1)
+plt.xlabel("임계값"); plt.legend(); plt.grid(alpha=.3); plt.show()
+</code></pre>
+
+<h2 data-min="25" data-kind="project">7단계: 최종 평가와 오류 분석</h2>
+<p>최종 모델을 학습 세트 전체로 다시 학습하고, 테스트 세트를 처음이자 마지막으로 연다.</p>
+<pre class="run"><code>final = cands[best]().fit(Xtr, ytr)
+p_test = final.predict_proba(X[te]); yte = y[te]
+for t_ in [0.5, thr]:
+    c = confusion(p_test, yte, t_); P_, R_ = prec_rec(c)
+    print(f"테스트, 임계값 {t_:.3f}: {c}  정밀도 {P_:.3f}  재현율 {R_:.3f}")
+print("테스트 AUC %.4f" % auc(p_test, yte))
+</code></pre>
+<p>운영 임계값에서 틀린 표본(오경보)을 확률 순으로 보고, 가장 확률이 높았던 오경보 하나의 특징값을 표준화 점수(학습 세트 기준)로 양성·악성 평균과 비교한다.</p>
+<pre class="run"><code>fp = np.where((p_test &gt;= thr) &amp; (yte == 0))[0]
+print("오경보 %d개의 악성 확률:" % len(fp), np.sort(p_test[fp]).round(2))
+k = fp[np.argmax(p_test[fp])]
+sc = Standardize().fit(Xtr); z = sc.transform(X[te][k:k + 1])[0]
+zb, zm = sc.transform(Xtr[ytr == 0]).mean(0), sc.transform(Xtr[ytr == 1]).mean(0)
+top = np.argsort(-np.abs(final.th[1:]))[:8]
+xs = np.arange(len(top))
+plt.figure(figsize=(7, 3.4))
+plt.bar(xs - 0.27, zb[top], 0.27, label="양성 평균")
+plt.bar(xs, zm[top], 0.27, label="악성 평균")
+plt.bar(xs + 0.27, z[top], 0.27, label=f"이 오경보 (p = {p_test[k]:.2f})", color="C3")
+plt.xticks(xs, [names[j] for j in top], rotation=40, ha="right", fontsize=8)
+plt.ylabel("표준화 값")
+plt.legend(fontsize=8); plt.grid(alpha=.3, axis="y"); plt.tight_layout(); plt.show()
+</code></pre>
+<p>오경보 표본은 가중치가 큰 특징 여러 개에서 악성 쪽으로 치우쳐 있다. 모델의 실수라기보다 "양성이지만 악성처럼 생긴" 경계 사례다. 이런 표본이 재검사 대상이 되는 것은 운영 기준(재현율 우선)이 의도한 결과다.</p>
+
+<h2 data-min="10" data-kind="project">8단계: 보고서 정리</h2>
+<p>아래 질문에 답하는 다섯 문장 이내의 보고서를 학습 노트에 쓴다.</p>
+<ol class="steps">
+  <li>데이터: 표본 수, 특징 수, 클래스 비율, 전처리에서 주의한 점은?</li>
+  <li>기준선과 비교한 세 모델 계열의 교차검증 성능은?</li>
+  <li>최종 모델과 운영 임계값을 어떻게 정했는가?</li>
+  <li>테스트 세트의 결과(혼동 행렬, 정밀도, 재현율, AUC)는?</li>
+  <li>한계와 다음 단계는?</li>
+</ol>
+<details class="sol"><summary>참고 보고서</summary>
+<p>유방 종양 569개(30개 특징, 악성 37%, 결측치 없음, 반지름·둘레·넓이 상관 0.99)를 층화 80:20으로 나누고, 표준화는 각 학습 겹에서만 계산했다. 학습 세트 5겹 교차검증 AUC는 특징 하나 기준선 약 0.97, 결정 트리 0.92~0.93, kNN 0.98~0.99, L2 로지스틱 회귀 0.991~0.995였다. AUC가 가장 높은 로지스틱 회귀($\lambda = 0.01$)를 고르고, 겹 밖 예측에서 재현율 0.98 이상을 만족하는 가장 높은 임계값(약 0.16)을 운영 기준으로 정했다. 테스트 세트(115개)에서 임계값 0.5는 악성 2개를 놓쳤지만 운영 임계값에서는 악성 43개를 모두 찾았고(재현율 1.00), 오경보 11개로 정밀도 0.80, AUC 0.999였다. 테스트 표본이 작아 재현율의 불확실성이 크고(확장 과제 3), 다른 병원 데이터에서의 검증과 확률 보정이 다음 단계다.</p></details>
+
+<h2 data-min="15" data-kind="project">확장 과제</h2>
+<ol class="exercises">
+  <li><b>L1 로지스틱 회귀로 특징 고르기.</b> 경사하강법의 한 걸음 뒤에 가중치를 0 쪽으로 $\eta\lambda$만큼 당기고 부호가 바뀌면 0으로 두는 연산(소프트 임계값)을 넣으면 L1 규제가 된다. $\lambda = 0.01$에서 0이 아닌 가중치는 몇 개 남는가?
+    <details class="sol"><summary>풀이</summary><pre><code>sc = Standardize().fit(Xtr); Z = np.c_[np.ones(len(Xtr)), sc.transform(Xtr)]
+th = np.zeros(31); lr, lam = 0.5, 0.01
+for _ in range(2000):
+    th -= lr * Z.T @ (sigmoid(Z @ th) - ytr) / len(ytr)
+    th[1:] = np.sign(th[1:]) * np.maximum(np.abs(th[1:]) - lr * lam, 0)   # 소프트 임계값
+kept = np.where(th[1:] != 0)[0]
+print(len(kept), [names[j] for j in kept])
+</code></pre><p>30개 중 11개만 남는다. 평균 반지름·둘레·넓이는 모두 0이 되고, 같은 정보를 더 강하게 담은 "최악" 쪽 특징들이 남는다. 상관이 높은 특징들 사이에서 L1은 일부만 남기고 나머지를 0으로 보낸다. 12일차 그림의 "마름모 꼭짓점" 효과다.</p></details></li>
+  <li><b>학습 곡선.</b> 각 겹의 학습 데이터를 50, 100, 200, 전체(약 363)개로 줄여 로지스틱 회귀의 교차검증 AUC를 그려라. 데이터를 더 모으면 나아질까?
+    <details class="sol"><summary>풀이</summary><pre><code>for n in [50, 100, 200, 363]:
+    s = []
+    for f in folds:
+        trn = np.setdiff1d(np.arange(len(ytr)), f)
+        sub = np.random.default_rng(0).choice(trn, min(n, len(trn)), replace=False)
+        s.append(auc(LogReg(0.01).fit(Xtr[sub], ytr[sub]).predict_proba(Xtr[f]), ytr[f]))
+    print(n, round(np.mean(s), 4))
+</code></pre><p>50개로도 AUC가 0.99를 넘고 그 뒤로는 거의 평평하다. 이 데이터와 모델에서는 데이터를 더 모으는 것보다 다른 정보(영상 자체, 다른 검사)가 필요하다. 학습 곡선이 계속 오르는 중이라면 데이터 추가가 가장 확실한 개선책이다.</p></details></li>
+  <li><b>테스트 결과의 불확실성.</b> 테스트 세트에서 표본을 복원 추출로 115개씩 1000번 다시 뽑아(부트스트랩) 운영 임계값의 재현율과 정밀도의 2.5%, 97.5% 분위수를 구하라.
+    <details class="sol"><summary>풀이</summary><pre><code>r = np.random.default_rng(0); rec, pre = [], []
+for _ in range(1000):
+    b = r.integers(0, len(yte), len(yte))
+    P_, R_ = prec_rec(confusion(p_test[b], yte[b], thr)); rec.append(R_); pre.append(P_)
+print("재현율 95%% 구간: %.3f ~ %.3f" % tuple(np.percentile(rec, [2.5, 97.5])))
+print("정밀도 95%% 구간: %.3f ~ %.3f" % tuple(np.percentile(pre, [2.5, 97.5])))
+</code></pre><p>테스트에서 재현율이 1.00이었어도, 악성이 43개뿐이라 재현율 1.00은 부트스트랩에서도 항상 1.00으로 나온다. 이는 "놓친 사례가 표본에 없었다"는 뜻일 뿐 진짜 재현율이 1이라는 보장이 아니다. 놓친 사례가 0건일 때 95% 신뢰 상한으로 대략 $3/n$을 쓰는 "3의 법칙"에 따르면 진짜 놓침 비율은 최대 약 $3/43 \approx 7\%$일 수 있다. 정밀도 구간은 0.7~0.9 정도로 넓다.</p></details></li>
+</ol>

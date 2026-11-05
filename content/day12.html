@@ -1,0 +1,381 @@
+<ul class="goals">
+  <li>학습·검증·테스트 세트의 역할을 구분하고, 테스트 세트를 한 번만 써야 하는 이유를 설명할 수 있다.</li>
+  <li>과소적합과 과적합을 학습·검증 오차로 진단하고 편향-분산 관점에서 설명할 수 있다.</li>
+  <li>L2·L1 규제의 식과 효과를 설명하고 경사하강법에 넣을 수 있다.</li>
+  <li>k겹 교차검증으로 하이퍼파라미터를 고를 수 있다.</li>
+  <li>혼동 행렬, 정밀도, 재현율, F1, ROC, AUC를 계산하고 상황에 맞는 지표와 임계값을 고를 수 있다.</li>
+</ul>
+
+<h2 data-min="12" data-kind="concept">일반화와 데이터 분할</h2>
+<p>모델의 목적은 학습 데이터를 외우는 것이 아니라 처음 보는 데이터에서 잘 맞히는 것이다. 이 능력을 <dfn data-t="generalization">일반화</dfn>라 한다. 일반화 성능은 학습에 쓰지 않은 데이터로만 잴 수 있으므로 데이터를 세 부분으로 나눈다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 170" width="640" role="img" aria-label="학습, 검증, 테스트 세트의 비율과 역할">
+  <g font-size="13">
+  <rect x="20" y="30" width="360" height="44" rx="6" class="s-acs" stroke-width="1.4"/>
+  <rect x="384" y="30" width="116" height="44" rx="6" class="s-f2"/>
+  <rect x="504" y="30" width="116" height="44" rx="6" class="s-f" stroke-width="1"/>
+  <text x="200" y="57" text-anchor="middle" class="s-tx" font-weight="700">학습 세트 60%</text>
+  <text x="442" y="57" text-anchor="middle" class="s-tx" font-weight="700">검증 20%</text>
+  <text x="562" y="57" text-anchor="middle" class="s-tx" font-weight="700">테스트 20%</text>
+  </g>
+  <g font-size="12" class="s-txm">
+  <text x="200" y="100" text-anchor="middle">파라미터(가중치)를 학습한다</text>
+  <text x="200" y="118" text-anchor="middle">경사하강법이 보는 유일한 데이터</text>
+  <text x="442" y="100" text-anchor="middle">하이퍼파라미터·모델 선택</text>
+  <text x="442" y="118" text-anchor="middle">조기 종료 시점 결정</text>
+  <text x="562" y="100" text-anchor="middle">최종 성능 보고</text>
+  <text x="562" y="118" text-anchor="middle">마지막에 딱 한 번</text>
+  </g>
+  <text x="320" y="155" text-anchor="middle" class="s-txa" font-size="12.5">정보는 왼쪽에서 오른쪽으로만 흐른다. 테스트 결과를 보고 무언가를 고치면 테스트 세트가 검증 세트가 된다.</text>
+</svg>
+<figcaption>세 세트의 역할. 비율은 데이터 크기에 따라 달라서, 수백만 개면 검증·테스트에 각각 1%만 써도 충분하다.</figcaption>
+</figure>
+<ul>
+<li><dfn data-t="train-set">학습 세트</dfn>: 파라미터를 맞추는 데 쓴다.</li>
+<li><dfn data-t="validation-set">검증 세트</dfn>: 학습률, 규제 강도, 모델 크기 같은 하이퍼파라미터를 고르고, 언제 학습을 멈출지 정한다.</li>
+<li><dfn data-t="test-set">테스트 세트</dfn>: 모든 결정이 끝난 뒤 최종 성능을 한 번 잰다.</li>
+</ul>
+<p>검증 세트로 여러 후보 중 가장 좋은 것을 고르면, 고른 모델의 검증 점수는 운 좋게 높게 나온 쪽으로 치우친다. 그래서 고르는 데 쓰지 않은 테스트 세트가 따로 필요하다. 10일차 프로젝트에서 "테스트 곡선을 보고 학습 길이를 고르지 말라"고 한 이유다.</p>
+
+<h2 data-min="18" data-kind="concept">과소적합과 과적합</h2>
+<p>학습 오차와 검증 오차를 함께 보면 모델의 상태를 진단할 수 있다. 모델이 너무 단순해서 학습 데이터의 패턴조차 못 잡는 상태가 <dfn data-t="underfitting">과소적합</dfn>, 학습 데이터의 잡음까지 외워서 새 데이터에서 틀리는 상태가 <dfn data-t="overfitting">과적합</dfn>이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 260" width="640" role="img" aria-label="모델 복잡도에 따른 학습 오차와 검증 오차">
+  <g font-size="12">
+  <rect x="70" y="20" width="130" height="190" class="s-f" stroke-width="0"/>
+  <rect x="330" y="20" width="200" height="190" class="s-f" stroke-width="0"/>
+  <line x1="70" y1="210" x2="530" y2="210" class="s-mu" stroke-width="1.2"/>
+  <line x1="70" y1="210" x2="70" y2="20" class="s-mu" stroke-width="1.2"/>
+  <text x="300" y="232" text-anchor="middle" class="s-txm">모델 복잡도 (다항식 차수, 파라미터 수, 학습 길이)</text>
+  <text x="40" y="115" text-anchor="middle" class="s-txm" transform="rotate(-90 40 115)">오차</text>
+  <path d="M75 72 C 150 162, 260 192, 525 202" class="s-grn" stroke-width="2.6" fill="none"/>
+  <path d="M75 52 C 150 138, 220 158, 265 156 C 330 154, 420 120, 525 48" class="s-red" stroke-width="2.6" fill="none"/>
+  <line x1="265" y1="20" x2="265" y2="210" class="s-ln" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="135" y="40" text-anchor="middle" class="s-tx" font-weight="700">과소적합</text>
+  <text x="135" y="56" text-anchor="middle" class="s-txm">둘 다 높음</text>
+  <text x="265" y="40" text-anchor="middle" class="s-tx" font-weight="700">적절</text>
+  <text x="430" y="40" text-anchor="middle" class="s-tx" font-weight="700">과적합</text>
+  <text x="430" y="56" text-anchor="middle" class="s-txm">학습 낮음, 검증 높음</text>
+  <text x="528" y="190" text-anchor="end" class="s-tx">학습 오차</text>
+  <text x="508" y="106" text-anchor="end" class="s-tx">검증 오차</text>
+  </g>
+</svg>
+<figcaption>복잡도가 커지면 학습 오차는 계속 줄지만 검증 오차는 U자를 그린다. 검증 오차의 바닥이 일반화가 가장 좋은 지점이다.</figcaption>
+</figure>
+<div class="viz-mount" data-viz="overfit"></div>
+<table>
+  <thead><tr><th>증상</th><th>진단</th><th>처방</th></tr></thead>
+  <tbody>
+    <tr><td>학습 오차가 높다</td><td>과소적합</td><td>더 큰 모델, 더 나은 특징, 더 오래 학습, 규제 줄이기</td></tr>
+    <tr><td>학습 오차는 낮은데 검증 오차가 높다</td><td>과적합</td><td>데이터 늘리기, 규제, 작은 모델, 조기 종료, 데이터 증강(34일차)</td></tr>
+    <tr><td>둘 다 낮고 비슷하다</td><td>양호</td><td>테스트 세트로 최종 확인</td></tr>
+  </tbody>
+</table>
+
+<h2 data-min="10" data-kind="concept">편향과 분산</h2>
+<p>같은 방식으로 다른 학습 데이터를 뽑아 모델을 여러 번 학습한다고 상상한다. 예측의 평균이 정답에서 벗어난 정도를 편향, 학습 데이터에 따라 예측이 흔들리는 정도를 분산이라 한다. 제곱 오차의 기댓값은 정확히 세 부분으로 나뉜다.</p>
+$$\mathbb E\big[(y - \hat f(x))^2\big] = \underbrace{\big(\mathbb E[\hat f(x)] - f(x)\big)^2}_{\text{편향}^2} + \underbrace{\mathbb E\big[(\hat f(x) - \mathbb E[\hat f(x)])^2\big]}_{\text{분산}} + \underbrace{\sigma^2}_{\text{잡음}}$$
+<figure class="fig">
+<svg viewBox="0 0 640 250" width="640" role="img" aria-label="편향과 분산을 과녁으로 표현">
+  <g font-size="12.5">
+  <text x="230" y="18" text-anchor="middle" class="s-tx" font-weight="700">분산 낮음</text>
+  <text x="430" y="18" text-anchor="middle" class="s-tx" font-weight="700">분산 높음</text>
+  <text x="110" y="78" text-anchor="end" class="s-tx" font-weight="700">편향 낮음</text>
+  <text x="110" y="190" text-anchor="end" class="s-tx" font-weight="700">편향 높음</text>
+  <g class="s-mu" stroke-width="1.2" fill="none">
+    <circle cx="230" cy="75" r="50"/><circle cx="230" cy="75" r="32"/><circle cx="230" cy="75" r="14"/>
+    <circle cx="430" cy="75" r="50"/><circle cx="430" cy="75" r="32"/><circle cx="430" cy="75" r="14"/>
+    <circle cx="230" cy="190" r="50"/><circle cx="230" cy="190" r="32"/><circle cx="230" cy="190" r="14"/>
+    <circle cx="430" cy="190" r="50"/><circle cx="430" cy="190" r="32"/><circle cx="430" cy="190" r="14"/>
+  </g>
+  <g class="s-acf"><circle cx="228" cy="73" r="3.5"/><circle cx="234" cy="77" r="3.5"/><circle cx="226" cy="79" r="3.5"/><circle cx="232" cy="71" r="3.5"/><circle cx="230" cy="80" r="3.5"/></g>
+  <g class="s-acf"><circle cx="410" cy="60" r="3.5"/><circle cx="455" cy="85" r="3.5"/><circle cx="425" cy="100" r="3.5"/><circle cx="447" cy="55" r="3.5"/><circle cx="415" cy="88" r="3.5"/></g>
+  <g class="s-redf"><circle cx="252" cy="168" r="3.5"/><circle cx="256" cy="172" r="3.5"/><circle cx="249" cy="174" r="3.5"/><circle cx="255" cy="166" r="3.5"/><circle cx="259" cy="170" r="3.5"/></g>
+  <g class="s-redf"><circle cx="445" cy="160" r="3.5"/><circle cx="470" cy="180" r="3.5"/><circle cx="452" cy="205" r="3.5"/><circle cx="430" cy="172" r="3.5"/><circle cx="465" cy="158" r="3.5"/></g>
+  <text x="500" y="70" class="s-txm">과적합한</text><text x="500" y="86" class="s-txm">복잡한 모델</text>
+  <text x="110" y="212" text-anchor="end" class="s-txm">과소적합한</text><text x="110" y="228" text-anchor="end" class="s-txm">단순 모델</text>
+  </g>
+</svg>
+<figcaption>과녁 중심이 정답, 점 하나가 학습 데이터 하나로 학습한 모델의 예측이다. 단순한 모델은 편향이 크고, 복잡한 모델은 분산이 크다.</figcaption>
+</figure>
+<p>모델이 복잡해지면 편향은 줄고 분산은 커진다. 이 맞바꿈을 <dfn data-t="bias-variance">편향-분산 트레이드오프</dfn>라 한다. 위 인터랙티브에서 데이터 수를 8 → 40으로 늘리면 고차 다항식의 분산이 줄어드는 것을 볼 수 있다. 데이터가 많을수록 복잡한 모델을 감당할 수 있다.</p>
+<div class="box note"><p>파라미터가 데이터보다 훨씬 많은 현대 신경망에서는 이 U자 그림이 그대로 성립하지 않는 경우가 관찰된다(복잡도를 더 키우면 검증 오차가 다시 내려가는 이중 하강). 그래도 "검증 오차로 진단한다"는 원칙은 같다.</p></div>
+
+<h2 data-min="18" data-kind="concept">규제</h2>
+<p>모델이 너무 복잡한 해를 고르지 못하도록 손실에 벌점을 더하는 기법을 통틀어 <dfn data-t="regularization">규제</dfn>라 한다. 가장 흔한 벌점은 가중치의 크기다. 큰 가중치는 입력이 조금 변해도 예측이 크게 변하는, 들쭉날쭉한 함수를 만든다.</p>
+$$L_{\text{L2}} = L + \lambda\sum_j w_j^2, \qquad L_{\text{L1}} = L + \lambda\sum_j |w_j|$$
+<p>제곱합 벌점이 <dfn data-t="l2-reg">L2 규제</dfn>(릿지), 절댓값 합 벌점이 <dfn data-t="l1-reg">L1 규제</dfn>(라쏘)다. $\lambda$는 벌점의 세기를 정하는 하이퍼파라미터다. 편향 $b$는 함수의 들쭉날쭉함과 무관하므로 보통 벌점에서 뺀다.</p>
+<h3>L2: 가중치 감쇠</h3>
+<p>L2 벌점의 그래디언트는 $2\lambda\mathbf w$다. 경사하강법의 한 걸음은</p>
+$$\mathbf w \leftarrow \mathbf w - \eta(\nabla L + 2\lambda\mathbf w) = (1 - 2\eta\lambda)\,\mathbf w - \eta\nabla L$$
+<p>로, 매 걸음 가중치를 $(1 - 2\eta\lambda)$배로 살짝 줄인 뒤 원래의 갱신을 한다. 그래서 가중치 감쇠(weight decay)라고도 부른다. 선형회귀에서는 정규방정식이 $(X^\top X + N\lambda I)\boldsymbol\theta = X^\top\mathbf y$가 되어, 8일차에서 본 "$X^\top X$의 역행렬이 없는" 문제도 사라진다.</p>
+<div class="box ex" data-title="규제가 가중치를 줄이는 정도"><p>8일차의 네 점 $(1, 2), (2, 3), (3, 5), (4, 6)$에 원점을 지나는 직선 $\hat y = wx$를 맞춘다. $L = \frac1N\sum(wx_i - y_i)^2 + \lambda w^2$을 미분해 0으로 두면 $w = \frac{\sum x_iy_i}{\sum x_i^2 + N\lambda} = \frac{47}{30 + 4\lambda}$. $\lambda = 0$이면 1.567, $\lambda = 1$이면 1.382, $\lambda = 10$이면 0.671. 벌점이 클수록 가중치가 0 쪽으로 끌려간다.</p></div>
+<h3>L1: 희소한 해</h3>
+<p>L1은 일부 가중치를 정확히 0으로 만드는 경향이 있다. 쓸모없는 특징을 스스로 버리는 특징 선택 효과다. 이유는 그림으로 보는 것이 쉽다. 규제 문제는 "가중치가 일정 영역 안에 있어야 한다"는 조건 아래 손실을 최소화하는 것과 같다. L2의 영역은 원, L1의 영역은 꼭짓점이 축 위에 있는 마름모다.</p>
+<figure class="fig">
+<svg viewBox="0 -14 640 264" width="640" role="img" aria-label="L2의 원과 L1의 마름모가 손실 등고선과 만나는 점">
+  <g transform="translate(160,130)">
+    <line x1="-120" y1="0" x2="130" y2="0" class="s-mu" stroke-width="1"/><line x1="0" y1="105" x2="0" y2="-110" class="s-mu" stroke-width="1"/>
+    <circle r="55" class="s-acs" stroke-width="2"/>
+    <g class="s-org" stroke-width="1.4" fill="none"><ellipse cx="95" cy="-70" rx="34" ry="18" transform="rotate(-30 95 -70)"/><ellipse cx="95" cy="-70" rx="62" ry="34" transform="rotate(-30 95 -70)"/><ellipse cx="95" cy="-70" rx="92" ry="50" transform="rotate(-30 95 -70)"/></g>
+    <circle cx="95" cy="-70" r="3.5" class="s-orgf"/>
+    <circle cx="44" cy="-33" r="5" class="s-redf"/>
+    <text x="0" y="122" text-anchor="middle" class="s-tx" font-size="13" font-weight="700">L2: 원과 만남 → 두 가중치 모두 작게</text>
+    <text x="108" y="-70" class="s-txm" font-size="11.5">규제 없는 해</text>
+    <text x="8" y="-114" class="s-txm" font-size="12">w₂</text><text x="126" y="16" class="s-txm" font-size="12">w₁</text>
+  </g>
+  <g transform="translate(470,130)">
+    <line x1="-120" y1="0" x2="130" y2="0" class="s-mu" stroke-width="1"/><line x1="0" y1="105" x2="0" y2="-110" class="s-mu" stroke-width="1"/>
+    <path d="M0 -62 L62 0 L0 62 L-62 0 Z" class="s-acs" stroke-width="2"/>
+    <g class="s-org" stroke-width="1.4" fill="none"><ellipse cx="60" cy="-95" rx="30" ry="16" transform="rotate(-10 60 -95)"/><ellipse cx="60" cy="-95" rx="52" ry="28" transform="rotate(-10 60 -95)"/><ellipse cx="60" cy="-95" rx="76" ry="41" transform="rotate(-10 60 -95)"/></g>
+    <circle cx="60" cy="-95" r="3.5" class="s-orgf"/>
+    <circle cx="0" cy="-62" r="5" class="s-redf"/>
+    <text x="0" y="122" text-anchor="middle" class="s-tx" font-size="13" font-weight="700">L1: 꼭짓점과 만남 → w₁ = 0</text>
+    <text x="10" y="-58" class="s-txa" font-size="11.5">해</text>
+    <text x="8" y="-114" class="s-txm" font-size="12">w₂</text><text x="126" y="16" class="s-txm" font-size="12">w₁</text>
+  </g>
+</svg>
+<figcaption>주황 타원은 원래 손실의 등고선이다. 등고선을 키워 가다가 허용 영역에 처음 닿는 점(빨강)이 규제된 해다. 마름모는 꼭짓점이 튀어나와 있어 축 위(한 가중치가 0)에서 먼저 닿기 쉽다.</figcaption>
+</figure>
+
+<h2 data-min="10" data-kind="concept">교차검증</h2>
+<p>데이터가 수백 개뿐이면 검증 세트가 작아 점수가 운에 크게 좌우된다. 8일차 프로젝트에서 테스트 $R^2$가 분할에 따라 0.62~0.90으로 흔들린 것이 그 예다. 학습 데이터를 $k$개의 겹(fold)으로 나눠, 한 겹씩 돌아가며 검증에 쓰고 나머지로 학습해 $k$개 점수를 평균하는 방법이 <dfn data-t="cross-validation">교차검증</dfn>이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 230" width="640" role="img" aria-label="5겹 교차검증">
+  <g font-size="12">
+  <g transform="translate(80,20)">
+    <g class="s-f"><rect x="80" y="0" width="76" height="28" rx="4"/><rect x="160" y="0" width="76" height="28" rx="4"/><rect x="240" y="0" width="76" height="28" rx="4"/><rect x="320" y="0" width="76" height="28" rx="4"/></g><rect x="0" y="0" width="76" height="28" rx="4" class="s-acf"/>
+    <g class="s-f"><rect x="0" y="36" width="76" height="28" rx="4"/><rect x="160" y="36" width="76" height="28" rx="4"/><rect x="240" y="36" width="76" height="28" rx="4"/><rect x="320" y="36" width="76" height="28" rx="4"/></g><rect x="80" y="36" width="76" height="28" rx="4" class="s-acf"/>
+    <g class="s-f"><rect x="0" y="72" width="76" height="28" rx="4"/><rect x="80" y="72" width="76" height="28" rx="4"/><rect x="240" y="72" width="76" height="28" rx="4"/><rect x="320" y="72" width="76" height="28" rx="4"/></g><rect x="160" y="72" width="76" height="28" rx="4" class="s-acf"/>
+    <g class="s-f"><rect x="0" y="108" width="76" height="28" rx="4"/><rect x="80" y="108" width="76" height="28" rx="4"/><rect x="160" y="108" width="76" height="28" rx="4"/><rect x="320" y="108" width="76" height="28" rx="4"/></g><rect x="240" y="108" width="76" height="28" rx="4" class="s-acf"/>
+    <g class="s-f"><rect x="0" y="144" width="76" height="28" rx="4"/><rect x="80" y="144" width="76" height="28" rx="4"/><rect x="160" y="144" width="76" height="28" rx="4"/><rect x="240" y="144" width="76" height="28" rx="4"/></g><rect x="320" y="144" width="76" height="28" rx="4" class="s-acf"/>
+    <g class="s-txm" text-anchor="end"><text x="-10" y="18">1회차</text><text x="-10" y="54">2회차</text><text x="-10" y="90">3회차</text><text x="-10" y="126">4회차</text><text x="-10" y="162">5회차</text></g>
+    <g class="s-tx"><text x="410" y="18">→ 점수 s₁</text><text x="410" y="54">→ 점수 s₂</text><text x="410" y="90">→ 점수 s₃</text><text x="410" y="126">→ 점수 s₄</text><text x="410" y="162">→ 점수 s₅</text></g>
+    <text x="198" y="198" text-anchor="middle" class="s-tx" font-weight="700">교차검증 점수 = s₁ ~ s₅의 평균 (± 표준편차)</text>
+  </g>
+  </g>
+</svg>
+<figcaption>5겹 교차검증. 진한 칸이 그 회차의 검증 겹이다. 모든 표본이 정확히 한 번씩 검증에 쓰인다. 테스트 세트는 이 과정 밖에 따로 둔다.</figcaption>
+</figure>
+<ol class="steps">
+<li>후보 하이퍼파라미터(예: $\lambda$)마다 $k$겹 교차검증 점수를 구한다.</li>
+<li>평균 점수가 가장 좋은 후보를 고른다.</li>
+<li>고른 하이퍼파라미터로 학습 데이터 전체에서 다시 학습한다.</li>
+<li>테스트 세트로 한 번 평가한다.</li>
+</ol>
+<p>분류 문제에서는 각 겹의 클래스 비율이 전체와 같도록 층화해서 나눈다. 비용은 학습을 $k$배 하는 것이라, 학습에 며칠씩 걸리는 큰 신경망에서는 쓰지 않고 검증 세트 하나로 대신한다.</p>
+
+<h2 data-min="22" data-kind="concept">분류 지표</h2>
+<p>정확도 하나로는 부족하다. 이진 분류의 예측과 정답을 2×2 표로 센 것이 <dfn data-t="confusion-matrix">혼동 행렬</dfn>이다. 관심 있는 클래스(병, 사기, 스팸)를 양성이라 부른다.</p>
+<table>
+  <thead><tr><th></th><th>예측 양성</th><th>예측 음성</th></tr></thead>
+  <tbody>
+    <tr><td><b>실제 양성</b></td><td>TP (참 양성)</td><td>FN (거짓 음성, 놓침)</td></tr>
+    <tr><td><b>실제 음성</b></td><td>FP (거짓 양성, 오경보)</td><td>TN (참 음성)</td></tr>
+  </tbody>
+</table>
+<p>이 네 칸에서 여러 지표를 만든다.</p>
+<table>
+  <thead><tr><th>지표</th><th>식</th><th>질문</th></tr></thead>
+  <tbody>
+    <tr><td><dfn data-t="accuracy">정확도</dfn></td><td>$\frac{TP + TN}{\text{전체}}$</td><td>전체 중 몇 개를 맞혔나</td></tr>
+    <tr><td><dfn data-t="precision">정밀도</dfn></td><td>$\frac{TP}{TP + FP}$</td><td>양성이라고 한 것 중 진짜 양성은 몇 %인가</td></tr>
+    <tr><td><dfn data-t="recall">재현율</dfn></td><td>$\frac{TP}{TP + FN}$</td><td>진짜 양성 중 몇 %를 찾아냈나</td></tr>
+    <tr><td><dfn data-t="f1">F1 점수</dfn></td><td>$\frac{2PR}{P + R}$</td><td>정밀도와 재현율의 조화평균</td></tr>
+  </tbody>
+</table>
+<div class="box ex" data-title="검진 100명"><p>환자 10명, 정상 90명. 모델 결과 TP = 8, FN = 2, FP = 5, TN = 85. 정확도 $93/100 = 0.93$, 정밀도 $8/13 = 0.615$, 재현율 $8/10 = 0.80$, F1 $= 2(0.615)(0.80)/(1.415) = 0.696$. "양성 판정을 받은 사람 중 62%만 실제 환자이고, 환자의 80%를 찾아냈다"고 읽는다.</p></div>
+<div class="box warn" data-title="정확도의 함정"><p>같은 100명에게 "모두 정상"이라고 말하는 모델의 정확도는 0.90이다. 위 모델(0.93)과 비슷해 보이지만 환자를 한 명도 찾지 못한다(재현율 0). 이처럼 클래스 비율이 크게 치우친 상태를 <dfn data-t="class-imbalance">클래스 불균형</dfn>이라 한다. 사기 탐지(0.1%), 희귀병처럼 불균형이 심할수록 정확도는 쓸모가 없어지고 재현율·정밀도·AUC를 봐야 한다.</p></div>
+<p>정밀도와 재현율 중 무엇이 중요한지는 오류의 비용이 정한다. 암 검진에서 놓친 환자(FN)는 치명적이고 오경보(FP)는 재검사 비용이므로 재현율을 우선한다. 스팸 필터에서 중요한 메일을 스팸으로 버리는 것(FP)은 치명적이므로 정밀도를 우선한다.</p>
+
+<h2 data-min="16" data-kind="concept">임계값과 ROC 곡선</h2>
+<p>로지스틱 회귀는 확률을 내고, $p &gt; 0.5$에서 자르는 것은 하나의 선택일 뿐이다. 양성 판정의 기준이 되는 이 값을 <dfn data-t="threshold">임계값</dfn>이라 한다. 임계값을 낮추면 양성 판정이 늘어 재현율은 오르고 정밀도는 내려간다. 10일차 프로젝트에서 임계값을 0.5에서 0.2로 낮췄을 때 놓친 악성이 사라지고 오경보가 늘어난 것이 이것이다.</p>
+<p>임계값을 1에서 0까지 내리며 (거짓 양성률, 참 양성률)을 찍어 이은 곡선이 <dfn data-t="roc">ROC 곡선</dfn>이다.</p>
+$$\text{TPR} = \frac{TP}{TP + FN}\;(=\text{재현율}), \qquad \text{FPR} = \frac{FP}{FP + TN}$$
+<div class="viz-mount" data-viz="threshold"></div>
+<p>ROC 곡선 아래 넓이를 <dfn data-t="auc">AUC</dfn>라 한다. 완벽한 분류기는 1, 무작위로 찍는 분류기는 대각선이라 0.5다. AUC는 "무작위로 고른 양성 하나와 음성 하나 중 양성의 점수가 더 높을 확률"과 같다. 임계값과 무관하게 모델이 양성과 음성을 얼마나 잘 줄 세우는지를 재므로, 모델끼리 비교할 때 좋다. 실제 운용에서는 그 위에서 비용에 맞는 임계값 하나를 고른다.</p>
+
+<h2 data-min="7" data-kind="concept">데이터 누수</h2>
+<p>평가 데이터의 정보가 어떤 경로로든 학습에 섞여 들어가 성능이 실제보다 좋게 측정되는 것을 <dfn data-t="data-leakage">데이터 누수</dfn>라 한다. 실험에서는 훌륭한데 배포하면 무너지는 모델의 가장 흔한 원인이다.</p>
+<ul>
+<li><b>전처리 누수</b>: 전체 데이터로 표준화 평균·표준편차를 구한 뒤 나눈다. 통계는 학습 세트(교차검증이면 학습 겹)에서만 구한다.</li>
+<li><b>중복 누수</b>: 같은 환자의 사진 여러 장이 학습과 테스트에 나뉘어 들어간다. 환자 단위로 나눠야 한다.</li>
+<li><b>시간 누수</b>: 주가 예측에서 미래 데이터로 학습하고 과거를 테스트한다. 시간 순서로 나눠야 한다.</li>
+<li><b>정답 누수</b>: 정답이 정해진 뒤에야 알 수 있는 특징(예: "치료 시작 여부")을 입력에 넣는다.</li>
+<li><b>선택 누수</b>: 테스트 점수를 보며 모델을 고친다.</li>
+</ul>
+
+<h2 data-min="18" data-kind="practice">코드 실습: 지표를 직접 계산하기</h2>
+<p>10일차의 유방암 로지스틱 회귀(규제 없음, 1000스텝)를 다시 학습하고, 지표와 ROC 곡선을 직접 구현한다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+d = load_data("breast_cancer")
+X, y = d["X"].astype(float), d["y"].astype(float)
+rng = np.random.default_rng(0); tr, te = [], []
+for c in [0, 1]:
+    idx = rng.permutation(np.where(y == c)[0]); cut = int(0.8 * len(idx))
+    tr += list(idx[:cut]); te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+sigmoid = lambda z: 0.5 * (1 + np.tanh(0.5 * z))
+def fit_logreg(X_, y_, lam=0.0, steps=1000, lr=0.5):
+    # 학습에 쓰는 데이터로만 표준화 통계
+    mu, sd = X_.mean(axis=0), X_.std(axis=0)
+    Z = np.c_[np.ones(len(X_)), (X_ - mu) / sd]; th = np.zeros(Z.shape[1])
+    for _ in range(steps):
+        g = Z.T @ (sigmoid(Z @ th) - y_) / len(y_)
+        # L2 벌점의 그래디언트 (편향 제외)
+        g[1:] += 2 * lam * th[1:]
+        th -= lr * g
+    return th, mu, sd
+def predict_proba(model, X_):
+    th, mu, sd = model
+    return sigmoid(np.c_[np.ones(len(X_)), (X_ - mu) / sd] @ th)
+def confusion(p, t_, thr=0.5):
+    pred = p &gt;= thr
+    return dict(TP=int((pred &amp; (t_ == 1)).sum()), FN=int((~pred &amp; (t_ == 1)).sum()),
+                FP=int((pred &amp; (t_ == 0)).sum()), TN=int((~pred &amp; (t_ == 0)).sum()))
+def metrics(c):
+    P = c["TP"] / max(c["TP"] + c["FP"], 1); R = c["TP"] / max(c["TP"] + c["FN"], 1)
+    return dict(acc=(c["TP"] + c["TN"]) / sum(c.values()), precision=P, recall=R,
+                f1=2 * P * R / max(P + R, 1e-12))
+model = fit_logreg(X[tr], y[tr])
+p_te = predict_proba(model, X[te])
+c = confusion(p_te, y[te]); print(c)
+print({k: round(v, 4) for k, v in metrics(c).items()})
+# 항상 "양성 아님"이라고 말하는 모델
+base = confusion(np.zeros(len(te)), y[te])
+print("항상 음성:", {k: round(v, 4) for k, v in metrics(base).items()})
+</code></pre>
+<p>"항상 음성" 모델도 정확도가 0.63이다. 이제 임계값을 모든 점수 값으로 바꿔 가며 ROC 곡선을 그리고 AUC를 두 방법으로 계산한다.</p>
+<pre class="run"><code>def roc_curve(p, t_):
+    order = np.argsort(-p)                                  # 점수 높은 순
+    tp = np.cumsum(t_[order] == 1); fp = np.cumsum(t_[order] == 0)
+    tpr = np.r_[0, tp / tp[-1]]; fpr = np.r_[0, fp / fp[-1]]
+    return fpr, tpr
+fpr, tpr = roc_curve(p_te, y[te])
+# 사다리꼴 넓이의 합
+auc_trap = ((fpr[1:] - fpr[:-1]) * (tpr[1:] + tpr[:-1]) / 2).sum()
+pos, neg = p_te[y[te] == 1], p_te[y[te] == 0]
+auc_rank = ((pos[:, None] &gt; neg[None, :]).mean()
+            + 0.5 * (pos[:, None] == neg[None, :]).mean())
+print(f"AUC (사다리꼴) = {auc_trap:.4f},  AUC (양성이 음성보다 높을 확률) = "
+      f"{auc_rank:.4f}")
+plt.figure(figsize=(4.4, 4.2))
+plt.plot(fpr, tpr, lw=2, label=f"로지스틱 회귀 (AUC {auc_rank:.3f})")
+plt.plot([0, 1], [0, 1], "k--", lw=1, label="무작위 (AUC 0.5)")
+plt.xlabel("거짓 양성률 FPR")
+plt.ylabel("참 양성률 TPR (재현율)")
+plt.legend(loc="lower right")
+plt.grid(alpha=.3)
+plt.show()
+</code></pre>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>학습 세트로 파라미터, 검증 세트(또는 교차검증)로 하이퍼파라미터, 테스트 세트로 최종 평가를 한 번.</li>
+  <li>학습 오차가 높으면 과소적합, 학습은 낮고 검증이 높으면 과적합. 복잡도에 따라 편향↓ 분산↑.</li>
+  <li>L2 규제 = 가중치 감쇠, 해를 작게. L1 규제는 일부 가중치를 0으로(특징 선택). 편향은 규제하지 않는다.</li>
+  <li>k겹 교차검증: 겹마다 돌아가며 검증, 점수 평균. 전처리 통계도 겹 안에서 계산.</li>
+  <li>혼동 행렬 → 정밀도·재현율·F1. 불균형 데이터에서 정확도는 무의미. ROC·AUC는 임계값과 무관한 순위 성능, 임계값은 비용으로 고른다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"학습률과 규제 강도를 고르는 데 써야 하는 데이터는?","o":["학습 세트","검증 세트(또는 교차검증)","테스트 세트","전체 데이터"],"a":1,"e":"테스트 세트는 모든 선택이 끝난 뒤 한 번만 쓴다."},
+ {"q":"학습 정확도 99%, 검증 정확도 80%인 모델의 상태와 처방은?","o":["과소적합, 더 큰 모델","과적합, 규제 강화나 데이터 추가","양호, 그대로 배포","데이터 누수, 무시"],"a":1,"e":"학습과 검증의 큰 차이는 과적합의 신호다."},
+ {"q":"L2 규제 λ를 키우면 가중치의 크기는?","o":["커진다","작아진다","변하지 않는다","모두 정확히 0이 된다"],"a":1,"e":"벌점이 커질수록 0 쪽으로 끌려간다. 정확히 0을 잘 만드는 것은 L1이다."},
+ {"q":"TP = 30, FP = 10, FN = 20, TN = 940일 때 정밀도와 재현율은?","o":["0.75, 0.6","0.6, 0.75","0.97, 0.6","0.75, 0.97"],"a":0,"e":"정밀도 30/40 = 0.75, 재현율 30/50 = 0.6. 정확도는 0.97로 높지만 환자의 40%를 놓친다."},
+ {"q":"암 검진처럼 놓친 환자가 치명적인 경우 우선해야 할 지표와 임계값 조정은?","o":["정밀도, 임계값 올리기","재현율, 임계값 낮추기","정확도, 0.5 유지","AUC, 임계값 무관"],"a":1,"e":"임계값을 낮추면 양성 판정이 늘어 재현율이 오른다."},
+ {"q":"AUC = 0.5의 의미는?","o":["완벽한 분류기","양성과 음성을 무작위 수준으로만 구별","항상 양성이라고 말함","정확도 50%"],"a":1,"e":"무작위로 고른 양성의 점수가 음성보다 높을 확률이 0.5다."},
+ {"q":"5겹 교차검증에서 표준화 통계를 계산하는 올바른 방법은?","o":["전체 데이터에서 한 번","각 회차의 학습 겹(4겹)에서","각 회차의 검증 겹에서","테스트 세트에서"],"a":1,"e":"검증 겹의 정보가 섞이면 누수다."},
+ {"q":"사진 1만 장(환자 1천 명, 1인당 10장)을 무작위로 섞어 학습/테스트로 나눴다. 문제는?","o":["문제없다","같은 환자의 사진이 양쪽에 들어가 성능이 부풀려진다","테스트가 너무 크다","클래스 불균형"],"a":1,"e":"환자 단위로 나눠야 한다. 중복 누수다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>양성 1%인 데이터 10,000개에서 모델이 양성 150개를 예측했고 그중 80개가 실제 양성이다. 혼동 행렬, 정확도, 정밀도, 재현율, F1을 구하라.
+    <details class="sol"><summary>풀이</summary><p>실제 양성 100. TP = 80, FP = 70, FN = 20, TN = 9830. 정확도 0.991, 정밀도 0.533, 재현율 0.80, F1 $= 2(0.533)(0.8)/1.333 = 0.64$.</p></details></li>
+  <li>L2 규제 선형회귀의 정규방정식 $(X^\top X + N\lambda I')\boldsymbol\theta = X^\top\mathbf y$를 유도하라. 여기서 $I'$는 편향 자리만 0인 단위 행렬이다.
+    <details class="sol"><summary>풀이</summary><p>$L = \frac1N\|X\boldsymbol\theta - \mathbf y\|^2 + \lambda\boldsymbol\theta^\top I'\boldsymbol\theta$. 그래디언트 $\frac2N X^\top(X\boldsymbol\theta - \mathbf y) + 2\lambda I'\boldsymbol\theta = 0$. 양변에 $N/2$를 곱하면 $X^\top X\boldsymbol\theta + N\lambda I'\boldsymbol\theta = X^\top\mathbf y$.</p></details></li>
+  <li>점수가 양성 $\{0.9, 0.8, 0.4\}$, 음성 $\{0.7, 0.3, 0.2, 0.1\}$일 때 AUC를 "양성이 음성보다 높을 확률"로 계산하라.
+    <details class="sol"><summary>풀이</summary><p>양성-음성 쌍 12개 중 양성이 높은 쌍: 0.9는 4개 모두, 0.8도 4개, 0.4는 0.3·0.2·0.1의 3개. 합 11, AUC $= 11/12 \approx 0.917$.</p>
+<pre><code>pos = np.array([0.9, 0.8, 0.4]); neg = np.array([0.7, 0.3, 0.2, 0.1])
+print((pos[:, None] &gt; neg[None, :]).mean())
+</code></pre></details></li>
+</ol>
+
+<h2 data-min="36" data-kind="project">미니 프로젝트: 교차검증으로 규제 강도와 임계값 고르기</h2>
+<section class="project" data-title="5겹 교차검증으로 L2 규제 강도를 고르고, 재현율 98% 임계값을 정하기" data-min="36">
+<p class="lead">유방암 분류기의 하이퍼파라미터(L2 규제 강도 $\lambda$)를 테스트 세트를 보지 않고 5겹 교차검증으로 고른다. 교차검증의 겹 밖 예측으로 "악성의 98% 이상을 찾는" 임계값을 정한 뒤, 테스트 세트로 단 한 번 평가한다. 위 코드 실습의 함수(<code>fit_logreg</code>, <code>predict_proba</code>, <code>confusion</code>, <code>metrics</code>)를 그대로 쓴다.</p>
+<ol class="steps">
+<li><b>층화 5겹 나누기.</b> 학습 세트(454개)의 각 클래스를 섞어 다섯 겹에 번갈아 배정한다.
+<pre class="run"><code>Xtr, ytr = X[tr], y[tr]
+def stratified_folds(t_, k=5, seed=0):
+    r = np.random.default_rng(seed); folds = [[] for _ in range(k)]
+    for c in [0, 1]:
+        for i, j in enumerate(r.permutation(np.where(t_ == c)[0])):
+            folds[i % k].append(j)                          # 클래스마다 돌아가며 배정
+    return [np.array(sorted(f)) for f in folds]
+folds = stratified_folds(ytr)
+print("겹 크기:", [len(f) for f in folds], " 겹별 악성 비율:",
+      [round(ytr[f].mean(), 3) for f in folds])
+</code></pre></li>
+<li><b>λ에 따른 교차검증 곡선.</b> 각 $\lambda$에서 다섯 번 학습해 검증 겹의 BCE 평균과 표준편차를 구한다. 표준화는 <code>fit_logreg</code> 안에서 학습 겹만으로 계산된다.
+<pre class="run"><code>def bce(p, t_):
+    p = np.clip(p, 1e-12, 1 - 1e-12)
+    return -np.mean(t_ * np.log(p) + (1 - t_) * np.log(1 - p))
+lams = [0, 1e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1, 1]
+cv_mean, cv_std, oof_all = [], [], {}
+for lam in lams:
+    scores, oof = [], np.zeros(len(ytr))
+    for k in range(5):
+        va = folds[k]; trn = np.setdiff1d(np.arange(len(ytr)), va)
+        # TODO 확인: 학습 겹으로만 학습
+        m = fit_logreg(Xtr[trn], ytr[trn], lam)
+        oof[va] = predict_proba(m, Xtr[va])                 # 겹 밖 예측 저장
+        scores.append(bce(oof[va], ytr[va]))
+    cv_mean.append(np.mean(scores)); cv_std.append(np.std(scores)); oof_all[lam] = oof
+    print(f"λ = {lam:&lt;7g} 검증 BCE = {np.mean(scores):.4f} ± {np.std(scores):.4f}")
+best = lams[int(np.argmin(cv_mean))]
+# λ = 0을 로그축에 그리기 위해 1e-5에 표시
+xs = [1e-5] + lams[1:]
+plt.figure(figsize=(5.6, 3.3))
+plt.errorbar(xs, cv_mean, yerr=cv_std, fmt="o-", capsize=3); plt.xscale("log")
+plt.axvline(best if best &gt; 0 else 1e-5, color="C3", ls="--",
+            label=f"선택: λ = {best}")
+plt.xlabel("λ (맨 왼쪽 점은 λ = 0)")
+plt.ylabel("5겹 검증 BCE")
+plt.legend()
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+<li><b>임계값 정하기.</b> 고른 $\lambda$의 겹 밖 예측(모든 학습 표본이 한 번씩 검증으로 쓰인 예측)에서, 재현율이 0.98 이상이 되는 가장 높은 임계값을 찾는다.
+<pre class="run"><code>oof = oof_all[best]
+# 높은 임계값부터 내려가며
+cands = np.sort(np.unique(oof))[::-1]
+thr = next(t_ for t_ in cands if metrics(confusion(oof, ytr, t_))["recall"] &gt;= 0.98)
+for t_ in [0.5, thr]:
+    m_ = metrics(confusion(oof, ytr, t_))
+    print(f"겹 밖 예측, 임계값 {t_:.3f}: 정밀도 {m_['precision']:.3f}, 재현율 "
+          f"{m_['recall']:.3f}")
+</code></pre></li>
+<li><b>최종 평가 (한 번만).</b> 고른 $\lambda$로 학습 세트 전체에서 다시 학습하고, 테스트 세트에서 임계값 0.5와 위에서 정한 임계값의 결과를 보고한다.
+<pre class="run"><code>final = fit_logreg(Xtr, ytr, best)
+p_test = predict_proba(final, X[te])
+for t_ in [0.5, thr]:
+    c = confusion(p_test, y[te], t_); m_ = metrics(c)
+    print(f"테스트, 임계값 {t_:.3f}: {c}  정밀도 {m_['precision']:.3f} 재현율 "
+          f"{m_['recall']:.3f} F1 {m_['f1']:.3f}")
+pos, neg = p_test[y[te] == 1], p_test[y[te] == 0]
+print("테스트 AUC = %.4f,  테스트 BCE = %.4f" % ((pos[:, None] &gt; neg[None, :]).mean(),
+                                                 bce(p_test, y[te])))
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>2단계: 검증 BCE는 $\lambda = 0.003$ 근처에서 가장 낮고(약 0.078), $\lambda$가 0.03을 넘으면 빠르게 나빠진다(과소적합). $\lambda = 0$은 평균은 조금 높고 표준편차가 커서(겹마다 들쭉날쭉) 덜 안정적이다. 전형적인 U자 곡선이다.</li>
+<li>3단계: 임계값 0.5에서 겹 밖 재현율은 약 0.95다. 재현율 0.98을 얻으려면 임계값을 약 0.1까지 내려야 하고, 그 대가로 정밀도가 약 0.98에서 0.84로 떨어진다.</li>
+<li>4단계: 테스트에서 임계값 0.5는 악성 1개를 놓치고 오경보 0개, 정한 임계값(약 0.1)은 악성을 모두 찾고 오경보 12개다. AUC는 0.999 수준이다. 테스트 결과를 본 뒤 $\lambda$나 임계값을 다시 바꾸면 안 된다. 바꾸고 싶다면 그 근거를 교차검증 안에서 다시 찾아야 한다.</li>
+<li>참고: 이 테스트 세트에서는 $\lambda = 0$의 BCE(0.062)가 고른 $\lambda$(0.082)보다 오히려 낮다. 테스트가 115개뿐이라 생기는 흔들림이며, 교차검증으로 고른 값이 틀렸다는 뜻이 아니다. 선택 절차가 정직하면 이런 결과도 그대로 보고한다.</li>
+</ul></details>
+</section>

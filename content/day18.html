@@ -1,0 +1,284 @@
+<ul class="goals">
+  <li>수치 미분으로 모든 파라미터의 기울기를 구하는 방법이 왜 비현실적인지 설명할 수 있다.</li>
+  <li>식을 계산 그래프로 그리고, 국소 기울기와 상류 기울기로 역전파를 손으로 수행할 수 있다.</li>
+  <li>덧셈, 곱셈, max, 분기 노드에서 기울기가 흐르는 규칙을 설명할 수 있다.</li>
+  <li>선형층, ReLU, 소프트맥스+교차 엔트로피의 행렬 역전파 공식을 유도하고 형상으로 검산할 수 있다.</li>
+  <li>2층 신경망의 역전파를 구현하고 수치 미분으로 검증할 수 있다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="concept">기울기를 어떻게 구할 것인가</h2>
+<p>경사하강법에는 모든 파라미터에 대한 손실의 기울기가 필요하다. 5일차의 수치 미분은 파라미터 하나를 $\pm h$만큼 바꿔 순전파를 두 번 하는 방법이다. 파라미터가 $P$개면 순전파를 $2P$번 해야 한다. 17일차의 MNIST MLP(파라미터 23만 개)라면 한 스텝에 순전파 47만 번이다. 학습은 수만 스텝이므로 불가능하다.</p>
+<p>역전파는 순전파 한 번과 그 약 두 배 비용의 역방향 계산 한 번으로 <b>모든</b> 파라미터의 기울기를 정확히 구한다. 아이디어는 5일차의 연쇄법칙을 출력 쪽부터 적용하며 중간 결과를 재사용하는 것이다. 이것을 체계적으로 하는 도구가 계산 그래프다.</p>
+
+<h2 data-min="15" data-kind="concept">계산 그래프</h2>
+<p>복잡한 식을 덧셈, 곱셈, 지수 같은 기본 연산으로 쪼개, 연산을 노드로, 값의 흐름을 화살표로 그린 그림을 <dfn data-t="computational-graph">계산 그래프</dfn>라 한다. $f(x, y, z) = (x + y)\,z$를 예로 든다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 230" width="640" role="img" aria-label="(x + y) z의 계산 그래프와 순전파·역전파 값">
+  <defs><marker id="d18a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker></defs>
+  <g font-size="13">
+  <g class="s-f"><rect x="40" y="35" width="56" height="34" rx="8"/><rect x="40" y="105" width="56" height="34" rx="8"/><rect x="40" y="175" width="56" height="34" rx="8"/></g>
+  <g class="s-tx" text-anchor="middle" font-weight="700"><text x="68" y="57">x</text><text x="68" y="127">y</text><text x="68" y="197">z</text></g>
+  <g class="s-ln" stroke-width="1.6" fill="none"><path d="M96 52 C 170 52, 170 85, 252 85"/><path d="M96 122 C 170 122, 170 95, 252 95"/><path d="M96 192 C 300 192, 330 160, 432 135"/><path d="M296 90 C 360 90, 380 118, 432 125"/></g>
+  <circle cx="274" cy="90" r="22" class="s-acs" stroke-width="1.6"/><text x="274" y="95" text-anchor="middle" class="s-tx" font-size="16">+</text><text x="274" y="58" text-anchor="middle" class="s-txm">q</text>
+  <circle cx="454" cy="130" r="22" class="s-acs" stroke-width="1.6"/><text x="454" y="135" text-anchor="middle" class="s-tx" font-size="16">×</text><text x="454" y="98" text-anchor="middle" class="s-txm">f</text>
+  <line x1="476" y1="130" x2="560" y2="130" class="s-ln" stroke-width="1.6" marker-end="url(#d18a)"/>
+  <g class="s-grnf" font-weight="700"><text x="140" y="45">−2</text><text x="140" y="140">5</text><text x="300" y="180">−4</text><text x="355" y="98">3</text><text x="520" y="122">−12</text></g>
+  <g class="s-redf" font-weight="700"><text x="140" y="70">−4</text><text x="140" y="160">−4</text><text x="300" y="205">3</text><text x="355" y="122">−4</text><text x="520" y="152">1</text></g>
+  <g transform="translate(560,40)" font-size="12"><text x="0" y="0" class="s-grnf">초록: 순전파 값</text><text x="0" y="20" class="s-redf">빨강: ∂f/∂(·)</text></g>
+  </g>
+</svg>
+<figcaption>$x = -2$, $y = 5$, $z = -4$일 때. 순전파(초록)는 왼쪽에서 오른쪽으로 $q = x + y = 3$, $f = qz = -12$를 계산한다. 역전파(빨강)는 오른쪽에서 왼쪽으로 기울기를 전달한다.</figcaption>
+</figure>
+
+<h2 data-min="20" data-kind="concept">국소 기울기와 상류 기울기</h2>
+<p>역전파는 출력에서 시작한다. $\partial f/\partial f = 1$. 그다음 노드마다 같은 일을 반복한다. 노드 $u = g(a, b)$가 있을 때</p>
+<ul>
+<li><dfn data-t="upstream-gradient">상류 기울기</dfn> $\dfrac{\partial f}{\partial u}$: 출력에서 이 노드의 출력까지 이미 계산되어 넘어온 기울기.</li>
+<li><dfn data-t="local-gradient">국소 기울기</dfn> $\dfrac{\partial u}{\partial a}$, $\dfrac{\partial u}{\partial b}$: 노드 자기 연산만의 미분. 다른 노드를 몰라도 계산할 수 있다.</li>
+</ul>
+<p>연쇄법칙에 따라 입력 쪽으로 보낼 기울기는 둘의 곱이다.</p>
+$$\frac{\partial f}{\partial a} = \underbrace{\frac{\partial f}{\partial u}}_{\text{상류}}\cdot\underbrace{\frac{\partial u}{\partial a}}_{\text{국소}}$$
+<div class="box ex" data-title="그림의 역전파"><ol>
+<li>$f = q\cdot z$: 국소 기울기 $\partial f/\partial q = z = -4$, $\partial f/\partial z = q = 3$. 상류가 1이므로 $\partial f/\partial q = -4$, $\partial f/\partial z = 3$.</li>
+<li>$q = x + y$: 국소 기울기 $\partial q/\partial x = 1$, $\partial q/\partial y = 1$. 상류 $-4$를 곱해 $\partial f/\partial x = -4$, $\partial f/\partial y = -4$.</li>
+</ol>
+<p>검산: $f = (x + y)z$이므로 $\partial f/\partial x = z = -4$, $\partial f/\partial z = x + y = 3$. 맞다. $x$를 0.01 늘리면 $f$는 약 0.04 줄어든다.</p></div>
+<p>각 노드는 "자기 연산의 국소 미분"만 알면 된다. 그래프가 수천 층이어도, 노드 하나의 일은 상류 기울기를 받아 국소 기울기를 곱해 입력들에게 나눠 주는 것뿐이다. 이 지역성 덕분에 역전파는 어떤 구조의 신경망에도 그대로 적용된다.</p>
+<div class="viz-mount" data-viz="compgraph"></div>
+
+<h2 data-min="15" data-kind="concept">노드별 패턴</h2>
+<table>
+  <thead><tr><th>노드</th><th>순전파</th><th>역전파 (상류 $g$)</th><th>기억법</th></tr></thead>
+  <tbody>
+    <tr><td>덧셈</td><td>$u = a + b$</td><td>$a$에 $g$, $b$에 $g$</td><td>분배기: 그대로 복사</td></tr>
+    <tr><td>곱셈</td><td>$u = a\cdot b$</td><td>$a$에 $g\cdot b$, $b$에 $g\cdot a$</td><td>교환기: 상대의 값을 곱함</td></tr>
+    <tr><td>max</td><td>$u = \max(a, b)$</td><td>큰 쪽에 $g$, 작은 쪽에 0</td><td>라우터: 이긴 쪽으로만</td></tr>
+    <tr><td>분기(복사)</td><td>$a$를 두 곳에서 사용</td><td>두 경로의 기울기를 더함</td><td>합류: 기울기 합</td></tr>
+    <tr><td>함수 $\phi$</td><td>$u = \phi(a)$</td><td>$a$에 $g\cdot\phi'(a)$</td><td>$\sigma$면 $g\,u(1 - u)$, ReLU면 $a &gt; 0$일 때만 $g$</td></tr>
+  </tbody>
+</table>
+<p>분기 규칙이 중요하다. 한 값이 여러 곳에서 쓰이면 그 값을 조금 바꿨을 때 모든 경로로 영향이 퍼지므로, 각 경로의 기울기를 더해야 한다(다변수 연쇄법칙). 신경망에서 한 층의 출력은 다음 층의 모든 뉴런으로 갈라지므로 이 합이 행렬곱 $GW^\top$의 형태로 나타난다. 위 인터랙티브의 "분기" 그래프에서 $x$의 기울기가 $y + 1$이 되는 것을 확인한다.</p>
+<p>ReLU는 max 노드($\max(0, z)$)이므로, $z &gt; 0$이면 기울기를 그대로 통과시키고 $z \le 0$이면 막는다. 죽은 ReLU(16일차)가 왜 회복하지 못하는지 이 규칙으로 설명된다.</p>
+
+<h2 data-min="12" data-kind="concept">뉴런 하나의 역전파</h2>
+<p>로지스틱 회귀 뉴런 $L = -\ln\sigma(w_1x_1 + w_2x_2 + b)$(정답 $y = 1$)를 그래프로 그리면 곱셈 두 개, 덧셈, 시그모이드, $-\ln$ 노드가 이어진다. 위 인터랙티브의 "뉴런" 그래프가 이것이다. $w_1 = 2, x_1 = -1, w_2 = -3, x_2 = -2, b = -3$이면</p>
+<ol class="steps">
+<li>순전파: $s = -2 + 6 - 3 = 1$, $p = \sigma(1) = 0.731$, $L = -\ln0.731 = 0.313$.</li>
+<li>$-\ln$ 노드: 국소 기울기 $-1/p = -1.368$. 상류 1을 곱해 $\partial L/\partial p = -1.368$.</li>
+<li>시그모이드 노드: 국소 기울기 $p(1 - p) = 0.197$. $\partial L/\partial s = -1.368\times0.197 = -0.269$. 이는 $p - y = 0.731 - 1$과 같다(10일차).</li>
+<li>덧셈 노드: $\partial L/\partial b = -0.269$, 두 곱셈 노드로도 $-0.269$씩 복사.</li>
+<li>곱셈 노드: $\partial L/\partial w_1 = -0.269\times x_1 = 0.269$, $\partial L/\partial x_1 = -0.269\times w_1 = -0.538$. 같은 방식으로 $\partial L/\partial w_2 = 0.538$, $\partial L/\partial x_2 = 0.807$.</li>
+</ol>
+<p>입력 $x$에 대한 기울기도 함께 나온다. 학습에는 쓰지 않지만, 이 값이 앞쪽 층으로 넘어가는 상류 기울기가 된다. 신경망은 층마다 이 일을 반복한다.</p>
+
+<h2 data-min="22" data-kind="concept">층 단위 역전파 공식</h2>
+<p>신경망을 스칼라 노드로 그리면 노드가 수백만 개다. 대신 층 하나를 행렬 연산 노드로 보고 행렬 형태의 공식을 쓴다. 이렇게 계산 그래프를 따라 출력에서 입력 방향으로 기울기를 전달하는 알고리즘이 <dfn data-t="backprop">역전파</dfn>다(1986년 러멜하트, 힌턴, 윌리엄스가 대중화).</p>
+<h3>선형층</h3>
+<p>$Z = XW + \mathbf b$에서 상류 기울기 $G = \partial L/\partial Z$(형상 $(N, h)$)가 주어졌다고 하자. 원소로 쓰면 $Z_{ij} = \sum_k X_{ik}W_{kj} + b_j$이므로</p>
+$$\frac{\partial L}{\partial W_{kj}} = \sum_i G_{ij}X_{ik},\qquad \frac{\partial L}{\partial b_j} = \sum_i G_{ij},\qquad \frac{\partial L}{\partial X_{ik}} = \sum_j G_{ij}W_{kj}$$
+<p>이를 행렬로 쓰면 세 공식이 된다.</p>
+<div class="box key" data-title="선형층의 역전파"><p>$$\frac{\partial L}{\partial W} = X^\top G,\qquad \frac{\partial L}{\partial\mathbf b} = \sum_{i}G_{i,:}\;(\text{행 방향 합}),\qquad \frac{\partial L}{\partial X} = GW^\top$$</p>
+<p>형상 검산: $X^\top G$는 $(d, N)(N, h) = (d, h)$로 $W$와 같다. $GW^\top$는 $(N, h)(h, d) = (N, d)$로 $X$와 같다. 기울기의 형상은 항상 변수의 형상과 같다(5일차).</p></div>
+<p>$\partial L/\partial W$에 배치의 모든 표본 기여가 더해지는 것은 $W$가 모든 표본에서 공유되기 때문이다(분기 규칙). $\partial L/\partial\mathbf b$가 행 방향 합인 것도 같은 이유다(브로드캐스팅의 역연산은 합).</p>
+<h3>ReLU와 출력층</h3>
+<p>ReLU: $A = \max(0, Z)$이면 $\partial L/\partial Z = \partial L/\partial A \odot \mathbb 1[Z &gt; 0]$($\odot$은 원소별 곱). 소프트맥스와 교차 엔트로피를 합친 출력층은 11일차의 결과 그대로 $\partial L/\partial Z = (P - Y)/N$이다($Y$는 원-핫, $N$으로 나누는 것은 손실이 평균이기 때문).</p>
+<figure class="fig">
+<svg viewBox="0 0 660 210" width="660" role="img" aria-label="2층 MLP의 순전파와 역전파 흐름">
+  <defs><marker id="d18b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-acf"/></marker>
+  <marker id="d18c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="s-redf"/></marker></defs>
+  <g font-size="12">
+  <g class="s-f2"><rect x="10" y="60" width="48" height="40" rx="6"/><rect x="190" y="60" width="48" height="40" rx="6"/><rect x="330" y="60" width="48" height="40" rx="6"/><rect x="510" y="60" width="48" height="40" rx="6"/></g>
+  <g class="s-acs" stroke-width="1.4"><rect x="80" y="60" width="88" height="40" rx="6"/><rect x="260" y="60" width="50" height="40" rx="6"/><rect x="400" y="60" width="88" height="40" rx="6"/><rect x="580" y="60" width="72" height="40" rx="6"/></g>
+  <g class="s-tx" text-anchor="middle" font-weight="700"><text x="34" y="85">X</text><text x="124" y="78">선형</text><text x="124" y="94" font-weight="400">W₁, b₁</text><text x="214" y="85">Z₁</text><text x="285" y="85">ReLU</text><text x="354" y="85">A₁</text><text x="444" y="78">선형</text><text x="444" y="94" font-weight="400">W₂, b₂</text><text x="534" y="85">Z₂</text><text x="616" y="78">softmax</text><text x="616" y="94">+ CE</text></g>
+  <g class="s-ac" stroke-width="1.6"><line x1="58" y1="70" x2="78" y2="70" marker-end="url(#d18b)"/><line x1="168" y1="70" x2="188" y2="70" marker-end="url(#d18b)"/><line x1="238" y1="70" x2="258" y2="70" marker-end="url(#d18b)"/><line x1="310" y1="70" x2="328" y2="70" marker-end="url(#d18b)"/><line x1="378" y1="70" x2="398" y2="70" marker-end="url(#d18b)"/><line x1="488" y1="70" x2="508" y2="70" marker-end="url(#d18b)"/><line x1="558" y1="70" x2="578" y2="70" marker-end="url(#d18b)"/></g>
+  <g class="s-red" stroke-width="1.6"><line x1="578" y1="92" x2="560" y2="92" marker-end="url(#d18c)"/><line x1="508" y1="92" x2="490" y2="92" marker-end="url(#d18c)"/><line x1="398" y1="92" x2="380" y2="92" marker-end="url(#d18c)"/><line x1="328" y1="92" x2="312" y2="92" marker-end="url(#d18c)"/><line x1="258" y1="92" x2="240" y2="92" marker-end="url(#d18c)"/><line x1="188" y1="92" x2="170" y2="92" marker-end="url(#d18c)"/></g>
+  <text x="330" y="30" text-anchor="middle" class="s-txa" font-weight="700">순전파 →  (중간값 X, Z₁, A₁ 저장)</text>
+  <g class="s-redf"><text x="534" y="128" text-anchor="middle">G₂ = (P − Y)/N</text><text x="354" y="128" text-anchor="middle">dA₁ = G₂W₂ᵀ</text><text x="214" y="128" text-anchor="middle">G₁ = dA₁ ⊙ 1[Z₁ &gt; 0]</text>
+  <text x="444" y="160" text-anchor="middle">dW₂ = A₁ᵀG₂</text><text x="444" y="178" text-anchor="middle">db₂ = Σ G₂</text><text x="124" y="160" text-anchor="middle">dW₁ = XᵀG₁</text><text x="124" y="178" text-anchor="middle">db₁ = Σ G₁</text></g>
+  <text x="330" y="205" text-anchor="middle" class="s-redf" font-weight="700">← 역전파 (저장한 값을 거꾸로 사용)</text>
+  </g>
+</svg>
+<figcaption>2층 MLP의 순전파(파랑, 위)와 역전파(빨강, 아래). 파라미터 기울기는 층의 입력(저장해 둔 $X$, $A_1$)과 그 층에 들어온 상류 기울기의 곱이다.</figcaption>
+</figure>
+
+<h2 data-min="15" data-kind="practice">2-2-1 신경망을 숫자로 따라가기</h2>
+<p>입력 2개, 은닉 뉴런 2개(시그모이드), 출력 1개(시그모이드 + BCE)인 신경망에서 표본 하나의 순전파, 역전파, 갱신을 한 단계씩 진행한다. 각 단계의 숫자를 먼저 손으로 계산한 뒤 "다음"을 눌러 확인한다.</p>
+<div class="viz-mount" data-viz="backprop-steps"></div>
+<p>은닉층의 기울기 $\delta^{(1)}_j = (W_{2,j}\,\delta^{(2)})\cdot h_j(1 - h_j)$는 세 단계로 읽는다. 출력의 오차 $\delta^{(2)}$가 가중치 $W_{2,j}$를 타고 은닉 뉴런 $j$로 돌아오고(곱셈 노드), 시그모이드의 국소 기울기 $h_j(1 - h_j)$를 곱해 활성화 이전으로 넘어간다. 가중치가 큰 연결일수록 오차를 많이 돌려받는다.</p>
+
+<h2 data-min="5" data-kind="concept">역전파의 비용</h2>
+<p>선형층의 역전파는 행렬곱 두 개($X^\top G$, $GW^\top$)이므로 순전파 행렬곱 하나의 두 배 FLOPs가 든다. 따라서 학습 한 스텝(순전파 + 역전파)은 순전파의 약 3배다. 메모리는 순전파에서 저장한 중간값이 차지하며, 층이 깊고 배치가 클수록 늘어난다. 큰 모델을 학습할 때 메모리가 부족하면 중간값 일부를 버렸다가 역전파 때 다시 계산하는 기법(그래디언트 체크포인팅)을 쓴다.</p>
+
+<h2 data-min="18" data-kind="practice">코드 실습: 행렬 역전파와 검증</h2>
+<p>그림의 $(x + y)z$부터 코드로 옮긴다. 순전파 값을 저장하고, 역순으로 국소 기울기를 곱한다.</p>
+<pre class="run"><code>import numpy as np
+x, y, z = -2.0, 5.0, -4.0
+q = x + y; f = q * z                      # 순전파
+df = 1.0
+dq, dz = z * df, q * df                   # 곱셈 노드: 서로 바꿔 곱함
+dx, dy = 1.0 * dq, 1.0 * dq               # 덧셈 노드: 그대로 분배
+print(f"f = {f},  ∂f/∂x = {dx}, ∂f/∂y = {dy}, ∂f/∂z = {dz}")
+</code></pre>
+<p>다음은 손글씨 숫자 64 → 32 → 10 MLP의 한 배치에 대한 역전파다. 그림의 공식을 그대로 옮긴 뒤, 몇 개의 파라미터를 골라 수치 미분과 비교한다.</p>
+<pre class="run"><code>d = load_data("digits")
+X, yl = d["X"][:64].astype(float) / 16, d["y"][:64]            # 표본 64개
+rng = np.random.default_rng(0)
+W1, b1 = rng.normal(0, np.sqrt(2 / 64), (64, 32)), np.zeros(32)
+W2, b2 = rng.normal(0, np.sqrt(2 / 32), (32, 10)), np.zeros(10)
+Y = np.eye(10)[yl]
+
+def forward(W1, b1, W2, b2):
+    Z1 = X @ W1 + b1; A1 = np.maximum(0, Z1); Z2 = A1 @ W2 + b2
+    Zs = Z2 - Z2.max(1, keepdims=True)
+    P = np.exp(Zs) / np.exp(Zs).sum(1, keepdims=True)
+    L = -np.log(P[np.arange(len(yl)), yl]).mean()
+    return L, (Z1, A1, P)
+
+L, (Z1, A1, P) = forward(W1, b1, W2, b2)
+N = len(X)
+G2 = (P - Y) / N                                  # (64, 10)
+dW2 = A1.T @ G2; db2 = G2.sum(0)                  # (32, 10), (10,)
+dA1 = G2 @ W2.T                                   # (64, 32)
+G1 = dA1 * (Z1 &gt; 0)                               # ReLU
+dW1 = X.T @ G1; db1 = G1.sum(0)                   # (64, 32), (32,)
+
+def numeric(param, idx, h=1e-5):
+    old = param[idx]
+    param[idx] = old + h; Lp = forward(W1, b1, W2, b2)[0]
+    param[idx] = old - h; Lm = forward(W1, b1, W2, b2)[0]
+    param[idx] = old
+    return (Lp - Lm) / (2 * h)
+for name, param, grad, idx in [("W1", W1, dW1, (10, 3)), ("b1", b1, db1, (5,)),
+                               ("W2", W2, dW2, (7, 2)), ("b2", b2, db2, (4,))]:
+    print(f"{name}{idx}: 역전파 {grad[idx]: .6e}, 수치 미분 "
+          f"{numeric(param, idx): .6e}")
+</code></pre>
+<p>모든 쌍이 유효숫자 6자리 이상 일치한다. 역전파 코드는 이렇게 수치 미분과 비교해 검증한다(20일차에 전체 파라미터로 체계화한다).</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>수치 미분은 파라미터마다 순전파 2번 → 큰 모델에 불가능. 역전파는 순전파 약 2배 비용으로 모든 기울기를 구한다.</li>
+  <li>계산 그래프에서 각 노드는 상류 기울기 × 국소 기울기를 입력에 전달한다. 출력에서 1로 시작한다.</li>
+  <li>덧셈은 복사, 곱셈은 교환해 곱함, max는 라우팅, 분기는 기울기 합.</li>
+  <li>선형층: $dW = X^\top G$, $d\mathbf b = \sum G$, $dX = GW^\top$. ReLU는 마스크, 소프트맥스+CE는 $(P - Y)/N$.</li>
+  <li>순전파에서 저장한 중간값을 역전파에서 쓴다. 구현은 항상 수치 미분으로 검증.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"곱셈 노드 u = a·b에서 상류 기울기가 g일 때 a로 보내는 기울기는?","o":["g","g·a","g·b","b"],"a":2,"e":"국소 기울기 ∂u/∂a = b를 상류 기울기에 곱한다."},
+ {"q":"덧셈 노드 u = a + b의 역전파는?","o":["a, b 모두 상류 기울기를 그대로 받는다","큰 쪽만 받는다","절반씩 나눈다","0을 받는다"],"a":0,"e":"국소 기울기가 모두 1이다."},
+ {"q":"변수 x가 계산에서 두 번 쓰였다. x의 기울기는?","o":["첫 번째 경로의 기울기","두 경로 기울기의 평균","두 경로 기울기의 합","두 경로 기울기의 곱"],"a":2,"e":"다변수 연쇄법칙: 모든 경로의 기여를 더한다."},
+ {"q":"Z = XW + b, X는 (N, d), 상류 기울기 G는 (N, h)일 때 ∂L/∂W는?","o":["GXᵀ","XᵀG","GWᵀ","WG"],"a":1,"e":"(d, N)(N, h) = (d, h)로 W와 형상이 같다."},
+ {"q":"같은 상황에서 ∂L/∂X는?","o":["XᵀG","GWᵀ","WᵀG","G"],"a":1,"e":"(N, h)(h, d) = (N, d)."},
+ {"q":"ReLU 층 A = max(0, Z)의 역전파로 옳은 것은?","o":["dZ = dA","dZ = dA ⊙ 1[Z &gt; 0]","dZ = dA ⊙ Z","dZ = 0"],"a":1,"e":"양수였던 위치로만 기울기가 통과한다."},
+ {"q":"파라미터 100만 개인 모델의 기울기를 중앙 차분 수치 미분으로 구하려면 순전파가 몇 번 필요한가?","o":["1번","2번","100만 번","200만 번"],"a":3,"e":"파라미터마다 2번. 역전파는 순전파 1번 + 역방향 1번이면 된다."},
+ {"q":"편향의 기울기가 G의 행 방향 합이 되는 이유는?","o":["편향이 0으로 초기화되어서","같은 편향이 배치의 모든 표본(행)에 더해지므로 각 행의 기여를 합해야 해서","편향이 스칼라여서","소프트맥스 때문에"],"a":1,"e":"브로드캐스팅(복사)의 역연산은 합이다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>$f = \max(x, y)\cdot z$에서 $x = 3, y = 1, z = -2$일 때 세 기울기를 계산 그래프로 구하라.
+    <details class="sol"><summary>풀이</summary><p>순전파 $m = \max(3, 1) = 3$, $f = -6$. 곱셈 노드: $\partial f/\partial m = z = -2$, $\partial f/\partial z = m = 3$. max 노드는 큰 쪽 $x$로만 보낸다: $\partial f/\partial x = -2$, $\partial f/\partial y = 0$.</p></details></li>
+  <li>$f = \sigma(w x + b)$에서 $w = 0.5, x = 2, b = -1$일 때 $\partial f/\partial w$와 $\partial f/\partial b$를 구하라.
+    <details class="sol"><summary>풀이</summary><p>$s = 0$, $f = \sigma(0) = 0.5$. 국소 기울기 $f(1 - f) = 0.25$. $\partial f/\partial b = 0.25$, $\partial f/\partial w = 0.25\cdot x = 0.5$.</p></details></li>
+  <li>MSE 손실 $L = \frac1N\sum_i(\hat y_i - y_i)^2$을 쓰는 회귀 신경망(출력층 활성화 없음)에서 출력층의 상류 기울기 $G = \partial L/\partial\hat{\mathbf y}$는 무엇인가? 8일차의 정규방정식 유도와 연결하라.
+    <details class="sol"><summary>풀이</summary><p>$G = \frac2N(\hat{\mathbf y} - \mathbf y)$. 선형회귀(은닉층 없음)라면 $\partial L/\partial W = X^\top G = \frac2N X^\top(X\boldsymbol\theta - \mathbf y)$로 8일차의 그래디언트와 같다. 역전파는 이미 아는 식을 일반화한 것이다.</p></details></li>
+</ol>
+
+<h2 data-min="33" data-kind="project">미니 프로젝트: 2층 신경망 역전파 손계산과 검증</h2>
+<section class="project" data-title="2-2-1 신경망의 역전파를 코드로 재현하고, 17일차 프레임워크에 backward를 붙여 검증하기" data-min="33">
+<p class="lead">인터랙티브에서 따라간 2-2-1 신경망의 역전파를 NumPy로 재현하고 모든 파라미터의 기울기를 수치 미분과 비교한다. 이어서 17일차의 층 객체에 <code>backward</code>를 추가하고, 소프트맥스 교차 엔트로피 손실과 함께 손글씨 MLP 전체에서 기울기를 검증한다.</p>
+<ol class="steps">
+<li><b>손계산 재현.</b> 인터랙티브의 값으로 순전파와 역전파를 계산해 각 단계의 숫자를 출력한다.
+<pre class="run"><code>import numpy as np
+sig = lambda z: 1 / (1 + np.exp(-z))
+x = np.array([1.0, 0.5]); y = 1.0
+W1 = np.array([[0.5, -0.3], [0.2, 0.4]]); b1 = np.array([0.1, -0.1])
+W2 = np.array([0.7, -0.5]); b2 = 0.2
+def loss_fn(W1, b1, W2, b2):
+    h = sig(x @ W1 + b1); p = sig(h @ W2 + b2)
+    return -(y * np.log(p) + (1 - y) * np.log(1 - p)), h, p
+L, h, p = loss_fn(W1, b1, W2, b2)
+d2 = p - y                                  # ∂L/∂z2
+gW2, gb2 = h * d2, d2
+dh = W2 * d2
+d1 = dh * h * (1 - h)                       # TODO 확인: 시그모이드 통과
+gW1, gb1 = np.outer(x, d1), d1              # xᵀδ1
+print(f"h = {h.round(4)}, p = {p:.4f}, L = {L:.4f}")
+print(f"δ2 = {d2:.4f}, ∂W2 = {gW2.round(4)}, ∂h = {dh.round(4)}, δ1 = {d1.round(4)}")
+print("∂W1 =\n", gW1.round(4))
+</code></pre></li>
+<li><b>모든 파라미터 검증.</b> 9개 파라미터를 하나의 벡터로 다루는 수치 미분 함수를 만들어 역전파 결과와 비교한다. 상대 오차 $\frac{|a - b|}{\max(|a|, |b|)}$의 최댓값을 구하라.
+<pre class="run"><code>def pack(W1, b1, W2, b2): return np.r_[W1.ravel(), b1, W2, b2]
+def unpack(v): return v[:4].reshape(2, 2), v[4:6], v[6:8], v[8]
+theta = pack(W1, b1, W2, b2); g_bp = pack(gW1, gb1, gW2, gb2)
+g_num = np.zeros_like(theta)
+for i in range(len(theta)):
+    e = np.zeros_like(theta); e[i] = 1e-5
+    lp, lm = loss_fn(*unpack(theta + e))[0], loss_fn(*unpack(theta - e))[0]
+    g_num[i] = (lp - lm) / 2e-5
+rel = np.abs(g_bp - g_num) / np.maximum(np.abs(g_bp), np.abs(g_num)).clip(1e-12)
+print("역전파:", g_bp.round(5))
+print("수치  :", g_num.round(5))
+print("최대 상대 오차:", rel.max())
+</code></pre></li>
+<li><b>프레임워크에 backward 붙이기.</b> 17일차의 층에 <code>backward(G)</code>를 추가한다. 선형층은 <code>dW</code>, <code>db</code>를 저장하고 <code>dX</code>를 반환한다. 손실은 소프트맥스와 교차 엔트로피를 합친 객체로 만든다.
+<pre class="run"><code>class Linear:
+    def __init__(self, d_in, d_out, rng):
+        self.W = rng.normal(0, np.sqrt(2 / d_in), (d_in, d_out))
+        self.b = np.zeros(d_out)
+    def forward(self, X):
+        self.X = X; return X @ self.W + self.b
+    def backward(self, G):
+        self.dW = self.X.T @ G                       # TODO 확인
+        self.db = G.sum(axis=0)
+        return G @ self.W.T
+class ReLU:
+    def forward(self, X):
+        self.mask = X &gt; 0; return X * self.mask
+    def backward(self, G): return G * self.mask
+class SoftmaxCE:
+    def forward(self, Z, y):
+        Z = Z - Z.max(1, keepdims=True)
+        self.P = np.exp(Z) / np.exp(Z).sum(1, keepdims=True)
+        self.y = y
+        return -np.log(self.P[np.arange(len(y)), y]).mean()
+    def backward(self):
+        G = self.P.copy(); G[np.arange(len(self.y)), self.y] -= 1
+        return G / len(self.y)                       # (P − Y)/N
+class Sequential:
+    def __init__(self, *layers): self.layers = list(layers)
+    def forward(self, X):
+        for l in self.layers: X = l.forward(X)
+        return X
+    def backward(self, G):
+        for l in reversed(self.layers): G = l.backward(G)
+        return G
+</code></pre></li>
+<li><b>프레임워크 검증.</b> 손글씨 숫자 32개로 64 → 32 → 10 신경망의 모든 가중치 행렬에서 무작위로 원소 5개씩 골라 수치 미분과 비교한다.
+<pre class="run"><code>d = load_data("digits"); Xd, yd = d["X"][:32].astype(float) / 16, d["y"][:32]
+rng = np.random.default_rng(1)
+net = Sequential(Linear(64, 32, rng), ReLU(), Linear(32, 10, rng)); crit = SoftmaxCE()
+L = crit.forward(net.forward(Xd), yd); net.backward(crit.backward())
+worst = 0
+for layer in [net.layers[0], net.layers[2]]:
+    for _ in range(5):
+        i, j = rng.integers(layer.W.shape[0]), rng.integers(layer.W.shape[1])
+        old = layer.W[i, j]
+        layer.W[i, j] = old + 1e-5; Lp = crit.forward(net.forward(Xd), yd)
+        layer.W[i, j] = old - 1e-5; Lm = crit.forward(net.forward(Xd), yd)
+        layer.W[i, j] = old
+        num = (Lp - Lm) / 2e-5; bp = layer.dW[i, j]
+        worst = max(worst, abs(num - bp) / max(abs(num), abs(bp), 1e-12))
+print(f"손실 {L:.4f},  10개 원소의 최대 상대 오차 {worst:.2e}")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>1단계: $h = (0.6682, 0.4502)$, $p = 0.6089$, $L = 0.4961$, $\delta_2 = -0.3911$, $\partial W_2 = (-0.2613, -0.1761)$, $\delta_1 = (-0.0607, 0.0484)$. 인터랙티브의 숫자와 같다.</li>
+<li>2단계: 최대 상대 오차는 $10^{-9}$~$10^{-11}$ 수준이다. $10^{-6}$보다 크면 구현 실수를 의심한다.</li>
+<li>3단계: 선형층의 <code>backward</code>는 저장해 둔 입력 <code>self.X</code>를 쓴다. 순전파를 다른 입력으로 한 번 더 호출하면 저장값이 바뀌므로, 순전파와 역전파는 짝을 맞춰 호출해야 한다.</li>
+<li>4단계: 최대 상대 오차가 $10^{-8}$ 수준이면 프레임워크의 역전파가 맞다. ReLU의 꺾인 점($z = 0$) 바로 근처의 원소는 수치 미분이 부정확해 오차가 커질 수 있으나, 무작위 원소에서는 거의 일어나지 않는다. 20일차에서 이 프레임워크로 학습 루프를 만든다.</li>
+</ul></details>
+</section>
