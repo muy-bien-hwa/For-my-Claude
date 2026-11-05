@@ -1,0 +1,136 @@
+<ul class="goals">
+  <li>도함수를 "입력을 살짝 바꿨을 때 출력이 얼마나 변하는가"로 설명할 수 있다.</li>
+  <li>자주 쓰는 함수(다항식, exp, log, 시그모이드)의 도함수를 구한다.</li>
+  <li>편미분과 <b>그래디언트</b>를 이해하고, 그래디언트가 가장 가파른 오르막 방향임을 안다.</li>
+  <li><b>연쇄법칙</b>을 자유롭게 적용한다. 역전파의 전부가 이것이다.</li>
+  <li>수치 미분으로 해석적 미분을 검증할 수 있다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 미분이 왜 필요한가</span>
+학습은 손실을 줄이는 것이고, 손실을 줄이려면 "파라미터를 <b>어느 방향으로</b> 바꿔야 손실이 줄어드는가"를 알아야 합니다. 그 답이 미분입니다. 수백만 개의 파라미터 각각에 대해 이 질문에 답하는 것이 바로 역전파입니다. 오늘이 이 강의에서 수학적으로 가장 중요한 날입니다. 천천히 가세요.</div>
+
+<h2>1. 도함수: 순간 변화율</h2>
+$$f'(x) = \lim_{h\to 0}\frac{f(x+h)-f(x)}{h}$$
+<p>"$x$를 아주 조금($h$) 움직였을 때, $f$는 그 몇 배만큼 움직이는가?"라는 질문입니다. 그래프에서는 그 점에서의 <b>접선의 기울기</b>입니다. 아래에서 $h$를 줄여 가며 할선이 접선에 다가가는 것을 직접 확인하세요.</p>
+<div class="viz-mount" data-viz="derivative"></div>
+<p>실용적인 해석: $f'(x) = 3$이면 "$x$를 0.01 늘리면 $f$는 약 0.03 늘어난다". 즉 $\Delta f \approx f'(x)\,\Delta x$입니다. 이 <b>1차 근사</b>가 경사하강법의 근거입니다.</p>
+
+<h2>2. 꼭 알아야 할 미분 공식</h2>
+<table>
+<tr><th>함수 $f(x)$</th><th>도함수 $f'(x)$</th><th>어디서 쓰나</th></tr>
+<tr><td>$c$ (상수)</td><td>$0$</td><td></td></tr>
+<tr><td>$x^n$</td><td>$n x^{n-1}$</td><td>MSE의 제곱항</td></tr>
+<tr><td>$e^x$</td><td>$e^x$</td><td>소프트맥스</td></tr>
+<tr><td>$\ln x$</td><td>$1/x$</td><td>교차 엔트로피</td></tr>
+<tr><td>$\sigma(x) = \frac{1}{1+e^{-x}}$</td><td>$\sigma(x)(1-\sigma(x))$</td><td>시그모이드</td></tr>
+<tr><td>$\tanh x$</td><td>$1-\tanh^2 x$</td><td>tanh 활성화</td></tr>
+<tr><td>$\max(0,x)$</td><td>$x&gt;0$이면 1, 아니면 0</td><td>ReLU</td></tr>
+</table>
+<p>규칙: 합의 미분은 미분의 합 $(f+g)' = f'+g'$, 상수배는 그대로 $(cf)' = cf'$, 곱의 미분은 $(fg)' = f'g + fg'$입니다.</p>
+<details class="answer"><summary>시그모이드 도함수 유도 (손으로 따라 해 보세요)</summary>
+<p>$\sigma(x) = (1+e^{-x})^{-1}$. 연쇄법칙으로</p>
+$$\sigma'(x) = -(1+e^{-x})^{-2}\cdot(-e^{-x}) = \frac{e^{-x}}{(1+e^{-x})^2} = \frac{1}{1+e^{-x}}\cdot\frac{e^{-x}}{1+e^{-x}} = \sigma(x)\big(1-\sigma(x)\big)$$
+<p>마지막 단계는 $\frac{e^{-x}}{1+e^{-x}} = 1 - \frac{1}{1+e^{-x}}$를 이용했습니다. 이 결과 덕분에 역전파 때 순전파에서 계산해 둔 $\sigma(x)$만으로 미분을 구할 수 있습니다.</p>
+</details>
+
+<h2>3. 연쇄법칙 — 역전파의 심장</h2>
+<p>함수가 $x \to u = g(x) \to y = f(u)$처럼 이어져 있으면</p>
+$$\frac{dy}{dx} = \frac{dy}{du}\cdot\frac{du}{dx}$$
+<p>직관: "$x$가 1 변하면 $u$가 3배 변하고, $u$가 1 변하면 $y$가 2배 변한다면, $x$가 1 변할 때 $y$는 $3\times2=6$배 변한다." 변화율이 <b>곱해지며 전달</b>됩니다.</p>
+<div class="callout key"><span class="ct">🔑 예제: $y = (3x+1)^2$</span>
+$u = 3x+1$, $y = u^2$로 쪼갭니다. $\frac{dy}{du} = 2u$, $\frac{du}{dx} = 3$이므로 $\frac{dy}{dx} = 2u\cdot 3 = 6(3x+1)$.<br>
+신경망은 이런 쪼개기를 수십~수백 단계로 한 것입니다. 단계가 아무리 많아도 원리는 같습니다: <b>국소 미분을 구해서 곱한다.</b></div>
+<p>더 긴 사슬: $x \to a \to b \to c \to L$이면 $\frac{\partial L}{\partial x} = \frac{\partial L}{\partial c}\frac{\partial c}{\partial b}\frac{\partial b}{\partial a}\frac{\partial a}{\partial x}$. 역전파는 이 곱을 <b>오른쪽(L 쪽)부터</b> 계산하면서 중간 결과를 재사용하는 방법입니다.</p>
+<div class="callout warn"><span class="ct">⚠️ 기울기 소실의 씨앗</span>
+시그모이드의 도함수 최댓값은 0.25입니다. 시그모이드 층 10개를 지나면 기울기에 최대 $0.25^{10} \approx 10^{-6}$이 곱해집니다. 앞쪽 층에는 기울기가 거의 전달되지 않습니다. 이것이 1990년대 깊은 망이 학습되지 않았던 이유이고, ReLU가 해결책이 된 이유입니다(Day 8, 13).</div>
+
+<h2>4. 편미분과 그래디언트</h2>
+<p>손실은 파라미터 수백만 개의 함수 $L(w_1, w_2, \dots)$입니다. <b>편미분</b> $\frac{\partial L}{\partial w_1}$은 "다른 변수는 모두 고정하고 $w_1$만 움직였을 때의 변화율"입니다.</p>
+<p>예: $f(x, y) = x^2 y + 3y$이면 $\frac{\partial f}{\partial x} = 2xy$ ($y$를 상수 취급), $\frac{\partial f}{\partial y} = x^2 + 3$.</p>
+<p>모든 편미분을 모은 벡터가 <b>그래디언트</b>입니다.</p>
+$$\nabla f = \left(\frac{\partial f}{\partial x_1}, \dots, \frac{\partial f}{\partial x_n}\right)$$
+<div class="callout key"><span class="ct">🔑 그래디언트의 두 가지 성질</span>
+<ol style="margin:0"><li>$\nabla f$는 $f$가 <b>가장 가파르게 증가하는 방향</b>을 가리킨다.</li>
+<li>따라서 $-\nabla f$는 가장 가파르게 <b>감소</b>하는 방향이다 → 경사하강법: $\theta \leftarrow \theta - \eta\nabla L(\theta)$</li></ol></div>
+<p>왜 그럴까요? 방향 $\mathbf u$ (단위벡터)로 조금 움직이면 $\Delta f \approx \nabla f\cdot\mathbf u = \|\nabla f\|\cos\theta$. 어제 배운 내적입니다! 이 값은 $\mathbf u$가 $\nabla f$와 같은 방향일 때 최대, 반대 방향일 때 최소입니다.</p>
+<p>규칙 하나 더: <b>그래디언트의 형상은 변수의 형상과 같다.</b> 가중치 행렬 $W$가 (784, 128)이면 $\partial L/\partial W$도 (784, 128)입니다. 역전파 코드를 짤 때 형상 검사에 아주 유용합니다.</p>
+
+<h2>5. 수치 미분으로 검증하기</h2>
+<p>미분 공식을 맞게 구했는지 확인하는 가장 확실한 방법은 정의대로 아주 작은 $h$로 계산해 보는 것입니다. 중앙 차분이 더 정확합니다.</p>
+$$f'(x) \approx \frac{f(x+h) - f(x-h)}{2h}$$
+<pre class="run"><code>import numpy as np
+
+def num_grad(f, x, h=1e-5):
+    """임의 형상의 x에 대해 중앙 차분으로 그래디언트 계산"""
+    g = np.zeros_like(x, dtype=float)
+    it = np.nditer(x, flags=['multi_index'])
+    for _ in it:
+        i = it.multi_index
+        old = x[i]
+        x[i] = old + h; fp = f(x)
+        x[i] = old - h; fm = f(x)
+        x[i] = old
+        g[i] = (fp - fm) / (2 * h)
+    return g
+
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+
+# 1) 시그모이드 도함수 검증
+x = np.array([-2.0, 0.0, 3.0])
+analytic = sigmoid(x) * (1 - sigmoid(x))
+numeric = np.array([num_grad(lambda v: sigmoid(v[0]), np.array([xi])) [0] for xi in x])
+print("해석적:", analytic.round(6))
+print("수치적:", numeric.round(6))
+
+# 2) 다변수: f(x,y) = x^2 y + 3y,  ∇f = (2xy, x^2 + 3)
+f = lambda v: v[0]**2 * v[1] + 3 * v[1]
+p = np.array([2.0, -1.0])
+print("∇f 해석적:", np.array([2*p[0]*p[1], p[0]**2 + 3]))
+print("∇f 수치적:", num_grad(f, p).round(6))
+
+# 3) 연쇄법칙: y = (3x+1)^2  → dy/dx = 6(3x+1)
+g = lambda v: (3*v[0] + 1)**2
+print("x=2에서 해석적:", 6*(3*2+1), " 수치적:", num_grad(g, np.array([2.0]))[0].round(5))
+</code></pre>
+<p>수치 미분은 느리기 때문에(파라미터마다 함수를 2번 계산) 학습에는 쓰지 않습니다. 대신 Day 11에서 직접 짠 역전파가 맞는지 검증하는 <b>기울기 검증(gradient checking)</b>에 씁니다.</p>
+
+<h2>6. 행렬 미분 맛보기</h2>
+<p>역전파에서 자주 나오는 두 결과만 기억해 두세요(Day 10에 유도합니다).</p>
+<ul>
+<li>$y = \mathbf w\cdot\mathbf x$이면 $\frac{\partial y}{\partial\mathbf w} = \mathbf x$ — 가중치에 대한 미분은 <b>입력</b>이다.</li>
+<li>$Y = XW$이고 상류 그래디언트가 $G = \frac{\partial L}{\partial Y}$이면 $\frac{\partial L}{\partial W} = X^\top G$, $\frac{\partial L}{\partial X} = G W^\top$.</li>
+</ul>
+<p>형상으로 외우면 쉽습니다. $W$가 $(d,k)$, $X$가 $(N,d)$, $G$가 $(N,k)$일 때 $(d,k)$를 만드는 유일한 방법은 $X^\top G$입니다.</p>
+<pre class="run"><code>N, d, k = 4, 3, 2
+X = np.random.randn(N, d); W = np.random.randn(d, k)
+L = lambda W_: (X @ W_).sum()        # L = 모든 원소의 합 → G = 1로 채운 (N,k)
+G = np.ones((N, k))
+print("X^T G:\n", (X.T @ G).round(4))
+print("수치 미분:\n", num_grad(L, W.copy()).round(4))
+</code></pre>
+
+<h2>7. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"f'(x)=5일 때, x를 0.01 늘리면 f는 대략?","o":["0.01 증가","0.05 증가","5 증가","0.5 증가"],"a":1,"e":"$\\Delta f \\approx f'(x)\\Delta x = 5 \\times 0.01$"},
+ {"q":"y = sin(x²)의 도함수는?","o":["cos(x²)","2x·cos(x²)","2x·sin(x²)","cos(2x)"],"a":1,"e":"바깥 함수 미분 cos(x²) × 안쪽 함수 미분 2x."},
+ {"q":"경사하강법에서 파라미터를 그래디언트의 '반대' 방향으로 움직이는 이유는?","o":["계산이 빨라서","그래디언트는 가장 가파른 증가 방향이므로, 반대가 가장 가파른 감소 방향이라서","수치적 안정성 때문에","관례일 뿐"],"a":1,"e":"우리는 손실을 '줄이고' 싶습니다."},
+ {"q":"W.shape=(256,10)이면 ∂L/∂W의 shape은?","o":["(10,256)","(256,10)","(256,)","스칼라"],"a":1,"e":"스칼라 손실을 변수로 미분한 그래디언트는 변수와 같은 형상입니다."},
+ {"q":"시그모이드 층을 많이 쌓으면 앞쪽 층의 기울기가 매우 작아지는 이유는?","o":["시그모이드 도함수 최댓값이 0.25라 연쇄법칙으로 계속 곱해지면 작아진다","시그모이드는 미분 불가능하다","학습률이 작아서","데이터가 부족해서"],"a":0,"e":"0.25보다 작은 수를 여러 번 곱하면 0에 가까워집니다. 이것이 기울기 소실입니다."}
+]</script>
+
+<h2>8. 연습 문제</h2>
+<ol>
+<li>$f(x) = \ln(1 + e^{x})$ (softplus)의 도함수를 손으로 구하고, 그것이 시그모이드임을 보이세요. 그런 다음 수치 미분으로 확인하세요.</li>
+<li>$L(w, b) = (wx + b - y)^2$에서 $\partial L/\partial w$, $\partial L/\partial b$를 구하세요($x=2, y=7, w=1, b=0$). Day 6 경사하강법에서 그대로 씁니다.</li>
+</ol>
+<pre class="run"><code># 1) softplus
+softplus = lambda v: np.log(1 + np.exp(v[0]))
+for x0 in [-1.0, 0.0, 2.0]:
+    print(x0, num_grad(softplus, np.array([x0]))[0].round(6), sigmoid(x0).round(6))
+
+# 2) 여기서 손으로 구한 값을 확인
+</code></pre>
+<details class="answer"><summary>정답 보기</summary>
+<p>1) $\frac{d}{dx}\ln(1+e^x) = \frac{e^x}{1+e^x} = \frac{1}{1+e^{-x}} = \sigma(x)$.</p>
+<p>2) $r = wx+b-y = 2+0-7 = -5$. $\partial L/\partial w = 2r\cdot x = -20$, $\partial L/\partial b = 2r = -10$. 둘 다 음수이므로 $w$, $b$를 <b>늘려야</b> 손실이 줄어듭니다. 실제로 예측(2)이 정답(7)보다 작으니 맞는 방향입니다.</p>
+</details>

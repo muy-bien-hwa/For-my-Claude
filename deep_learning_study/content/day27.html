@@ -1,0 +1,157 @@
+<ul class="goals">
+  <li><b>GAN</b>의 생성자·판별자 게임과 손실 함수, 학습의 어려움(모드 붕괴, 불안정)을 이해한다.</li>
+  <li><b>확산 모델</b>의 순방향(노이즈 추가)·역방향(노이즈 제거) 과정을 이해한다.</li>
+  <li>DDPM의 학습 목표가 결국 "<b>노이즈 예측 MSE</b>"로 단순해진다는 것을 이해한다.</li>
+  <li>조건부 생성과 classifier-free guidance, 텍스트→이미지 모델의 구조를 큰 그림으로 안다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 위조지폐범과 조각가</span>
+GAN은 위조지폐범(생성자)과 경찰(판별자)의 경쟁으로 실력을 키웁니다. 확산 모델은 대리석 덩어리(노이즈)에서 조금씩 깎아 내며 조각상(이미지)을 드러내는 조각가입니다. 2014~2020년은 GAN의 시대였고, 2020년 이후 이미지·영상·음성 생성은 확산 모델이 주도하고 있습니다. 두 가지 모두 원리를 이해해 둡시다.</div>
+
+<h2>1. GAN: 적대적 학습</h2>
+<ul>
+<li><b>생성자 G</b>: 무작위 노이즈 $z$를 받아 가짜 데이터 $G(z)$를 만든다.</li>
+<li><b>판별자 D</b>: 입력이 진짜일 확률 $D(x)\in(0,1)$을 출력하는 이진 분류기(Day 7!).</li>
+</ul>
+$$\min_G\max_D\ \ \mathbb E_{x\sim p_{data}}[\log D(x)] + \mathbb E_{z}[\log(1 - D(G(z)))]$$
+<p>D는 진짜엔 1, 가짜엔 0을 주려 하고, G는 D를 속이려 합니다. 이론적으로 균형점에서 G의 분포는 데이터 분포와 같아지고 D는 어디서나 0.5를 출력합니다.</p>
+<pre><code class="language-python">bce = nn.BCEWithLogitsLoss()
+for real in loader:
+    z = torch.randn(B, z_dim, device=device)
+    fake = G(z)
+    # 1) 판별자: 진짜 → 1, 가짜 → 0
+    d_loss = bce(D(real), torch.ones(B, 1, device=device)) + bce(D(fake.detach()), torch.zeros(B, 1, device=device))
+    opt_D.zero_grad(); d_loss.backward(); opt_D.step()
+    # 2) 생성자: D가 가짜를 진짜(1)로 믿게 → 'non-saturating' 손실
+    g_loss = bce(D(fake), torch.ones(B, 1, device=device))
+    opt_G.zero_grad(); g_loss.backward(); opt_G.step()
+</code></pre>
+<div class="callout warn"><span class="ct">⚠️ GAN 학습이 악명 높은 이유</span>
+<ul style="margin:0">
+<li><b>불안정</b>: 두 모델이 서로의 목표를 바꾸는 게임이라 손실이 수렴하지 않고 진동합니다. 손실 값으로 품질을 판단하기도 어렵습니다.</li>
+<li><b>모드 붕괴</b>: G가 D를 잘 속이는 몇 가지 샘플(예: 숫자 1만)만 반복 생성합니다. 다양성이 사라집니다.</li>
+<li><b>기울기 소실</b>: D가 너무 강하면 G에 유용한 기울기가 가지 않습니다. 원래 식의 $\log(1-D(G(z)))$ 대신 $-\log D(G(z))$를 최소화하는 위 코드의 트릭이 이것을 완화합니다.</li>
+</ul>
+WGAN, 스펙트럴 정규화, StyleGAN 등 수많은 개선이 나왔습니다. StyleGAN은 지금도 얼굴 생성에서 매우 선명한 결과를 냅니다.</div>
+<p><code>fake.detach()</code>: D를 학습할 때 기울기가 G까지 흘러가지 않게 그래프를 끊습니다(Day 15의 detach).</p>
+
+<h2>2. 확산 모델: 노이즈를 거꾸로</h2>
+<h3>순방향 과정 (고정, 학습 없음)</h3>
+<p>데이터 $x_0$에 가우시안 노이즈를 $T$단계(보통 1000)에 걸쳐 조금씩 더해, 마지막에는 순수한 노이즈 $x_T\sim\mathcal N(0, I)$가 되게 합니다.</p>
+$$q(x_t\mid x_{t-1}) = \mathcal N\big(\sqrt{1-\beta_t}\,x_{t-1},\ \beta_t I\big)$$
+<p>가우시안을 여러 번 더해도 가우시안이므로, 어느 시점이든 <b>한 번에</b> 바로 만들 수 있습니다($\alpha_t = 1-\beta_t$, $\bar\alpha_t = \prod_{s\le t}\alpha_s$).</p>
+$$x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon,\qquad \epsilon\sim\mathcal N(0, I)$$
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(0)
+
+# 2D 데이터: 나선 모양
+n = 1500; th = rng.uniform(0, 3 * np.pi, n)
+x0 = np.c_[th * np.cos(th), th * np.sin(th)] / 5 + rng.normal(0, 0.05, (n, 2))
+
+T = 200
+betas = np.linspace(1e-4, 0.05, T)
+alpha_bar = np.cumprod(1 - betas)
+def q_sample(x0, t, eps): return np.sqrt(alpha_bar[t]) * x0 + np.sqrt(1 - alpha_bar[t]) * eps
+
+fig, axs = plt.subplots(1, 6, figsize=(16, 2.8))
+for ax, t in zip(axs, [0, 10, 30, 60, 120, 199]):
+    xt = q_sample(x0, t, rng.normal(size=x0.shape))
+    ax.scatter(*xt.T, s=1); ax.set_title(f"t={t}  ᾱ={alpha_bar[t]:.3f}"); ax.set_xlim(-3, 3); ax.set_ylim(-3, 3); ax.set_aspect('equal'); ax.axis('off')
+plt.suptitle("순방향 과정: 데이터가 점점 노이즈가 된다"); plt.show()
+</code></pre>
+<h3>역방향 과정 (학습)</h3>
+<p>노이즈에서 시작해 한 단계씩 노이즈를 걷어내면 데이터가 나옵니다. 단계마다 노이즈가 작으면 역방향도 가우시안으로 근사할 수 있고, 그 평균을 신경망이 예측합니다. Ho 등(DDPM, 2020)은 이것을 수학적으로 정리하면 학습 목표가 놀랍도록 단순해진다는 것을 보였습니다.</p>
+<div class="callout key"><span class="ct">🔑 DDPM 학습 = 노이즈 맞히기</span>
+$$L = \mathbb E_{x_0,\,t,\,\epsilon}\Big[\big\|\epsilon - \epsilon_\theta(x_t, t)\big\|^2\Big],\qquad x_t = \sqrt{\bar\alpha_t}x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon$$
+학습 알고리즘 전체:
+<ol style="margin:4px 0 0"><li>데이터 $x_0$, 시점 $t$, 노이즈 $\epsilon$을 무작위로 뽑는다.</li><li>$x_t$를 만든다(위 식 한 줄).</li><li>신경망이 $x_t$와 $t$를 보고 섞인 노이즈 $\epsilon$을 예측한다.</li><li>MSE 손실. 끝.</li></ol>
+GAN 같은 게임도, VAE 같은 복잡한 KL도 없는 그냥 <b>회귀 문제</b>(Day 6)입니다. 그래서 학습이 안정적이고 확장이 잘 됩니다.</div>
+<h3>샘플링</h3>
+<p>$x_T\sim\mathcal N(0,I)$에서 시작해 $t = T,\dots,1$에 대해</p>
+$$x_{t-1} = \frac{1}{\sqrt{\alpha_t}}\left(x_t - \frac{\beta_t}{\sqrt{1-\bar\alpha_t}}\,\epsilon_\theta(x_t, t)\right) + \sigma_t z,\quad z\sim\mathcal N(0,I)$$
+
+<h2>3. 브라우저에서 확산 모델 학습시키기</h2>
+<p>2D 나선 데이터에 대해 작은 MLP로 노이즈 예측기를 학습하고, 순수 노이즈에서 나선을 "조각"해 냅니다. NumPy로 역전파까지 직접 구현합니다(Day 11의 실력!). 브라우저에서는 실행에 1분 안팎 걸립니다. 기다리는 동안 아래 '샘플링' 식과 코드를 대조해 보세요.</p>
+<pre class="run"><code># 노이즈 예측 MLP: 입력 [x_t(2), 시점 임베딩(16)] → 출력 ε 예측(2)
+def t_embed(t):                                        # 사인파 시점 임베딩 (Day 23의 위치 인코딩과 같은 아이디어)
+    freqs = np.exp(-np.log(1000) * np.arange(8) / 8)
+    a = np.asarray(t)[:, None] * freqs[None] ; return np.c_[np.sin(a), np.cos(a)]
+
+H = 128
+P = {"W1": rng.normal(0, np.sqrt(2/18), (18, H)), "b1": np.zeros(H),
+     "W2": rng.normal(0, np.sqrt(2/H), (H, H)),  "b2": np.zeros(H),
+     "W3": rng.normal(0, np.sqrt(1/H), (H, 2)),  "b3": np.zeros(2)}
+M = {k: np.zeros_like(v) for k, v in P.items()}; Vv = {k: np.zeros_like(v) for k, v in P.items()}
+
+def forward(x, t):
+    inp = np.c_[x, t_embed(t)]
+    z1 = inp @ P["W1"] + P["b1"]; a1 = np.maximum(0, z1)
+    z2 = a1 @ P["W2"] + P["b2"]; a2 = np.maximum(0, z2)
+    return a2 @ P["W3"] + P["b3"], (inp, z1, a1, z2, a2)
+
+def train_step(step, B=256, lr=2e-3):
+    idx = rng.integers(0, n, B); t = rng.integers(0, T, B); eps = rng.normal(size=(B, 2))
+    xt = np.sqrt(alpha_bar[t])[:, None] * x0[idx] + np.sqrt(1 - alpha_bar[t])[:, None] * eps
+    pred, (inp, z1, a1, z2, a2) = forward(xt, t)
+    g = 2 * (pred - eps) / B                              # MSE 기울기
+    G = {"W3": a2.T @ g, "b3": g.sum(0)}
+    d2 = (g @ P["W3"].T) * (z2 > 0); G["W2"] = a1.T @ d2; G["b2"] = d2.sum(0)
+    d1 = (d2 @ P["W2"].T) * (z1 > 0); G["W1"] = inp.T @ d1; G["b1"] = d1.sum(0)
+    for k in P:                                           # Adam (Day 12)
+        M[k] = .9 * M[k] + .1 * G[k]; Vv[k] = .999 * Vv[k] + .001 * G[k]**2
+        P[k] -= lr * (M[k] / (1 - .9**step)) / (np.sqrt(Vv[k] / (1 - .999**step)) + 1e-8)
+    return ((pred - eps)**2).mean()
+
+losses = []
+for s in range(1, 6001):
+    losses.append(train_step(s))
+    if s % 2000 == 0: print(f"step {s}  노이즈 예측 MSE {np.mean(losses[-200:]):.4f}")
+
+def sample(m=1500):
+    x = rng.normal(size=(m, 2)); snaps = {}
+    for t in range(T - 1, -1, -1):
+        eps_hat, _ = forward(x, np.full(m, t))
+        x = (x - betas[t] / np.sqrt(1 - alpha_bar[t]) * eps_hat) / np.sqrt(1 - betas[t])
+        if t > 0: x += np.sqrt(betas[t]) * rng.normal(size=x.shape)
+        if t in (199, 150, 100, 50, 20, 0): snaps[t] = x.copy()
+    return snaps
+snaps = sample()
+fig, axs = plt.subplots(1, 6, figsize=(16, 2.8))
+for ax, (t, xs) in zip(axs, snaps.items()):
+    ax.scatter(*xs.T, s=1, c='#e5484d'); ax.set_title(f"역방향 t={t}"); ax.set_xlim(-3, 3); ax.set_ylim(-3, 3); ax.set_aspect('equal'); ax.axis('off')
+plt.suptitle("역방향 과정: 노이즈에서 나선이 '조각'된다"); plt.show()
+</code></pre>
+
+<h2>4. 조건부 생성과 텍스트→이미지</h2>
+<ul>
+<li><b>조건부 확산</b>: 노이즈 예측기에 조건 $c$(클래스, 텍스트 임베딩)를 함께 넣습니다: $\epsilon_\theta(x_t, t, c)$. 텍스트 조건은 보통 <b>크로스 어텐션</b>(Day 22)으로 주입합니다.</li>
+<li><b>Classifier-free guidance</b>: 학습 중 일정 확률로 조건을 지우고(빈 조건) 학습합니다. 생성할 때 조건부 예측과 무조건부 예측의 차이를 증폭합니다.
+$$\tilde\epsilon = \epsilon_\theta(x_t, t, \varnothing) + w\big(\epsilon_\theta(x_t, t, c) - \epsilon_\theta(x_t, t, \varnothing)\big)$$
+$w$를 키우면 프롬프트에 더 충실해지지만 다양성은 줄어듭니다.</li>
+<li><b>잠재 확산 (Stable Diffusion)</b>: 512×512 이미지에서 직접 확산하면 너무 비쌉니다. VAE로 64×64×4 잠재 공간에 압축한 뒤 거기서 확산합니다(Day 26). 노이즈 예측기는 U-Net 또는 Transformer(DiT)입니다.</li>
+<li><b>빠른 샘플링</b>: 1000단계는 느립니다. DDIM, 증류 기법, Flow Matching 등으로 수~수십 단계로 줄입니다.</li>
+</ul>
+<table>
+<tr><th></th><th>VAE</th><th>GAN</th><th>확산 모델</th><th>자기회귀 (GPT)</th></tr>
+<tr><td>품질</td><td>흐릿함</td><td>매우 선명</td><td>매우 선명</td><td>우수 (텍스트 최강)</td></tr>
+<tr><td>다양성</td><td>좋음</td><td>모드 붕괴 위험</td><td>좋음</td><td>좋음</td></tr>
+<tr><td>학습 안정성</td><td>안정</td><td>불안정</td><td>안정</td><td>안정</td></tr>
+<tr><td>생성 속도</td><td>빠름 (1회)</td><td>빠름 (1회)</td><td>느림 (여러 단계)</td><td>토큰 수만큼</td></tr>
+</table>
+
+<h2>5. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"GAN의 판별자 학습 시 fake.detach()를 쓰는 이유는?","o":["속도","판별자 손실의 기울기가 생성자로 흘러가지 않게 하려고","메모리 누수 방지만을 위해","정규화"],"a":1,"e":"이 단계에서는 D만 업데이트해야 합니다."},
+ {"q":"모드 붕괴란?","o":["판별자가 망가지는 것","생성자가 소수의 비슷한 샘플만 반복 생성해 다양성을 잃는 것","손실이 NaN이 되는 것","학습률이 0이 되는 것"],"a":1,"e":"D를 속이기 쉬운 몇 가지 출력에 몰립니다."},
+ {"q":"DDPM의 학습 손실은 본질적으로?","o":["적대적 손실","x_t에 섞인 노이즈 ε을 예측하는 MSE","KL 발산만","교차 엔트로피"],"a":1,"e":"그래서 학습이 단순하고 안정적입니다."},
+ {"q":"순방향 과정에서 x_t를 x_0로부터 한 번에 만들 수 있는 이유는?","o":["근사이기 때문","가우시안 노이즈를 여러 번 더한 결과도 가우시안이라 닫힌 형태가 있어서","신경망이 계산해서","T가 작아서"],"a":1,"e":"x_t = √ᾱ_t x_0 + √(1−ᾱ_t) ε"},
+ {"q":"Classifier-free guidance의 w를 키우면?","o":["다양성 증가","프롬프트 충실도는 오르고 다양성은 줄어든다","속도 증가","해상도 증가"],"a":1,"e":"조건부와 무조건부 예측의 차이를 증폭합니다."}
+]</script>
+
+<h2>6. 오늘의 과제 (Colab)</h2>
+<ol>
+<li>노트북으로 MNIST에 작은 U-Net DDPM을 학습하고(약 15분), 노이즈에서 숫자가 나타나는 과정을 애니메이션으로 확인하세요.</li>
+<li>클래스 조건부 버전으로 "숫자 7만 생성"해 보고, guidance $w$ = 0, 2, 5를 비교하세요.</li>
+<li>위 브라우저 실험에서 $T$를 50으로 줄이거나 MLP를 작게 하면 결과가 어떻게 되는지 확인하세요.</li>
+</ol>

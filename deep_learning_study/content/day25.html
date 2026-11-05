@@ -1,0 +1,126 @@
+<ul class="goals">
+  <li>사전학습 → 미세조정 패러다임과 BERT(MLM)·GPT(다음 토큰) 학습 목표의 차이를 이해한다.</li>
+  <li><b>스케일링 법칙</b>과 창발 능력이 무엇인지 설명한다.</li>
+  <li>LLM이 만들어지는 전 과정: 사전학습 → 지시 튜닝(SFT) → 선호 학습(RLHF/DPO)을 이해한다.</li>
+  <li><b>LoRA</b> 등 효율적 미세조정의 원리를 수식으로 이해한다.</li>
+  <li>Hugging Face로 사전학습 모델을 불러와 추론·미세조정하는 방법을 안다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 어제 만든 것과 ChatGPT 사이</span>
+어제 여러분은 1천만 파라미터짜리 셰익스피어 GPT를 만들었습니다. 오늘날의 LLM은 구조가 거의 같은데 수천~수만 배 크고, 수조 개 토큰으로 학습되며, 그 위에 "대화하는 법"과 "도움이 되고 안전한 답"을 가르치는 단계가 더해집니다. 오늘은 그 간극을 채웁니다. 코드보다 큰 그림이 중요한 날입니다.</div>
+
+<h2>1. 사전학습 + 미세조정 패러다임</h2>
+<p>Day 19의 전이학습이 NLP에서 폭발적으로 성공한 것이 2018년의 BERT와 GPT입니다.</p>
+<ol>
+<li><b>사전학습</b>: 레이블 없는 거대한 텍스트로 <b>자기지도학습</b>. 언어의 문법, 사실 지식, 추론 패턴을 흡수합니다.</li>
+<li><b>미세조정</b>: 소량의 레이블 데이터로 특정 과제에 맞춥니다.</li>
+</ol>
+<table>
+<tr><th></th><th>BERT (인코더)</th><th>GPT (디코더)</th></tr>
+<tr><td>학습 목표</td><td><b>MLM</b>: 토큰 15%를 [MASK]로 가리고 맞히기</td><td><b>다음 토큰 예측</b> (Causal LM)</td></tr>
+<tr><td>문맥</td><td>양방향</td><td>왼쪽만</td></tr>
+<tr><td>강점</td><td>이해(분류, 추출, 임베딩)</td><td>생성. 크기가 커지면 이해도 잘함</td></tr>
+<tr><td>사용법</td><td>[CLS] 토큰 출력에 분류기를 붙여 미세조정</td><td>프롬프트로 지시(퓨샷), 또는 미세조정</td></tr>
+</table>
+<p>결국 "다음 토큰 예측"이 가장 확장성 있는 목표로 판명되어, 현재 범용 LLM은 거의 모두 디코더 전용입니다.</p>
+
+<h2>2. 스케일링 법칙</h2>
+<p>Kaplan 등(2020), Hoffmann 등(Chinchilla, 2022)은 언어 모델의 손실이 파라미터 수 $N$, 데이터 토큰 수 $D$, 연산량 $C$에 대해 <b>멱법칙</b>을 따라 매끄럽게 줄어든다는 것을 보였습니다.</p>
+$$L(N, D) \approx E + \frac{A}{N^{\alpha}} + \frac{B}{D^{\beta}}$$
+<ul>
+<li>모델을 키우고 데이터를 늘리면 성능이 <b>예측 가능하게</b> 좋아집니다. 이 예측 가능성 덕분에 수백억 원짜리 학습에 투자할 수 있었습니다.</li>
+<li><b>Chinchilla 법칙</b>: 주어진 연산 예산에서 최적은 대략 <b>파라미터 1개당 토큰 20개</b>. 그 전의 모델들은 크기에 비해 데이터가 부족했습니다. (요즘은 추론 비용을 줄이려고 작은 모델을 이보다 훨씬 많은 토큰으로 학습시키기도 합니다.)</li>
+<li>Day 9의 $C\approx 6ND$ 공식이 여기서 쓰입니다.</li>
+</ul>
+<div class="callout tip"><span class="ct">💡 창발 능력 (Emergent abilities)</span>
+산술, 다단계 추론 같은 일부 능력은 작은 모델에서는 거의 0이다가 특정 크기를 넘으면 갑자기 나타나는 것처럼 보입니다. 다만 이것이 평가 지표의 선택(정답/오답 이진 채점) 때문에 생기는 착시라는 반론도 있습니다. 활발히 연구 중인 주제입니다.</div>
+
+<h2>3. 사전학습 모델이 비서가 되기까지</h2>
+<p>사전학습만 된 모델("베이스 모델")은 문서를 이어 쓰는 기계입니다. "프랑스의 수도는?"이라고 물으면 "독일의 수도는? 이탈리아의 수도는?"처럼 시험지를 이어 쓸 수도 있습니다.</p>
+<ol>
+<li><b>지도 미세조정 (SFT, Instruction tuning)</b>: (지시, 좋은 응답) 쌍 수만~수십만 개로 학습. "질문에는 답한다"는 형식을 배웁니다. 손실은 똑같이 다음 토큰 예측이고, 보통 응답 부분에만 손실을 줍니다.</li>
+<li><b>선호 학습</b>: 같은 질문에 대한 두 응답 중 사람이 더 좋다고 고른 데이터로 학습.
+  <ul>
+  <li><b>RLHF</b>: 선호 데이터로 <b>보상 모델</b>을 학습한 뒤, 강화학습(PPO)으로 LLM이 높은 보상을 받도록 최적화. KL 페널티로 원래 모델에서 너무 멀어지지 않게 합니다.</li>
+  <li><b>DPO</b>: 보상 모델과 강화학습 없이, 선호 쌍에서 바로 분류 손실 비슷한 형태로 최적화. 더 단순하고 안정적이라 널리 쓰입니다.</li>
+  </ul></li>
+  <li>그 밖에 AI 피드백을 활용하는 방법(Constitutional AI 등), 추론 과정을 강화학습으로 키우는 방법 등이 활발히 연구되고 있습니다.</li>
+</ol>
+
+<h2>4. 효율적 미세조정: LoRA</h2>
+<p>70억 파라미터 모델을 전부 미세조정하려면 파라미터·기울기·Adam 상태까지 수십 GB 메모리가 필요합니다. <b>LoRA</b>(Low-Rank Adaptation)는 원래 가중치 $W_0$를 <b>동결</b>하고, 변화량을 저랭크 행렬 두 개의 곱으로 표현합니다.</p>
+$$W = W_0 + \Delta W = W_0 + \frac{\alpha}{r}BA,\qquad B\in\mathbb R^{d\times r},\ A\in\mathbb R^{r\times k},\ r\ll\min(d,k)$$
+<p>$d = k = 4096$, $r = 8$이면 학습 파라미터가 $4096^2\approx1{,}677$만 개에서 $2\cdot4096\cdot8 = 65{,}536$개로, <b>256분의 1</b>이 됩니다. 미세조정에 필요한 변화는 본질적으로 저차원이라는 가정이 실험적으로 잘 맞습니다.</p>
+<pre class="run"><code>import numpy as np
+rng = np.random.default_rng(0)
+d, k, r, alpha = 512, 512, 8, 16
+W0 = rng.normal(0, 0.02, (d, k))                    # 동결된 사전학습 가중치
+A = rng.normal(0, 0.01, (r, k)); B = np.zeros((d, r)) # B=0으로 시작 → 처음엔 ΔW=0 (원래 모델과 동일)
+x = rng.normal(size=(4, k))
+y = x @ W0.T + (alpha / r) * (x @ A.T) @ B.T          # LoRA 순전파: 큰 행렬 ΔW를 만들지 않는다
+print("출력 형상:", y.shape)
+print(f"전체 미세조정 파라미터: {d*k:,}  vs  LoRA 파라미터: {r*(d+k):,}  ({d*k/(r*(d+k)):.0f}배 적음)")
+# 학습 후에는 W = W0 + (alpha/r) B@A 로 합쳐서 추론 속도 손실 없음
+</code></pre>
+<p><b>QLoRA</b>는 여기에 더해 동결된 $W_0$를 4비트로 양자화해 메모리를 더 줄입니다. 덕분에 70억 파라미터 모델도 Colab 무료 GPU에서 미세조정할 수 있습니다.</p>
+
+<h2>5. Hugging Face로 사전학습 모델 쓰기</h2>
+<pre><code class="language-python">from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification, pipeline
+
+# (1) 파이프라인: 가장 빠른 시작
+clf = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+print(clf("This course is surprisingly fun!"))
+
+# (2) 생성 모델 직접 다루기
+name = "Qwen/Qwen2.5-0.5B-Instruct"                     # 작은 지시 튜닝 모델 (Colab에서 실행 가능)
+tok = AutoTokenizer.from_pretrained(name)
+model = AutoModelForCausalLM.from_pretrained(name, torch_dtype="auto", device_map="auto")
+msgs = [{"role": "user", "content": "역전파를 한 문장으로 설명해 줘."}]
+ids = tok.apply_chat_template(msgs, add_generation_prompt=True, return_tensors="pt").to(model.device)
+out = model.generate(ids, max_new_tokens=100, do_sample=True, temperature=0.7, top_p=0.9)
+print(tok.decode(out[0][ids.shape[1]:], skip_special_tokens=True))
+
+# (3) 분류 미세조정: 사전학습 인코더 + 새 분류 헤드
+model = AutoModelForSequenceClassification.from_pretrained("klue/bert-base", num_labels=2)   # 한국어 BERT
+# 이후 Day 16 학습 루프 그대로, 또는 transformers.Trainer 사용
+
+# (4) LoRA 미세조정 (peft 라이브러리)
+from peft import LoraConfig, get_peft_model
+cfg = LoraConfig(r=8, lora_alpha=16, target_modules=["q_proj", "v_proj"], lora_dropout=0.05, task_type="CAUSAL_LM")
+model = get_peft_model(AutoModelForCausalLM.from_pretrained(name), cfg)
+model.print_trainable_parameters()       # 전체의 0.1~1% 정도만 학습
+</code></pre>
+
+<h2>6. LLM을 활용하는 다른 방법들</h2>
+<table>
+<tr><th>방법</th><th>설명</th><th>언제</th></tr>
+<tr><td>프롬프팅 / 퓨샷</td><td>예시 몇 개를 프롬프트에 넣어 학습 없이 과제 수행</td><td>먼저 시도해 볼 것</td></tr>
+<tr><td><b>RAG</b> (검색 증강 생성)</td><td>질문과 관련된 문서를 임베딩 검색으로 찾아 프롬프트에 넣음</td><td>최신·사내 지식이 필요할 때. 미세조정보다 먼저 고려</td></tr>
+<tr><td>미세조정 (LoRA)</td><td>모델 자체를 조정</td><td>출력 형식·문체·전문 도메인 행동을 바꾸고 싶을 때</td></tr>
+<tr><td>도구 사용 / 에이전트</td><td>LLM이 계산기, 검색, 코드 실행 등을 호출</td><td>다단계 작업</td></tr>
+</table>
+
+<h2>7. 한계와 주의점</h2>
+<ul>
+<li><b>환각</b>: 그럴듯하지만 틀린 내용을 자신 있게 생성합니다. 다음 토큰 예측기는 "사실인가"가 아니라 "그럴듯한가"를 학습하기 때문입니다.</li>
+<li><b>데이터 편향</b>: 학습 데이터의 편향을 그대로 반영합니다.</li>
+<li><b>평가의 어려움</b>: 벤치마크가 학습 데이터에 섞여 들어가는 오염 문제가 있습니다.</li>
+<li><b>비용</b>: 학습과 추론 모두 막대한 연산이 필요합니다.</li>
+</ul>
+
+<h2>8. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"BERT의 사전학습 목표는?","o":["다음 토큰 예측","가려진(마스크) 토큰 맞히기","이미지 분류","번역"],"a":1,"e":"Masked Language Modeling. 양방향 문맥을 활용합니다."},
+ {"q":"Chinchilla 연구가 제시한 연산 최적 비율은 대략?","o":["파라미터 1개당 토큰 1개","파라미터 1개당 토큰 20개","토큰 1개당 파라미터 20개","비율과 무관"],"a":1,"e":"이전 모델들은 데이터에 비해 너무 컸다는 결론이었습니다."},
+ {"q":"LoRA에서 B를 0으로 초기화하는 이유는?","o":["속도","학습 시작 시 ΔW = 0이 되어 원래 사전학습 모델과 정확히 같은 상태에서 출발하도록","메모리","규제"],"a":1,"e":"처음부터 모델을 망가뜨리지 않습니다."},
+ {"q":"d=k=1024, r=16인 LoRA의 학습 파라미터 수는?","o":["16,384","32,768","1,048,576","2,048"],"a":1,"e":"r·(d+k) = 16 × 2048 = 32,768"},
+ {"q":"사내 문서 기반으로 최신 정보를 답하는 챗봇을 만들 때 가장 먼저 고려할 방법은?","o":["처음부터 사전학습","RAG(검색 증강 생성)","전체 미세조정","드롭아웃 증가"],"a":1,"e":"지식 주입은 RAG가 저렴하고, 문서가 바뀌어도 재학습이 필요 없습니다."},
+ {"q":"RLHF의 보상 모델이 학습하는 데이터는?","o":["정답 레이블","같은 프롬프트에 대한 응답들 중 사람이 선호한 순위/쌍","다음 토큰","이미지"],"a":1,"e":"선호 비교 데이터로 '좋은 응답' 점수를 예측하도록 학습합니다."}
+]</script>
+
+<h2>9. 오늘의 과제</h2>
+<ol>
+<li>Colab에서 위 (2)번 코드로 작은 지시 튜닝 모델과 대화해 보세요. 같은 질문을 temperature 0.2와 1.2로 비교하세요.</li>
+<li>LoRA 수식을 보고, $r$을 키우면 무엇이 좋아지고 무엇이 나빠지는지 노트에 정리하세요.</li>
+<li>여러분이 Day 1에 적은 "풀고 싶은 문제" 중 하나를 고르고, 프롬프팅 / RAG / 미세조정 / 처음부터 학습 중 무엇이 적합한지 근거와 함께 적어 보세요.</li>
+</ol>

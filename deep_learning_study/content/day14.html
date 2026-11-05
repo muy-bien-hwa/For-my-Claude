@@ -1,0 +1,182 @@
+<ul class="goals">
+  <li>과적합·과소적합을 편향-분산 관점으로 설명하고 학습 곡선으로 진단한다.</li>
+  <li>학습/검증/테스트 분할의 원칙과 데이터 누수를 이해한다.</li>
+  <li>L2(가중치 감쇠), L1, <b>드롭아웃</b>, 조기 종료, 데이터 증강의 원리를 안다.</li>
+  <li><b>2주차 프로젝트</b>: 드롭아웃·L2·Adam·조기 종료를 갖춘 NumPy MLP로 실제 MNIST를 학습시킨다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 외우는 것과 이해하는 것</span>
+시험 문제를 통째로 외운 학생은 기출문제에서는 만점이지만 새 문제에서는 무너집니다. 신경망도 똑같습니다. 파라미터가 충분히 많으면 학습 데이터를 통째로 외워 버립니다(심지어 무작위 레이블도 외웁니다!). 우리가 원하는 것은 <b>일반화</b>, 즉 처음 보는 데이터에서의 성능입니다.</div>
+
+<h2>1. 과적합 vs 과소적합</h2>
+<div class="viz-mount" data-viz="overfit"></div>
+<table>
+<tr><th></th><th>과소적합 (Underfitting)</th><th>적절</th><th>과적합 (Overfitting)</th></tr>
+<tr><td>학습 오차</td><td>높음</td><td>낮음</td><td>매우 낮음</td></tr>
+<tr><td>검증 오차</td><td>높음</td><td>낮음</td><td>높음</td></tr>
+<tr><td>원인</td><td>모델이 너무 단순(높은 편향)</td><td></td><td>모델이 데이터 노이즈까지 외움(높은 분산)</td></tr>
+<tr><td>대책</td><td>모델 키우기, 더 오래 학습, 특성 추가</td><td></td><td>데이터 늘리기, 규제, 모델 줄이기, 조기 종료</td></tr>
+</table>
+<div class="callout tip"><span class="ct">💡 현대 딥러닝의 반전: 이중 하강(Double Descent)</span>
+고전 통계는 "모델이 크면 과적합한다"고 가르칩니다. 그런데 거대 신경망은 파라미터가 데이터보다 훨씬 많아도 잘 일반화합니다. 모델 크기를 키우면 검증 오차가 올라갔다가(고전적 과적합) <b>다시 내려가는</b> 현상이 관찰됩니다. 실무 교훈: <b>"큰 모델 + 적절한 규제"가 "작은 모델"보다 대체로 낫습니다.</b></div>
+
+<h2>2. 데이터 분할의 원칙</h2>
+<ul>
+<li><b>학습(train)</b> ~70-80%: 파라미터 학습.</li>
+<li><b>검증(validation)</b> ~10-15%: 하이퍼파라미터 선택, 조기 종료, 모델 비교.</li>
+<li><b>테스트(test)</b> ~10-15%: 모든 결정이 끝난 뒤 <b>딱 한 번</b> 최종 성능 보고.</li>
+</ul>
+<div class="callout warn"><span class="ct">⚠️ 데이터 누수 (Data Leakage) 체크리스트</span>
+<ul style="margin:0"><li>정규화 통계(평균/표준편차)를 전체 데이터로 계산 → <b>학습 데이터로만</b>.</li>
+<li>테스트 성능을 보고 하이퍼파라미터를 조정 → 테스트가 사실상 검증이 됨.</li>
+<li>같은 환자·같은 사용자의 데이터가 학습과 테스트에 섞임 → <b>그룹 단위로 분할</b>.</li>
+<li>시계열을 무작위로 분할 → 미래로 과거를 예측하는 셈. <b>시간 순으로 분할</b>.</li>
+<li>중복 샘플이 학습/테스트 양쪽에 존재.</li></ul></div>
+
+<h2>3. L2 규제 (가중치 감쇠)</h2>
+$$L_{\text{total}} = L_{\text{data}} + \frac{\lambda}{2}\|W\|_2^2\quad\Rightarrow\quad \nabla_W L_{\text{total}} = \nabla_W L_{\text{data}} + \lambda W$$
+<p>업데이트는 $W \leftarrow (1-\eta\lambda)W - \eta\nabla L_{\text{data}}$. 매 스텝 가중치를 조금씩 0 쪽으로 <b>감쇠</b>시킵니다. 가중치가 작으면 함수가 부드러워져(입력 변화에 덜 민감) 노이즈를 덜 외웁니다. 베이지안 관점에서는 가중치에 가우시안 사전분포를 둔 것과 같습니다. 보통 편향과 정규화 층의 파라미터에는 적용하지 않습니다.</p>
+<p><b>L1 규제</b> $\lambda\|W\|_1$은 많은 가중치를 정확히 0으로 만들어 <b>희소성</b>을 유도합니다. 딥러닝에서는 L2가 훨씬 많이 쓰입니다.</p>
+
+<h2>4. 드롭아웃</h2>
+<p>학습 중 각 뉴런을 확률 $p$로 무작위로 끕니다(출력 = 0). 매 스텝 다른 "부분 신경망"을 학습시키는 셈이고, 특정 뉴런에 과하게 의존하는 <b>공적응(co-adaptation)</b>을 막습니다. 수많은 부분망의 앙상블 효과도 있습니다.</p>
+<p><b>Inverted dropout</b>: 학습 때 살아남은 뉴런을 $1/(1-p)$배 키워서 기댓값을 맞춰 두면, 추론 때는 아무것도 안 해도 됩니다.</p>
+<pre class="run"><code>import numpy as np
+rng = np.random.default_rng(0)
+
+class Dropout:
+    def __init__(self, p=0.5): self.p, self.training = p, True
+    def forward(self, x):
+        if not self.training or self.p == 0: return x
+        self.mask = (rng.random(x.shape) >= self.p) / (1 - self.p)   # inverted dropout
+        return x * self.mask
+    def backward(self, g): return g * self.mask if self.training and self.p > 0 else g
+    def params(self): return []
+
+d = Dropout(0.5); x = np.ones((2, 10))
+print("학습 모드:\n", d.forward(x))
+print("평균은 유지:", d.forward(np.ones((1000, 100))).mean().round(3))
+d.training = False
+print("추론 모드:", d.forward(x)[0])
+</code></pre>
+<p>일반적인 값: MLP 은닉층 0.2~0.5, Transformer 0.1, CNN에서는 BN과 데이터 증강 때문에 덜 쓰거나 마지막 분류층 앞에만 씁니다.</p>
+
+<h2>5. 조기 종료와 데이터 증강</h2>
+<p><b>조기 종료</b>: 매 에폭 검증 손실을 기록하다가 $k$ 에폭(patience) 동안 개선이 없으면 멈추고, 가장 좋았던 시점의 가중치를 복원합니다. 가장 간단하고 거의 항상 쓰는 규제입니다.</p>
+<p><b>데이터 증강</b>: 레이블을 바꾸지 않는 변환(이미지 뒤집기, 자르기, 회전, 색 변화 등)으로 데이터를 늘립니다. 가장 강력한 규제인 경우가 많습니다(Day 19).</p>
+<div class="callout key"><span class="ct">🔑 규제 우선순위 (실무)</span>
+<ol style="margin:0"><li>데이터를 더 모은다 (최고의 규제)</li><li>데이터 증강</li><li>조기 종료</li><li>가중치 감쇠 (AdamW)</li><li>드롭아웃</li><li>그래도 안 되면 모델 크기 조정</li></ol></div>
+
+<h2>6. 2주차 프로젝트 (브라우저 버전): 규제 효과 실험</h2>
+<p>데이터가 적은 상황(학습 300개)에서 큰 모델로 과적합을 일으키고, 규제로 잡아 봅시다. Day 11의 층 정의를 이 페이지에서 다시 정의합니다.</p>
+<pre class="run"><code>class Linear:
+    def __init__(self, i, o): self.W = rng.normal(0, np.sqrt(2/i), (i, o)); self.b = np.zeros(o); self.dW = 0; self.db = 0
+    def forward(self, x): self.x = x; return x @ self.W + self.b
+    def backward(self, g): self.dW = self.x.T @ g; self.db = g.sum(0); return g @ self.W.T
+    def params(self): return [(self.W, self.dW, True), (self.b, self.db, False)]   # (파라미터, 기울기, L2 적용 여부)
+class ReLU:
+    def forward(self, x): self.m = x > 0; return x * self.m
+    def backward(self, g): return g * self.m
+    def params(self): return []
+Dropout.params = lambda self: []
+class Net:
+    def __init__(self, *L): self.L = list(L)
+    def forward(self, x):
+        for l in self.L: x = l.forward(x)
+        return x
+    def backward(self, g):
+        for l in reversed(self.L): g = l.backward(g)
+    def params(self): return [p for l in self.L for p in l.params()]
+    def train(self, mode=True):
+        for l in self.L:
+            if hasattr(l, 'training'): l.training = mode
+def ce(logits, y):
+    z = logits - logits.max(1, keepdims=True); P = np.exp(z) / np.exp(z).sum(1, keepdims=True)
+    g = P.copy(); g[np.arange(len(y)), y] -= 1
+    return -np.log(P[np.arange(len(y)), y] + 1e-12).mean(), g / len(y)
+class AdamW:
+    def __init__(self, net, lr=1e-3, wd=0.0, b1=.9, b2=.999):
+        self.net, self.lr, self.wd, self.b1, self.b2, self.t, self.s = net, lr, wd, b1, b2, 0, {}
+    def step(self):
+        self.t += 1
+        for i, (p, g, decay) in enumerate(self.net.params()):
+            m, v = self.s.get(i, (np.zeros_like(p), np.zeros_like(p)))
+            m = self.b1*m + (1-self.b1)*g; v = self.b2*v + (1-self.b2)*g*g; self.s[i] = (m, v)
+            p -= self.lr * (m/(1-self.b1**self.t)) / (np.sqrt(v/(1-self.b2**self.t)) + 1e-8)
+            if decay: p -= self.lr * self.wd * p          # 분리된 가중치 감쇠 (AdamW)
+
+# 데이터: 8x8 숫자 (적은 학습 데이터로 과적합 유도)
+def make_digits(n_per, seed):
+    T = ["..####...##..##..##..##..##..##..##..##..##..##..##..##...####..","...##.....###....####......##......##......##......##....######.",
+         "..####...##..##......##.....##.....##.....##.....##......######.","..####...##..##......##....###.......##......##..##..##...####..",
+         "....##.....###....####...##.##..##..##..#######.....##......##..",".######..##......#####.......##......##......##..##..##...####..",
+         "..####...##......##......#####...##..##..##..##..##..##...####..",".######......##.....##......##.....##......##.....##......##....",
+         "..####...##..##..##..##...####...##..##..##..##..##..##...####..","..####...##..##..##..##...#####......##......##.....##....###..."]
+    r = np.random.default_rng(seed); X, Y = [], []
+    for d, s in enumerate(T):
+        base = np.array([c == '#' for c in s], float).reshape(8, 8)
+        for _ in range(n_per):
+            img = np.roll(base, (r.integers(-1, 2), r.integers(-1, 2)), axis=(0, 1))
+            X.append(np.clip(img * r.uniform(.5, 1) + r.normal(0, .3, (8, 8)), 0, 1).ravel()); Y.append(d)
+    return np.array(X), np.array(Y)
+Xtr, ytr = make_digits(20, 1)       # 학습 200개 (일부러 적게)
+Xbig, ybig = make_digits(60, 3)     # 비교용: 학습 데이터 3배 (600개)
+Xva, yva = make_digits(100, 2)      # 검증 1000개
+mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-6; Xtr, Xva_s = (Xtr-mu)/sd, (Xva-mu)/sd
+mu2, sd2 = Xbig.mean(0), Xbig.std(0) + 1e-6; Xbig, Xva_b = (Xbig-mu2)/sd2, (Xva-mu2)/sd2
+
+def experiment(p_drop=0.0, wd=0.0, epochs=120, patience=None, more_data=False, seed=0):
+    global rng; rng = np.random.default_rng(seed)
+    Xt, yt, Xv = (Xbig, ybig, Xva_b) if more_data else (Xtr, ytr, Xva_s)
+    net = Net(Linear(64, 256), ReLU(), Dropout(p_drop), Linear(256, 256), ReLU(), Dropout(p_drop), Linear(256, 10))
+    opt = AdamW(net, lr=1e-3, wd=wd); H = {"tr": [], "va": []}; best = (1e9, None, 0); bad = 0
+    for ep in range(epochs):
+        net.train(True); idx = rng.permutation(len(yt))
+        for s in range(0, len(yt), 32):
+            bi = idx[s:s+32]; _, g = ce(net.forward(Xt[bi]), yt[bi]); net.backward(g); opt.step()
+        net.train(False)
+        ltr, _ = ce(net.forward(Xt), yt); lva, _ = ce(net.forward(Xv), yva); H["tr"].append(ltr); H["va"].append(lva)
+        if lva < best[0]: best = (lva, [p.copy() for p, _, _ in net.params()], ep); bad = 0
+        else: bad += 1
+        if patience and bad >= patience: break
+    if patience:   # 최고 시점 가중치 복원
+        for (p, _, _), bp in zip(net.params(), best[1]): p[...] = bp
+    acc = (net.forward(Xv).argmax(1) == yva).mean()
+    return H, acc, best[2]
+
+import matplotlib.pyplot as plt
+configs = [("규제 없음", {}), ("드롭아웃 0.5", dict(p_drop=0.5)), ("가중치 감쇠 0.5", dict(wd=0.5)),
+           ("조기 종료 (patience 10)", dict(patience=10)), ("데이터 3배", dict(more_data=True))]
+fig, axs = plt.subplots(1, 5, figsize=(17, 3.3), sharey=True)
+for ax, (name, kw) in zip(axs, configs):
+    H, acc, best_ep = experiment(**kw)
+    ax.plot(H["tr"], label='train'); ax.plot(H["va"], label='val'); ax.set_title(f"{name}\n검증 정확도 {acc:.3f}", fontsize=10)
+    ax.set_ylim(0, 2.5); ax.set_xlabel('epoch')
+    print(f"{name:20s} 검증 정확도 {acc:.3f}  (최저 검증 손실 시점: {best_ep} 에폭)")
+axs[0].legend(); plt.tight_layout(); plt.show()
+</code></pre>
+<p>"규제 없음"에서 학습 손실은 0으로 가는데 검증 손실은 어느 순간부터 <b>올라가는</b> U자 모양을 보세요. 전형적인 과적합입니다. 각 규제가 이 곡선을 어떻게 바꾸나요?</p>
+<div class="callout prof"><span class="ct">👨‍🏫 결과를 비판적으로 읽기</span>
+드롭아웃과 가중치 감쇠는 검증 <b>손실</b> 곡선의 U자를 확실히 완만하게 만들지만, 이 작은 실험에서 <b>정확도</b> 향상은 1~3%p 정도로 크지 않습니다(시드에 따라 순위가 바뀌기도 합니다). 조기 종료는 "검증 손실이 가장 낮은 시점"으로 되돌리는데, 손실과 정확도의 최적 시점이 다를 수 있어서 정확도는 오히려 조금 낮게 나올 수 있습니다. 반면 <b>데이터 3배</b>는 다른 어떤 규제보다 효과가 큽니다. "최고의 규제는 더 많은 데이터"라는 말이 그대로 확인됩니다. 실험 결과는 항상 이렇게 정직하게 읽어야 합니다. 브라우저에서는 이 셀이 1분 가까이 걸릴 수 있습니다.</div>
+
+<h2>7. 2주차 프로젝트 (Colab 버전): 진짜 MNIST</h2>
+<p>상단의 <b>📓 Colab에서 실습 노트북 열기</b> 버튼을 누르세요. 노트북은 다음을 포함합니다.</p>
+<ol>
+<li>MNIST 60,000장 로드 (torchvision으로 다운로드만 하고, 학습은 <b>순수 NumPy</b>)</li>
+<li>오늘까지 만든 모든 부품: Linear, ReLU, Dropout, Softmax-CE, AdamW, 조기 종료</li>
+<li>784-256-128-10 MLP 학습 → <b>목표: 테스트 정확도 98% 이상</b></li>
+<li>학습 곡선, 틀린 예시, 혼동 행렬 분석</li>
+</ol>
+<div class="callout prof"><span class="ct">👨‍🏫 2주차를 마치며</span>
+축하합니다. 여러분은 이제 프레임워크 없이 신경망을 설계하고, 미분하고, 학습시키고, 규제하고, 평가할 수 있습니다. 이것은 많은 실무자도 해 보지 않은 일입니다. 다음 주부터는 PyTorch를 쓰지만, 여러분은 그 안에서 무슨 일이 일어나는지 알고 쓰는 사람입니다.</div>
+
+<h2>8. 2주차 종합 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"학습 손실은 계속 줄어드는데 검증 손실이 20 에폭부터 오르기 시작했다. 가장 적절한 조치는?","o":["학습률을 올린다","모델을 더 키운다","조기 종료 / 규제를 적용한다","에폭을 늘린다"],"a":2,"e":"전형적인 과적합 신호입니다."},
+ {"q":"Inverted dropout(p=0.2)에서 학습 시 살아남은 뉴런의 출력에 곱하는 값은?","o":["0.2","0.8","1.25","5"],"a":2,"e":"1/(1−p) = 1/0.8 = 1.25. 기댓값을 유지해서 추론 때 아무것도 안 해도 되게 합니다."},
+ {"q":"하이퍼파라미터를 테스트 세트 성능을 보며 반복 조정하면?","o":["가장 좋은 방법이다","테스트 세트에 과적합되어 보고한 성능이 실제보다 낙관적이 된다","아무 문제 없다","학습이 빨라진다"],"a":1,"e":"검증 세트로 조정하고 테스트는 마지막에 한 번만."},
+ {"q":"L2 규제(가중치 감쇠)가 업데이트에서 하는 일은?","o":["가중치를 매 스텝 일정 비율로 0 쪽으로 줄인다","가중치를 0 또는 1로 만든다","학습률을 줄인다","기울기를 자른다"],"a":0,"e":"W ← (1−ηλ)W − η∇L"},
+ {"q":"역전파에서 Linear 층의 ∂L/∂X를 계산하는 식은? (G: 상류 기울기)","o":["XᵀG","GWᵀ","WG","GᵀX"],"a":1,"e":"(N,k)·(k,d) = (N,d)"},
+ {"q":"Adam의 기본 β₁, β₂ 값은?","o":["0.5, 0.5","0.9, 0.999","0.99, 0.9","0.1, 0.001"],"a":1,"e":"1차 모멘트 0.9, 2차 모멘트 0.999."},
+ {"q":"ReLU 망에서 깊이 20의 Xavier(1/n) 초기화를 쓰면?","o":["완벽하다","활성화 분산이 층마다 절반씩 줄어 신호가 사라진다","폭발한다","He와 같다"],"a":1,"e":"ReLU에는 He(2/n) 초기화를 씁니다."}
+]</script>

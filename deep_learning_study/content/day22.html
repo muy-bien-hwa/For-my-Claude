@@ -1,0 +1,135 @@
+<ul class="goals">
+  <li>Seq2Seq의 <b>정보 병목</b> 문제와 어텐션이 등장한 동기를 이해한다.</li>
+  <li>어텐션을 "부드러운 사전 검색(soft lookup)"으로 해석하고 Query·Key·Value의 역할을 설명한다.</li>
+  <li><b>Scaled dot-product attention</b> 식을 유도하고, $\sqrt{d_k}$로 나누는 이유를 실험으로 확인한다.</li>
+  <li>셀프 어텐션, 패딩 마스크, <b>causal 마스크</b>를 NumPy로 구현한다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 현대 AI의 심장</span>
+ChatGPT, Claude, 이미지 생성 모델, AlphaFold… 지금 여러분이 듣는 거의 모든 AI의 중심에 오늘 배우는 식 하나가 있습니다.
+$$\mathrm{Attention}(Q,K,V) = \mathrm{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}}\right)V$$
+이번 주가 끝나면 이 식이 공기처럼 자연스러워질 것입니다. 놀랍게도 재료는 이미 다 배웠습니다. 내적(Day 3), 소프트맥스(Day 7), 행렬곱이 전부입니다.</div>
+
+<h2>1. 동기: 하나의 벡터에 모든 것을 담을 수 없다</h2>
+<p>RNN 기반 번역(Seq2Seq, 2014)은 인코더가 입력 문장 전체를 <b>마지막 은닉 상태 하나</b>로 요약하고, 디코더가 그것만 보고 번역합니다. 문장이 길어지면 이 고정 크기 벡터가 병목이 되어 성능이 급격히 떨어졌습니다.</p>
+<p>Bahdanau 등(2015)의 아이디어: 디코더가 단어를 하나 만들 때마다, 인코더의 <b>모든 시점 은닉 상태를 다시 보고</b>, 지금 필요한 부분에 <b>집중(attend)</b>하자. "I love cats"를 번역하며 "고양이를"을 쓸 때는 "cats"에 집중하는 식입니다.</p>
+
+<h2>2. 어텐션 = 부드러운 사전 검색</h2>
+<p>파이썬 사전 <code>d[query]</code>는 query와 <b>정확히 일치하는</b> key 하나의 value를 돌려줍니다. 어텐션은 이것을 부드럽게 만든 것입니다.</p>
+<ol>
+<li>Query와 <b>모든</b> Key의 유사도를 잰다 (내적).</li>
+<li>유사도를 소프트맥스로 가중치(합 = 1)로 바꾼다.</li>
+<li>Value들을 그 가중치로 <b>가중평균</b>한다.</li>
+</ol>
+<table>
+<tr><th>역할</th><th>비유 (도서관)</th><th>의미</th></tr>
+<tr><td><b>Query</b> $q$</td><td>내가 찾는 주제</td><td>"나는 지금 무엇을 찾고 있나"</td></tr>
+<tr><td><b>Key</b> $k_j$</td><td>각 책의 색인 키워드</td><td>"나는 이런 정보를 가지고 있어"</td></tr>
+<tr><td><b>Value</b> $v_j$</td><td>책의 실제 내용</td><td>"선택되면 전달할 내용"</td></tr>
+</table>
+$$\alpha_j = \frac{\exp(q\cdot k_j)}{\sum_{j'}\exp(q\cdot k_{j'})},\qquad \text{output} = \sum_j\alpha_j v_j$$
+<pre class="run"><code>import numpy as np
+np.set_printoptions(precision=3, suppress=True)
+softmax = lambda z, ax=-1: np.exp(z - z.max(ax, keepdims=True)) / np.exp(z - z.max(ax, keepdims=True)).sum(ax, keepdims=True)
+
+keys   = np.array([[1, 0], [0, 1], [1, 1]], float)        # 3개 항목의 키
+values = np.array([[10, 0], [0, 10], [5, 5]], float)      # 각 항목의 값
+for q in ([3, 0], [0, 3], [1, 1], [0, 0]):
+    q = np.array(q, float)
+    w = softmax(keys @ q)                                   # 유사도 → 가중치
+    print(f"query {q} → 가중치 {w} → 출력 {w @ values}")
+</code></pre>
+<p>query가 첫 번째 key와 비슷하면 첫 번째 value가 주로 나오고, 어느 것과도 특별히 비슷하지 않으면(query = 0) 모든 value의 평균이 나옵니다. 전부 미분 가능하므로 <b>무엇에 집중할지를 학습</b>할 수 있습니다.</p>
+
+<h2>3. 행렬로: Scaled Dot-Product Attention</h2>
+<p>Query가 $n$개, Key·Value가 $m$개일 때 행으로 쌓습니다: $Q\in\mathbb R^{n\times d_k}$, $K\in\mathbb R^{m\times d_k}$, $V\in\mathbb R^{m\times d_v}$.</p>
+$$\underbrace{QK^\top}_{n\times m\ \text{유사도 표}}\ \xrightarrow{\ \div\sqrt{d_k}\ }\ \xrightarrow{\ \text{행별 softmax}\ }\ \underbrace{A}_{n\times m\ \text{가중치}}\ \longrightarrow\ \underbrace{AV}_{n\times d_v}$$
+<pre class="run"><code>def attention(Q, K, V, mask=None):
+    d_k = Q.shape[-1]
+    scores = Q @ K.swapaxes(-1, -2) / np.sqrt(d_k)          # (..., n, m)
+    if mask is not None:
+        scores = np.where(mask, scores, -1e9)                # mask가 False인 곳은 -∞ → softmax 후 0
+    A = softmax(scores, -1)
+    return A @ V, A
+
+rng = np.random.default_rng(0)
+Q = rng.normal(size=(4, 8)); K = rng.normal(size=(6, 8)); V = rng.normal(size=(6, 16))
+out, A = attention(Q, K, V)
+print("출력:", out.shape, " 가중치:", A.shape, " 행 합:", A.sum(1))
+</code></pre>
+
+<h2>4. 왜 $\sqrt{d_k}$로 나누는가</h2>
+<p>$q$, $k$의 각 성분이 평균 0, 분산 1이면 내적 $q\cdot k = \sum_{i=1}^{d_k}q_ik_i$의 분산은 $d_k$입니다. $d_k = 512$면 표준편차가 약 22. 이런 큰 값이 소프트맥스에 들어가면 하나만 거의 1이고 나머지는 0인 <b>원-핫에 가까운 분포</b>가 되어, 기울기가 거의 0이 됩니다(포화). $\sqrt{d_k}$로 나누면 분산이 1로 돌아옵니다. Day 13의 분산 보존 원리와 같은 생각입니다.</p>
+<pre class="run"><code>for d in [4, 64, 512]:
+    q = rng.normal(size=(1000, d)); k = rng.normal(size=(1000, 10, d))
+    raw = np.einsum('nd,nmd->nm', q, k)
+    for name, s in [("나누기 전", raw), ("√d로 나눈 후", raw / np.sqrt(d))]:
+        A = softmax(s, -1)
+        print(f"d={d:3d} {name:8s} 점수 표준편차 {s.std():6.2f}  최대 가중치 평균 {A.max(1).mean():.3f}")
+</code></pre>
+<p>$d=512$에서 나누기 전에는 가중치 최댓값 평균이 거의 1에 가깝습니다. 사실상 argmax가 되어 학습이 어려워집니다.</p>
+
+<h2>5. 셀프 어텐션: 문장이 자기 자신을 본다</h2>
+<p>Q, K, V를 <b>모두 같은 시퀀스</b> $X$에서 서로 다른 선형변환으로 만듭니다.</p>
+$$Q = XW_Q,\quad K = XW_K,\quad V = XW_V$$
+<p>그러면 각 토큰이 문장의 다른 모든 토큰을 보고, 필요한 정보를 모아 자신의 표현을 갱신합니다. "그 동물은 너무 피곤해서 길을 건너지 않았다. <b>그것은</b> …"에서 "그것"의 표현이 "동물"의 정보를 가져오는 식입니다.</p>
+<div class="viz-mount" data-viz="attention"></div>
+<p>(위 시각화는 학습된 모델이 아니라, 철자가 비슷한 단어끼리 비슷해지는 장난감 임베딩을 씁니다. 같은 단어 "고양이"끼리 서로 강하게 참고하는 것을 볼 수 있습니다. 실제 모델은 의미·문법 관계를 학습합니다.)</p>
+<div class="callout key"><span class="ct">🔑 RNN과 비교한 셀프 어텐션의 장점</span>
+<ul style="margin:0">
+<li><b>경로 길이 1</b>: 첫 단어와 마지막 단어가 한 단계 만에 직접 연결됩니다. RNN은 $T$단계를 거쳐야 해서 장기 의존성이 어렵습니다.</li>
+<li><b>병렬화</b>: 모든 위치를 행렬곱 한 번에 계산합니다. RNN은 순차적이라 GPU를 제대로 못 씁니다. 이것이 대규모 학습을 가능하게 했습니다.</li>
+<li><b>단점</b>: 모든 쌍을 계산하므로 연산·메모리가 $O(T^2)$입니다. 긴 문맥이 비싼 이유이고, FlashAttention 등 최적화 연구가 활발한 이유입니다.</li>
+</ul></div>
+
+<h2>6. 마스크: 보면 안 되는 것 가리기</h2>
+<ul>
+<li><b>패딩 마스크</b>: 배치를 맞추려고 넣은 PAD 토큰은 Key로서 무시해야 합니다.</li>
+<li><b>Causal(인과) 마스크</b>: 다음 단어를 예측하는 언어 모델(GPT)은 학습 중에 <b>미래 토큰을 보면 안 됩니다</b>. 위치 $i$는 $j \le i$인 위치만 봅니다. 하삼각 행렬 마스크를 씁니다.</li>
+</ul>
+<pre class="run"><code>T, d = 5, 8
+X = rng.normal(size=(T, d))
+Wq, Wk, Wv = (rng.normal(0, 1/np.sqrt(d), (d, d)) for _ in range(3))
+Q, K, V = X @ Wq, X @ Wk, X @ Wv
+
+causal = np.tril(np.ones((T, T), bool))               # 하삼각: j <= i 만 True
+print("causal 마스크:\n", causal.astype(int))
+out, A = attention(Q, K, V, mask=causal)
+print("\n어텐션 가중치 (윗삼각은 0이어야 함):\n", A)
+
+# 패딩 마스크: 마지막 2개 토큰이 PAD
+pad = np.array([True, True, True, False, False])
+_, A2 = attention(Q, K, V, mask=pad[None, :])           # 모든 query에 대해 PAD key 차단
+print("\n패딩 마스크 적용 가중치 (마지막 두 열 0):\n", A2)
+</code></pre>
+<div class="callout tip"><span class="ct">💡 Causal 마스크가 학습을 효율적으로 만드는 방법</span>
+문장 길이가 $T$면, causal 마스크 덕분에 <b>한 번의 순전파로 $T$개 위치의 다음 토큰 예측을 동시에</b> 학습합니다("teacher forcing"). RNN처럼 하나씩 돌릴 필요가 없습니다. 생성할 때만 한 토큰씩 순차적으로 만듭니다.</div>
+
+<h2>7. 어텐션의 종류 정리</h2>
+<table>
+<tr><th>종류</th><th>Q의 출처</th><th>K, V의 출처</th><th>예</th></tr>
+<tr><td>셀프 어텐션</td><td>X</td><td>X</td><td>BERT, GPT의 모든 층</td></tr>
+<tr><td>Causal 셀프 어텐션</td><td>X</td><td>X (과거만)</td><td>GPT, 디코더</td></tr>
+<tr><td>크로스 어텐션</td><td>디코더</td><td>인코더 출력</td><td>번역 모델, 이미지 생성(텍스트 조건)</td></tr>
+</table>
+
+<h2>8. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"Q: (10, 64), K: (20, 64), V: (20, 32)일 때 어텐션 출력의 형상은?","o":["(10, 20)","(10, 32)","(20, 32)","(10, 64)"],"a":1,"e":"가중치 A가 (10, 20), A @ V = (10, 32)."},
+ {"q":"QKᵀ를 √d_k로 나누는 이유는?","o":["계산 속도","차원이 클수록 내적의 분산이 커져 소프트맥스가 포화되고 기울기가 사라지는 것을 막기 위해","정규화 층 대신","메모리 절약"],"a":1,"e":"내적의 분산이 d_k이므로 √d_k로 나눠 1로 맞춥니다."},
+ {"q":"GPT 학습에서 causal 마스크가 필요한 이유는?","o":["속도","다음 토큰을 예측할 때 미래 토큰(정답)을 미리 보는 것을 막기 위해","패딩 처리","메모리"],"a":1,"e":"미래를 볼 수 있으면 그냥 복사해서 손실을 0으로 만들 수 있습니다."},
+ {"q":"셀프 어텐션의 계산 복잡도가 시퀀스 길이 T에 대해 갖는 차수는?","o":["O(T)","O(T²)","O(log T)","O(1)"],"a":1,"e":"모든 토큰 쌍(T×T)의 점수를 계산합니다."},
+ {"q":"RNN 대비 셀프 어텐션이 대규모 학습에 유리한 결정적 이유는?","o":["파라미터가 적다","모든 위치를 병렬로 계산할 수 있어 GPU 효율이 높다","메모리를 적게 쓴다","순서를 무시해서"],"a":1,"e":"RNN은 h_t가 h_{t−1}을 기다려야 하는 순차 구조입니다."},
+ {"q":"마스크된 위치의 점수를 0이 아니라 −∞(−1e9)로 두는 이유는?","o":["관례","softmax 후 정확히 0의 가중치가 되도록(e^0=1이라 0으로는 가려지지 않음)","수치 안정성","속도"],"a":1,"e":"exp(−∞) = 0."}
+]</script>
+
+<h2>9. 연습 문제</h2>
+<ol>
+<li>위 <code>attention</code> 함수를 배치 차원이 있는 입력 (B, T, d)에서도 동작하는지 확인하세요(<code>swapaxes(-1,-2)</code> 덕분에 동작해야 합니다).</li>
+<li>실험실의 어텐션 시각화에서 온도를 0.1로 내리면 무슨 일이 일어나나요? 4번 절의 실험과 연결해 설명하세요.</li>
+</ol>
+<pre class="run"><code>B = 2
+Qb, Kb, Vb = rng.normal(size=(B, 5, 8)), rng.normal(size=(B, 7, 8)), rng.normal(size=(B, 7, 3))
+o, a = attention(Qb, Kb, Vb)
+print(o.shape, a.shape)
+</code></pre>

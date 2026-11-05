@@ -1,0 +1,196 @@
+<ul class="goals">
+  <li>PyTorch 텐서를 만들고 NumPy와의 차이(디바이스, dtype, autograd)를 이해한다.</li>
+  <li><code>requires_grad</code>, <code>backward()</code>, <code>.grad</code>로 자동 미분을 사용하고 Day 10의 엔진과 연결한다.</li>
+  <li><code>nn.Module</code>, <code>nn.Linear</code>, <code>nn.Sequential</code>로 모델을 정의한다.</li>
+  <li>2주차의 NumPy MLP를 PyTorch로 옮기고, 같은 모델을 Keras로도 작성해 비교한다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 이제 도구를 바꿀 시간</span>
+지난 2주 동안 손으로 만든 모든 것, 즉 텐서 연산, 역전파, 층, 옵티마이저가 PyTorch에 다 들어 있습니다. 오늘 강의의 상당 부분은 "아, 이게 그거구나"의 연속일 겁니다. 오늘부터 실습은 <b>Colab 노트북</b>에서 합니다. 상단 버튼으로 열고, 본문을 읽으며 셀을 하나씩 실행하세요.</div>
+
+<h2>1. 왜 PyTorch인가</h2>
+<ul>
+<li><b>Define-by-run</b>: 파이썬 코드가 실행되는 순간 계산 그래프가 만들어집니다. if·for를 자유롭게 쓰고, 일반 파이썬 디버거로 디버깅할 수 있습니다.</li>
+<li><b>GPU 가속</b>: <code>.to("cuda")</code> 한 줄이면 됩니다.</li>
+<li><b>생태계</b>: 연구 논문 구현의 대부분, Hugging Face, 최신 LLM 코드가 PyTorch입니다.</li>
+</ul>
+
+<h2>2. 텐서: GPU를 쓰는 NumPy</h2>
+<pre><code class="language-python">import torch
+import numpy as np
+
+x = torch.tensor([[1., 2.], [3., 4.]])
+print(x.shape, x.dtype, x.device)        # torch.Size([2, 2]) torch.float32 cpu
+
+torch.zeros(2, 3); torch.ones(4); torch.arange(10); torch.randn(3, 4)   # NumPy와 거의 동일
+x @ x.T; x.sum(dim=0); x.mean(dim=1, keepdim=True)   # axis → dim, keepdims → keepdim
+
+# NumPy ↔ PyTorch (CPU에서는 메모리를 공유!)
+a = np.ones(3); t = torch.from_numpy(a); a[0] = 100; print(t)   # tensor([100., 1., 1.])
+t.numpy()
+
+# GPU
+device = "cuda" if torch.cuda.is_available() else "cpu"
+x = x.to(device)
+y = torch.randn(2, 2, device=device)     # 처음부터 GPU에 생성
+# x(cuda) + torch.randn(2,2)(cpu) → RuntimeError: 같은 디바이스여야 연산 가능
+
+# 형상 조작
+z = torch.randn(8, 3, 32, 32)
+z.view(8, -1).shape          # (8, 3072) — 메모리가 연속일 때
+z.reshape(8, -1).shape       # 항상 동작 (필요하면 복사)
+z.permute(0, 2, 3, 1).shape  # (8, 32, 32, 3) — 축 순서 변경
+z.unsqueeze(0).shape         # (1, 8, 3, 32, 32)
+z[:, 0].squeeze().shape      # 크기 1인 축 제거
+</code></pre>
+<table>
+<tr><th>NumPy</th><th>PyTorch</th></tr>
+<tr><td><code>np.array</code></td><td><code>torch.tensor</code></td></tr>
+<tr><td><code>axis=</code>, <code>keepdims=</code></td><td><code>dim=</code>, <code>keepdim=</code></td></tr>
+<tr><td><code>x.reshape</code></td><td><code>x.view</code> / <code>x.reshape</code></td></tr>
+<tr><td><code>x.T</code> / <code>np.transpose</code></td><td><code>x.T</code> (2D) / <code>x.permute</code>, <code>x.transpose(a, b)</code></td></tr>
+<tr><td><code>np.concatenate</code>, <code>np.stack</code></td><td><code>torch.cat</code>, <code>torch.stack</code></td></tr>
+<tr><td><code>x[:, None]</code></td><td><code>x[:, None]</code> 또는 <code>x.unsqueeze(1)</code></td></tr>
+</table>
+
+<h2>3. Autograd: 내가 만든 Value 클래스의 완성판</h2>
+<pre><code class="language-python">x = torch.tensor(-2.0, requires_grad=True)
+y = torch.tensor(5.0, requires_grad=True)
+z = torch.tensor(-4.0, requires_grad=True)
+f = (x + y) * z                # 순전파와 동시에 그래프가 기록됨
+print(f.grad_fn)               # &lt;MulBackward0&gt; ← Day 10의 _op, _backward와 같은 역할
+f.backward()                   # 역전파
+print(x.grad, y.grad, z.grad)  # tensor(-4.) tensor(-4.) tensor(3.)  ← Day 10과 동일!
+</code></pre>
+<div class="callout key"><span class="ct">🔑 Autograd 핵심 규칙</span>
+<ul style="margin:0">
+<li><code>requires_grad=True</code>인 텐서가 관여한 연산만 그래프에 기록됩니다. <code>nn.Module</code>의 파라미터는 자동으로 True입니다.</li>
+<li><code>backward()</code>는 <b>스칼라</b>에서 호출합니다(보통 손실).</li>
+<li><code>.grad</code>는 <b>누적</b>됩니다 → 매 스텝 <code>optimizer.zero_grad()</code>.</li>
+<li>기본적으로 <code>backward()</code> 후 그래프는 해제됩니다(메모리 절약).</li>
+<li>추론·평가 시에는 <code>with torch.no_grad():</code>로 그래프 기록을 끕니다(메모리·속도).</li>
+<li>텐서를 그래프에서 떼어내려면 <code>.detach()</code>. 로깅할 때는 <code>loss.item()</code>으로 파이썬 숫자를 얻습니다.</li>
+</ul></div>
+
+<h2>4. nn.Module: 모델의 기본 단위</h2>
+<pre><code class="language-python">import torch.nn as nn
+import torch.nn.functional as F
+
+class MLP(nn.Module):
+    def __init__(self, d_in=784, d_hidden=256, n_classes=10, p_drop=0.2):
+        super().__init__()                          # 꼭 호출!
+        self.fc1 = nn.Linear(d_in, d_hidden)        # 속성으로 등록하면 파라미터가 자동 추적됨
+        self.fc2 = nn.Linear(d_hidden, d_hidden)
+        self.fc3 = nn.Linear(d_hidden, n_classes)
+        self.drop = nn.Dropout(p_drop)
+
+    def forward(self, x):                           # (N, 1, 28, 28)
+        x = x.flatten(1)                            # (N, 784)
+        x = self.drop(F.relu(self.fc1(x)))          # (N, 256)
+        x = self.drop(F.relu(self.fc2(x)))          # (N, 256)
+        return self.fc3(x)                          # (N, 10) 로짓 — softmax는 붙이지 않는다!
+
+model = MLP()
+print(model)
+print(sum(p.numel() for p in model.parameters()), "개 파라미터")
+for name, p in model.named_parameters(): print(name, tuple(p.shape))
+# fc1.weight (256, 784) ← PyTorch는 (out, in)으로 저장하고 x @ W.T 를 계산
+
+# 간단한 모델은 Sequential로
+model2 = nn.Sequential(
+    nn.Flatten(), nn.Linear(784, 256), nn.ReLU(), nn.Dropout(0.2),
+    nn.Linear(256, 256), nn.ReLU(), nn.Dropout(0.2), nn.Linear(256, 10))
+</code></pre>
+<p>우리가 Day 9에 만든 <code>Linear</code>, <code>ReLU</code>, <code>Sequential</code>과 이름까지 같습니다. 의도한 것입니다.</p>
+
+<h2>5. 가장 짧은 완전한 학습 코드</h2>
+<pre><code class="language-python">from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+
+tf = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+train_ds = datasets.MNIST("data", train=True, download=True, transform=tf)
+test_ds  = datasets.MNIST("data", train=False, download=True, transform=tf)
+train_dl = DataLoader(train_ds, batch_size=128, shuffle=True)
+test_dl  = DataLoader(test_ds, batch_size=512)
+
+model = MLP().to(device)
+opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
+loss_fn = nn.CrossEntropyLoss()
+
+for epoch in range(5):
+    model.train()                                   # 드롭아웃 ON
+    for xb, yb in train_dl:
+        xb, yb = xb.to(device), yb.to(device)
+        logits = model(xb)                          # 1. 순전파
+        loss = loss_fn(logits, yb)                  # 2. 손실
+        opt.zero_grad()                             #    (기울기 초기화)
+        loss.backward()                             # 3. 역전파
+        opt.step()                                  # 4. 업데이트
+    model.eval()                                    # 드롭아웃 OFF
+    correct = 0
+    with torch.no_grad():
+        for xb, yb in test_dl:
+            correct += (model(xb.to(device)).argmax(1) == yb.to(device)).sum().item()
+    print(f"epoch {epoch}  loss {loss.item():.4f}  test acc {correct / len(test_ds):.4f}")
+</code></pre>
+<p>2주차에 NumPy로 수십 줄 걸렸던 것이 이 정도입니다. 그리고 GPU 덕분에 1에폭에 몇 초면 끝납니다.</p>
+
+<h2>6. 같은 모델, Keras 버전</h2>
+<p>TensorFlow/Keras는 더 높은 수준의 API를 제공합니다. 학습 루프를 <code>fit()</code>이 대신해 줍니다.</p>
+<pre><code class="language-python">import tensorflow as tf
+from tensorflow import keras
+
+(x_tr, y_tr), (x_te, y_te) = keras.datasets.mnist.load_data()
+x_tr, x_te = x_tr / 255.0, x_te / 255.0
+
+model = keras.Sequential([
+    keras.layers.Input((28, 28)),
+    keras.layers.Flatten(),
+    keras.layers.Dense(256, activation="relu"), keras.layers.Dropout(0.2),
+    keras.layers.Dense(256, activation="relu"), keras.layers.Dropout(0.2),
+    keras.layers.Dense(10),                                   # 로짓
+])
+model.compile(optimizer=keras.optimizers.AdamW(1e-3),
+              loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),   # ← 로짓 입력임을 명시
+              metrics=["accuracy"])
+model.fit(x_tr, y_tr, batch_size=128, epochs=5, validation_split=0.1)
+model.evaluate(x_te, y_te)
+</code></pre>
+<table>
+<tr><th></th><th>PyTorch</th><th>Keras</th></tr>
+<tr><td>층 이름</td><td><code>nn.Linear(in, out)</code></td><td><code>Dense(out)</code> (입력 크기 자동 추론)</td></tr>
+<tr><td>학습 루프</td><td>직접 작성 (유연, 투명)</td><td><code>compile</code> + <code>fit</code> (간결)</td></tr>
+<tr><td>train/eval 모드</td><td><code>model.train()</code>/<code>eval()</code> 직접 호출</td><td><code>fit</code>/<code>predict</code>가 자동 처리</td></tr>
+<tr><td>로짓 손실</td><td><code>CrossEntropyLoss</code>는 항상 로짓</td><td><code>from_logits=True</code> 지정 필요</td></tr>
+<tr><td>이미지 축 순서</td><td>(N, C, H, W)</td><td>(N, H, W, C)</td></tr>
+<tr><td>강점</td><td>연구, 커스텀 모델, LLM 생태계</td><td>빠른 프로토타이핑, 배포(TF Lite, TF.js)</td></tr>
+</table>
+<div class="callout tip"><span class="ct">💡 어느 쪽을 배워야 하나?</span>
+개념은 100% 같습니다. 이 강의는 PyTorch를 주력으로 쓰고, 중요한 지점마다 Keras 대응 코드를 보여 줍니다. Keras 3는 PyTorch를 백엔드로 쓸 수도 있습니다. 하나를 제대로 알면 다른 하나는 며칠이면 익힙니다.</div>
+
+<h2>7. 자주 하는 실수 Top 7</h2>
+<ol>
+<li><code>optimizer.zero_grad()</code>를 빠뜨림 → 기울기 누적.</li>
+<li>평가 전에 <code>model.eval()</code>을 안 함 → 드롭아웃·BN이 학습 모드로 동작.</li>
+<li>평가 때 <code>torch.no_grad()</code>를 안 씀 → 메모리 폭증.</li>
+<li>모델 끝에 softmax를 붙이고 <code>CrossEntropyLoss</code>에 넣음.</li>
+<li>모델은 GPU, 데이터는 CPU → <code>RuntimeError: Expected all tensors to be on the same device</code>.</li>
+<li>손실을 리스트에 모을 때 <code>loss</code>를 그대로 저장 → 그래프 전체가 메모리에 남음. <code>loss.item()</code>을 쓰세요.</li>
+<li><code>CrossEntropyLoss</code>의 타깃에 원-핫이나 float을 넣음 → 정수 클래스 인덱스(<code>torch.long</code>)를 넣어야 함.</li>
+</ol>
+
+<h2>8. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"nn.Linear(784, 256)의 weight 텐서 형상은?","o":["(784, 256)","(256, 784)","(256,)","(784,)"],"a":1,"e":"PyTorch는 (out_features, in_features)로 저장하고 x @ W.T + b를 계산합니다."},
+ {"q":"평가 루프에서 torch.no_grad()를 쓰는 이유는?","o":["정확도를 높이려고","계산 그래프를 기록하지 않아 메모리와 시간을 절약하려고","드롭아웃을 끄려고","기울기를 0으로 만들려고"],"a":1,"e":"드롭아웃을 끄는 것은 model.eval()의 역할입니다. 둘은 다른 기능이니 둘 다 써야 합니다."},
+ {"q":"Keras에서 마지막 Dense 층에 활성화가 없을 때 손실에 지정해야 하는 것은?","o":["from_logits=True","from_logits=False","activation='softmax'","아무것도 안 해도 됨"],"a":0,"e":"로짓을 받는다는 것을 알려야 내부에서 안정적인 log-softmax를 적용합니다."},
+ {"q":"loss.backward()를 두 번 연속 호출하고 zero_grad 없이 step 하면?","o":["정상","기울기가 2배로 누적된 상태로 업데이트된다(그리고 보통 두 번째 backward에서 그래프 해제 에러)","에러 없이 무시된다","학습률이 절반이 된다"],"a":1,"e":"기울기는 누적되고, 기본 설정에서는 그래프가 이미 해제되어 RuntimeError가 납니다."},
+ {"q":"model.train()과 model.eval()의 차이가 영향을 주는 층은?","o":["Linear","Dropout과 BatchNorm","ReLU","모든 층"],"a":1,"e":"학습/추론 동작이 다른 층은 드롭아웃과 정규화 층(BN)입니다."}
+]</script>
+
+<h2>9. 오늘의 과제 (Colab)</h2>
+<ol>
+<li>노트북의 모든 셀을 실행하고 MNIST 테스트 정확도 98% 이상을 확인하세요.</li>
+<li>노트북의 "Day 10 엔진과 비교" 셀에서 autograd 결과가 우리가 만든 엔진과 같은지 확인하세요.</li>
+<li>Keras 셀도 실행해 두 프레임워크의 결과와 코드를 비교해 보세요.</li>
+</ol>

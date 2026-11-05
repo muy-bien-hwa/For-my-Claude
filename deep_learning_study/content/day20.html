@@ -1,0 +1,150 @@
+<ul class="goals">
+  <li>시퀀스 데이터의 특징과, 고정 크기 입력 모델(MLP, CNN)로는 다루기 어려운 이유를 안다.</li>
+  <li>RNN의 은닉 상태 갱신 식과 시간 축으로 펼친 계산 그래프를 이해한다.</li>
+  <li><b>BPTT</b>와 장기 의존성 문제(기울기 소실·폭발)를 수식으로 설명한다.</li>
+  <li><b>LSTM</b>과 <b>GRU</b>의 게이트 구조가 문제를 해결하는 원리를 이해한다.</li>
+  <li>PyTorch <code>nn.LSTM</code>의 입출력 형상을 정확히 다루고 문자 단위 언어 모델을 학습한다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 기억을 가진 신경망</span>
+"나는 프랑스에서 자랐다. … (긴 문장) … 그래서 나는 유창한 ___를 한다." 빈칸을 채우려면 앞의 정보를 <b>기억</b>해야 합니다. RNN은 Transformer 이전 10년간 언어·음성·시계열을 지배한 모델입니다. 지금은 Transformer에 많이 자리를 내줬지만, 그 한계를 이해해야 왜 어텐션이 혁명이었는지 알 수 있습니다. 그리고 최근 Mamba 같은 상태 공간 모델(SSM)로 RNN의 아이디어가 다시 주목받고 있습니다.</div>
+
+<h2>1. 시퀀스 데이터</h2>
+<ul>
+<li>텍스트(단어/문자의 열), 음성, 주가·센서 시계열, DNA, 동영상 프레임.</li>
+<li>특징: <b>길이가 제각각</b>이고, <b>순서가 의미</b>를 가지며, 멀리 떨어진 원소끼리 관련될 수 있습니다.</li>
+<li>과제 유형: 다대일(감정 분류), 일대다(이미지 캡션), 다대다(번역, 품사 태깅), 다음 원소 예측(언어 모델).</li>
+</ul>
+
+<h2>2. RNN: 같은 층을 시간마다 반복</h2>
+$$\mathbf h_t = \tanh(W_{xh}\mathbf x_t + W_{hh}\mathbf h_{t-1} + \mathbf b_h),\qquad \mathbf y_t = W_{hy}\mathbf h_t + \mathbf b_y$$
+<p>은닉 상태 $\mathbf h_t$는 "지금까지 본 것의 요약"입니다. 핵심은 <b>모든 시점에서 같은 가중치</b>($W_{xh}, W_{hh}$)를 쓴다는 것입니다. CNN이 공간에서 가중치를 공유하듯 RNN은 <b>시간에서</b> 가중치를 공유합니다. 그래서 어떤 길이의 시퀀스든 처리할 수 있습니다.</p>
+<figure class="fig">
+<svg viewBox="0 0 560 170" width="560" role="img" aria-label="시간 축으로 펼친 RNN">
+  <g fill="#5b5bd6" fill-opacity=".15" stroke="#5b5bd6" stroke-width="1.8">
+    <rect x="60" y="60" width="70" height="40" rx="8"/><rect x="200" y="60" width="70" height="40" rx="8"/><rect x="340" y="60" width="70" height="40" rx="8"/><rect x="480" y="60" width="70" height="40" rx="8"/>
+  </g>
+  <g stroke="currentColor" stroke-opacity=".6" stroke-width="1.5">
+    <line x1="10" y1="80" x2="60" y2="80"/><line x1="130" y1="80" x2="200" y2="80"/><line x1="270" y1="80" x2="340" y2="80"/><line x1="410" y1="80" x2="480" y2="80"/>
+    <line x1="95" y1="140" x2="95" y2="100"/><line x1="235" y1="140" x2="235" y2="100"/><line x1="375" y1="140" x2="375" y2="100"/><line x1="515" y1="140" x2="515" y2="100"/>
+    <line x1="95" y1="60" x2="95" y2="25"/><line x1="235" y1="60" x2="235" y2="25"/><line x1="375" y1="60" x2="375" y2="25"/><line x1="515" y1="60" x2="515" y2="25"/>
+  </g>
+  <g font-size="13" text-anchor="middle" fill="currentColor">
+    <text x="95" y="85">RNN</text><text x="235" y="85">RNN</text><text x="375" y="85">RNN</text><text x="515" y="85">RNN</text>
+    <text x="95" y="158">x₁</text><text x="235" y="158">x₂</text><text x="375" y="158">x₃</text><text x="515" y="158">x₄</text>
+    <text x="95" y="18">y₁</text><text x="235" y="18">y₂</text><text x="375" y="18">y₃</text><text x="515" y="18">y₄</text>
+    <text x="165" y="74" font-size="11">h₁</text><text x="305" y="74" font-size="11">h₂</text><text x="445" y="74" font-size="11">h₃</text><text x="25" y="74" font-size="11">h₀</text>
+  </g>
+</svg><figcaption>시간 축으로 펼친 RNN. 모든 상자는 같은 가중치를 공유합니다.</figcaption></figure>
+<pre class="run"><code>import numpy as np
+rng = np.random.default_rng(0)
+D, H, T = 4, 8, 6                       # 입력 차원, 은닉 차원, 시퀀스 길이
+Wxh = rng.normal(0, 0.5, (D, H)); Whh = rng.normal(0, 0.5, (H, H)); bh = np.zeros(H)
+
+def rnn_forward(X, h0):
+    """X: (T, D) → 모든 시점의 은닉 상태 (T, H)"""
+    h, hs = h0, []
+    for t in range(len(X)):
+        h = np.tanh(X[t] @ Wxh + h @ Whh + bh)    # 같은 가중치를 매 시점 재사용
+        hs.append(h)
+    return np.stack(hs)
+
+X = rng.normal(size=(T, D))
+hs = rnn_forward(X, np.zeros(H))
+print("은닉 상태들:", hs.shape, " 마지막 h:", hs[-1].round(2))
+print("파라미터 수:", Wxh.size + Whh.size + bh.size, "— 시퀀스 길이와 무관!")
+</code></pre>
+
+<h2>3. BPTT와 장기 의존성 문제</h2>
+<p>RNN을 시간 축으로 펼치면 아주 깊은 feedforward 망이 되고, 여기에 일반 역전파를 적용하는 것이 <b>BPTT</b>(Backpropagation Through Time)입니다. 시점 $T$의 손실에서 시점 $1$까지 기울기가 가려면</p>
+$$\frac{\partial\mathbf h_T}{\partial\mathbf h_1} = \prod_{t=2}^{T}\frac{\partial\mathbf h_t}{\partial\mathbf h_{t-1}} = \prod_{t=2}^{T}\mathrm{diag}(1-\mathbf h_t^2)\,W_{hh}^\top$$
+<p>같은 행렬 $W_{hh}$가 $T-1$번 곱해집니다. $W_{hh}$의 가장 큰 특잇값이 1보다 작으면 지수적으로 <b>소실</b>, 크면 <b>폭발</b>합니다. 깊은 CNN보다 훨씬 심합니다. 매번 <b>같은</b> 행렬을 곱하기 때문입니다.</p>
+<pre class="run"><code>def grad_norms(scale, T=50):
+    W = rng.normal(0, scale / np.sqrt(H), (H, H)); h = np.zeros(H); J = np.eye(H); norms = []
+    for t in range(T):
+        h = np.tanh(rng.normal(size=D) @ Wxh + h @ W)
+        J = J @ (W * (1 - h**2)[None, :])          # ∂h_t/∂h_1 누적 (행 벡터 관례)
+        norms.append(np.linalg.norm(J))
+    return norms
+import matplotlib.pyplot as plt
+plt.figure(figsize=(7, 3.2))
+for s in [0.5, 1.0, 3.0]: plt.semilogy(grad_norms(s), label=f'W 스케일 {s}')
+plt.xlabel('거슬러 올라간 시간 스텝'); plt.ylabel('‖∂h_t/∂h_1‖'); plt.legend(); plt.title('BPTT 기울기 크기'); plt.show()
+</code></pre>
+<ul>
+<li><b>폭발 대책</b>: 기울기 클리핑 <code>clip_grad_norm_(params, 1.0)</code>. 간단하고 효과적입니다.</li>
+<li><b>소실 대책</b>: 구조를 바꿔야 합니다 → LSTM, GRU.</li>
+<li>실무 팁: 아주 긴 시퀀스는 일정 길이로 잘라서 역전파합니다(Truncated BPTT).</li>
+</ul>
+
+<h2>4. LSTM: 기억을 위한 컨베이어 벨트</h2>
+<p>LSTM(1997)은 별도의 <b>셀 상태</b> $\mathbf c_t$를 두고, 정보를 넣고 빼는 것을 <b>게이트</b>(0~1 사이 값을 곱하는 밸브)로 조절합니다.</p>
+$$\begin{aligned}
+\mathbf f_t &= \sigma(W_f[\mathbf h_{t-1}, \mathbf x_t] + \mathbf b_f) &&\text{망각 게이트: 이전 기억을 얼마나 남길까}\\
+\mathbf i_t &= \sigma(W_i[\mathbf h_{t-1}, \mathbf x_t] + \mathbf b_i) &&\text{입력 게이트: 새 정보를 얼마나 쓸까}\\
+\tilde{\mathbf c}_t &= \tanh(W_c[\mathbf h_{t-1}, \mathbf x_t] + \mathbf b_c) &&\text{후보 기억}\\
+\mathbf c_t &= \mathbf f_t\odot\mathbf c_{t-1} + \mathbf i_t\odot\tilde{\mathbf c}_t &&\text{셀 상태 갱신}\\
+\mathbf o_t &= \sigma(W_o[\mathbf h_{t-1}, \mathbf x_t] + \mathbf b_o),\quad \mathbf h_t = \mathbf o_t\odot\tanh(\mathbf c_t) &&\text{출력 게이트}
+\end{aligned}$$
+<div class="callout key"><span class="ct">🔑 왜 기울기가 살아남는가</span>
+셀 상태 갱신 $\mathbf c_t = \mathbf f_t\odot\mathbf c_{t-1} + \dots$는 행렬곱이 아니라 <b>원소별 곱과 덧셈</b>입니다. $\partial\mathbf c_t/\partial\mathbf c_{t-1} = \mathbf f_t$. 망각 게이트가 1에 가까우면 기울기가 거의 그대로 흐릅니다. ResNet의 잔차 연결과 같은 원리이고, 실제로 ResNet보다 18년 먼저 나온 아이디어입니다. 실무 팁: 망각 게이트 편향을 1로 초기화하면 초반 학습이 안정됩니다.</div>
+<p><b>GRU</b>(2014)는 LSTM을 단순화한 것입니다. 게이트가 2개(리셋, 업데이트)이고 셀 상태가 따로 없습니다. 파라미터가 적고 성능은 비슷한 경우가 많습니다.</p>
+
+<h2>5. PyTorch nn.LSTM 형상 완전 정복</h2>
+<pre><code class="language-python">lstm = nn.LSTM(input_size=32, hidden_size=64, num_layers=2, batch_first=True, dropout=0.2, bidirectional=False)
+x = torch.randn(8, 50, 32)                 # (배치, 시퀀스 길이, 입력 차원)  ← batch_first=True
+out, (h_n, c_n) = lstm(x)
+print(out.shape)    # (8, 50, 64)   마지막 층의 '모든 시점' 은닉 상태
+print(h_n.shape)    # (2, 8, 64)    '마지막 시점'의 각 층 은닉 상태 (num_layers, 배치, hidden)
+print(c_n.shape)    # (2, 8, 64)    마지막 셀 상태
+
+# 다대일 분류: 마지막 시점 은닉 상태 사용
+logits = nn.Linear(64, n_classes)(out[:, -1])         # 또는 h_n[-1]
+# 양방향이면 out의 마지막 차원이 2*hidden, h_n은 (num_layers*2, 배치, hidden)
+</code></pre>
+<div class="callout warn"><span class="ct">⚠️ batch_first의 함정</span>
+PyTorch RNN의 기본값은 <code>batch_first=False</code>, 즉 입력이 (시퀀스, 배치, 특성)입니다. 반면 <code>h_n</code>은 <code>batch_first</code>와 상관없이 항상 (층 수, 배치, 은닉)입니다. 형상 버그의 단골 원인이니 꼭 출력해서 확인하세요. 길이가 다른 시퀀스를 패딩해 묶을 때는 <code>pack_padded_sequence</code>를 쓰면 패딩 부분을 계산에서 뺄 수 있습니다.</div>
+
+<h2>6. 문자 단위 언어 모델</h2>
+<p>텍스트의 다음 글자를 예측하도록 학습시키면, 모델은 철자, 단어, 문법을 스스로 익힙니다. 학습 후 한 글자씩 뽑아 다시 입력하면 새 텍스트를 생성합니다. GPT와 같은 원리(<b>자기회귀 생성</b>)의 작은 버전입니다.</p>
+<pre><code class="language-python">class CharLSTM(nn.Module):
+    def __init__(self, vocab_size, emb=64, hidden=256, layers=2):
+        super().__init__()
+        self.emb = nn.Embedding(vocab_size, emb)                  # 글자 ID → 벡터 (Day 21)
+        self.lstm = nn.LSTM(emb, hidden, layers, batch_first=True, dropout=0.2)
+        self.head = nn.Linear(hidden, vocab_size)
+    def forward(self, idx, state=None):                          # idx: (B, T)
+        out, state = self.lstm(self.emb(idx), state)             # (B, T, hidden)
+        return self.head(out), state                             # (B, T, vocab) — 모든 시점에서 다음 글자 예측
+
+# 손실: 입력 x = text[i:i+T], 타깃 y = text[i+1:i+T+1]  (한 칸 밀기)
+loss = F.cross_entropy(logits.reshape(-1, vocab_size), y.reshape(-1))
+
+@torch.no_grad()
+def generate(model, start_ids, n=300, temperature=0.8):
+    idx, state, out = torch.tensor([start_ids]), None, list(start_ids)
+    for _ in range(n):
+        logits, state = model(idx, state)
+        probs = F.softmax(logits[0, -1] / temperature, dim=-1)   # 온도: 낮을수록 보수적, 높을수록 창의적
+        nxt = torch.multinomial(probs, 1).item()
+        out.append(nxt); idx = torch.tensor([[nxt]])
+    return out
+</code></pre>
+<p>노트북에서는 셰익스피어 텍스트로 학습합니다. 에폭이 지나며 생성 결과가 "무작위 글자 → 단어 비슷한 것 → 문장 형태"로 진화하는 과정을 관찰하세요.</p>
+
+<h2>7. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"RNN이 임의 길이의 시퀀스를 처리할 수 있는 이유는?","o":["메모리가 무한해서","모든 시점에서 같은 가중치를 반복 사용하므로","패딩을 해서","어텐션을 써서"],"a":1,"e":"시간 축 가중치 공유 덕분에 파라미터 수가 길이와 무관합니다."},
+ {"q":"바닐라 RNN의 기울기 소실이 깊은 CNN보다 심한 이유는?","o":["활성화가 ReLU라서","같은 행렬 W_hh가 반복해서 곱해져 지수적으로 줄거나 커지므로","파라미터가 적어서","BN이 없어서"],"a":1,"e":"동일 행렬의 거듭제곱은 특잇값에 따라 지수적으로 변합니다."},
+ {"q":"LSTM의 망각 게이트 f_t가 1에 가까우면?","o":["이전 셀 상태를 거의 지운다","이전 셀 상태를 거의 그대로 유지하고, 기울기도 잘 흐른다","출력이 0이 된다","학습이 멈춘다"],"a":1,"e":"∂c_t/∂c_{t−1} = f_t ≈ 1."},
+ {"q":"nn.LSTM(…, num_layers=3, batch_first=True)에 (16, 100, 32) 입력 시 h_n의 형상은? (hidden=128)","o":["(16, 3, 128)","(3, 16, 128)","(16, 100, 128)","(100, 16, 128)"],"a":1,"e":"h_n은 batch_first와 무관하게 (num_layers, batch, hidden)."},
+ {"q":"기울기 폭발에 가장 간단하고 효과적인 대책은?","o":["기울기 클리핑","드롭아웃","배치 크기 증가","데이터 증강"],"a":0,"e":"clip_grad_norm_으로 노름의 상한을 둡니다."},
+ {"q":"생성 시 temperature를 0에 가깝게 하면?","o":["완전 무작위","가장 확률 높은 글자만 고르는 탐욕적 생성에 가까워진다","에러","길이가 짧아진다"],"a":1,"e":"로짓을 작은 수로 나누면 분포가 날카로워집니다."}
+]</script>
+
+<h2>8. 오늘의 과제 (Colab)</h2>
+<ol>
+<li>노트북에서 장기 기억 테스트(시퀀스 첫 값 기억하기: RNN vs GRU vs LSTM)와 문자 단위 셰익스피어 생성기를 실행하세요.</li>
+<li>temperature 0.3 / 0.8 / 1.5로 생성 결과를 비교해 노트에 붙여 넣으세요.</li>
+<li>도전: 여러분이 좋아하는 한국어 텍스트(소설, 가사 등 저작권에 유의)로 학습해 보세요.</li>
+</ol>

@@ -1,0 +1,166 @@
+<ul class="goals">
+  <li>가중치를 0이나 너무 크게/작게 초기화하면 왜 안 되는지 실험으로 확인한다.</li>
+  <li><b>Xavier(Glorot)</b>와 <b>He(Kaiming)</b> 초기화를 분산 보존 원리로 유도한다.</li>
+  <li>기울기 소실과 폭발의 원인과 대처법(활성화, 초기화, 정규화, 잔차, 클리핑)을 정리한다.</li>
+  <li><b>배치 정규화</b>와 <b>층 정규화</b>의 계산, 학습/추론 모드 차이, 사용처를 구분한다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 깊은 망을 학습 가능하게 만든 기술들</span>
+1990년대에 깊은 망이 학습되지 않았던 이유의 상당 부분은 "숫자가 층을 지나며 폭발하거나 사라지는" 문제였습니다. 오늘 배우는 초기화와 정규화는 화려하지 않지만, 이것 없이는 ResNet도 Transformer도 학습되지 않습니다.</div>
+
+<h2>1. 0으로 초기화하면?</h2>
+<p>모든 가중치가 같으면 같은 층의 모든 뉴런이 같은 값을 출력하고, 같은 기울기를 받고, 같게 업데이트됩니다. 뉴런 100개가 사실상 1개처럼 동작합니다. 이것을 <b>대칭성 문제</b>라고 하며, 무작위 초기화로 깨뜨려야 합니다. (편향은 0으로 시작해도 괜찮습니다.)</p>
+
+<h2>2. 너무 작거나 너무 크면?</h2>
+<p>깊은 망에서 활성화 값의 분포를 층별로 봅시다.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(0)
+
+def forward_stats(init_std, act, n_layers=10, width=256):
+    x = rng.normal(size=(512, width)); stats = []
+    for _ in range(n_layers):
+        W = rng.normal(0, init_std(width), (width, width))
+        x = act(x @ W)
+        stats.append(x)
+    return stats
+
+acts = {"tanh": np.tanh, "relu": lambda z: np.maximum(0, z)}
+inits = {
+  "std=0.01 (너무 작음)": lambda n: 0.01,
+  "std=1 (너무 큼)":      lambda n: 1.0,
+  "Xavier √(1/n)":        lambda n: np.sqrt(1 / n),
+  "He √(2/n)":            lambda n: np.sqrt(2 / n),
+}
+fig, axs = plt.subplots(2, 4, figsize=(14, 5.2))
+for r, (an, act) in enumerate(acts.items()):
+    for c, (iname, init) in enumerate(inits.items()):
+        st = forward_stats(init, act)
+        ax = axs[r, c]
+        for i in [0, 4, 9]:
+            ax.hist(st[i].ravel(), bins=50, alpha=.5, label=f'층 {i+1}', range=(-2, 2) if an == 'tanh' else (0, 3), density=True)
+        ax.set_title(f"{an} / {iname}\n10층 std={st[-1].std():.2e}", fontsize=9); ax.set_yticks([])
+        if r == 0 and c == 0: ax.legend(fontsize=7)
+plt.tight_layout(); plt.show()
+</code></pre>
+<ul>
+<li><b>너무 작음</b>: 층을 지날수록 활성화가 0으로 수축. 기울기도 0이 됨 → 학습 안 됨.</li>
+<li><b>너무 큼</b>: tanh는 ±1로 포화(기울기 0), ReLU는 값이 폭발.</li>
+<li><b>tanh + Xavier</b>, <b>ReLU + He</b>: 깊은 층까지 분포가 유지됨.</li>
+</ul>
+
+<h2>3. 분산 보존 원리로 유도하기</h2>
+<p>뉴런 하나의 사전 활성화 $z = \sum_{i=1}^{n} w_i x_i$ ($n$ = 입력 수, fan-in). $w_i$와 $x_i$가 독립이고 평균 0이면</p>
+$$\mathrm{Var}(z) = n\,\mathrm{Var}(w)\,\mathrm{Var}(x)$$
+<p>층을 지나도 분산이 유지되려면 $n\,\mathrm{Var}(w) = 1$, 즉</p>
+$$\mathrm{Var}(w) = \frac{1}{n}\quad\text{(Xavier/LeCun, tanh 등 0 중심 활성화)}$$
+<p>ReLU는 음수 절반을 0으로 만들어 분산을 절반으로 줄이므로 2배로 보상합니다.</p>
+$$\mathrm{Var}(w) = \frac{2}{n}\quad\text{(He/Kaiming, ReLU 계열)}$$
+<p>(원래 Xavier 논문은 순전파·역전파를 모두 고려해 $\frac{2}{n_{in}+n_{out}}$을 제안했습니다.) PyTorch의 <code>nn.Linear</code>, <code>nn.Conv2d</code>는 기본적으로 Kaiming 계열(uniform) 초기화를 사용합니다.</p>
+
+<h2>4. 기울기 소실과 폭발 — 원인과 대책</h2>
+<p>역전파에서 기울기는 층마다 $W^\top$와 활성화 도함수가 곱해집니다. 이 곱의 크기가 1보다 작으면 지수적으로 사라지고(소실), 크면 폭발합니다.</p>
+<table>
+<tr><th>대책</th><th>원리</th><th>강의</th></tr>
+<tr><td>ReLU/GELU 활성화</td><td>양수 영역 도함수 1</td><td>Day 8</td></tr>
+<tr><td>He/Xavier 초기화</td><td>순전파·역전파 분산 보존</td><td>오늘</td></tr>
+<tr><td>정규화 층 (BN, LN)</td><td>각 층 입력 분포를 강제로 안정화</td><td>오늘</td></tr>
+<tr><td>잔차 연결 $y = x + F(x)$</td><td>기울기가 덧셈 노드로 그대로 흐르는 고속도로</td><td>Day 18</td></tr>
+<tr><td>기울기 클리핑</td><td>기울기 노름이 임계값을 넘으면 잘라냄 (폭발 대책)</td><td>Day 20, 28</td></tr>
+<tr><td>LSTM/GRU 게이트</td><td>시간 축 기울기 흐름 보장</td><td>Day 20</td></tr>
+</table>
+
+<h2>5. 배치 정규화 (Batch Normalization)</h2>
+<p>2015년 등장해 깊은 CNN 학습을 획기적으로 쉽게 만든 기법입니다. 미니배치의 각 특성(채널)을 평균 0, 분산 1로 정규화한 뒤, 학습 가능한 스케일 $\gamma$와 이동 $\beta$를 적용합니다.</p>
+$$\mu_B = \frac1m\sum_i x_i,\quad \sigma_B^2 = \frac1m\sum_i(x_i-\mu_B)^2,\quad \hat x_i = \frac{x_i-\mu_B}{\sqrt{\sigma_B^2+\epsilon}},\quad y_i = \gamma\hat x_i + \beta$$
+<ul>
+<li>$\gamma, \beta$ 덕분에 필요하면 원래 분포로 되돌릴 수도 있습니다(표현력 손실 없음).</li>
+<li><b>학습 시</b>: 현재 배치의 통계 사용 + 이동 평균(running mean/var)을 EMA로 갱신.</li>
+<li><b>추론 시</b>: 저장된 이동 평균 사용. 배치 크기 1이어도 동작해야 하니까요.</li>
+<li>효과: 더 큰 학습률 허용, 초기화에 덜 민감, 약간의 규제 효과(배치 노이즈).</li>
+</ul>
+<div class="callout warn"><span class="ct">⚠️ model.train() / model.eval()을 잊지 마세요</span>
+PyTorch에서 BN(과 드롭아웃)은 학습/추론 모드에 따라 동작이 다릅니다. 평가 전에 <code>model.eval()</code>을 호출하지 않으면 테스트 배치의 통계로 정규화되어 결과가 들쭉날쭉해집니다. 매우 흔한 버그입니다.</div>
+<pre class="run"><code>class BatchNorm1d:
+    def __init__(self, d, momentum=0.1, eps=1e-5):
+        self.gamma, self.beta = np.ones(d), np.zeros(d)
+        self.running_mean, self.running_var = np.zeros(d), np.ones(d)
+        self.m, self.eps, self.training = momentum, eps, True
+    def forward(self, x):
+        if self.training:
+            mu, var = x.mean(0), x.var(0)
+            self.running_mean = (1 - self.m) * self.running_mean + self.m * mu
+            self.running_var = (1 - self.m) * self.running_var + self.m * var
+        else:
+            mu, var = self.running_mean, self.running_var
+        self.xhat = (x - mu) / np.sqrt(var + self.eps); self.var = var
+        return self.gamma * self.xhat + self.beta
+    def backward(self, g):
+        # 학습 모드 역전파 (유도는 아래 '더 알아보기' 참고)
+        N = g.shape[0]
+        self.dgamma = (g * self.xhat).sum(0); self.dbeta = g.sum(0)
+        dxhat = g * self.gamma
+        return (dxhat - dxhat.mean(0) - self.xhat * (dxhat * self.xhat).mean(0)) / np.sqrt(self.var + self.eps)
+
+bn = BatchNorm1d(3)
+x = rng.normal(loc=[5, -3, 100], scale=[2, 0.1, 30], size=(64, 3))
+y = bn.forward(x)
+print("입력 평균:", x.mean(0).round(2), " 표준편차:", x.std(0).round(2))
+print("BN 출력 평균:", y.mean(0).round(4), " 표준편차:", y.std(0).round(4))
+bn.training = False
+print("추론 모드 (running 통계 사용) 출력 평균:", bn.forward(x).mean(0).round(2), " ← 아직 running 통계가 덜 쌓임")
+</code></pre>
+<details class="answer"><summary>더 알아보기: BN 역전파 유도의 핵심</summary>
+<p>$\hat x_i$는 $x_i$뿐 아니라 $\mu_B$, $\sigma_B$를 통해 배치의 <b>모든</b> $x_j$에 의존합니다(분기!). 세 경로의 기울기를 모두 더해 정리하면</p>
+$$\frac{\partial L}{\partial x_i} = \frac{1}{\sqrt{\sigma_B^2+\epsilon}}\left(g_i - \overline{g} - \hat x_i\,\overline{g\hat x}\right),\quad g_i = \frac{\partial L}{\partial\hat x_i}$$
+<p>(윗줄은 배치 평균.) 직접 유도해 보고 Day 11의 <code>grad_check</code>로 검증해 보세요. 좋은 연습입니다.</p></details>
+
+<h2>6. 층 정규화 (Layer Normalization)</h2>
+<p>BN은 <b>배치 축</b>으로 통계를 냅니다. 그래서 배치가 작거나, 시퀀스 길이가 제각각인 RNN/Transformer에는 맞지 않습니다. <b>LN은 샘플 하나의 특성 축</b>으로 통계를 냅니다.</p>
+<figure class="fig">
+<svg viewBox="0 0 520 170" width="520" role="img" aria-label="BN과 LN의 정규화 방향 비교">
+  <g font-size="13" fill="currentColor" text-anchor="middle"><text x="130" y="20" font-weight="700">BatchNorm</text><text x="390" y="20" font-weight="700">LayerNorm</text><text x="130" y="162" opacity=".7">특성마다 배치 방향으로 정규화</text><text x="390" y="162" opacity=".7">샘플마다 특성 방향으로 정규화</text></g>
+  <g stroke="currentColor" stroke-opacity=".3" fill="none">
+    <rect x="50" y="35" width="160" height="100"/><rect x="310" y="35" width="160" height="100"/>
+    <line x1="50" y1="60" x2="210" y2="60"/><line x1="50" y1="85" x2="210" y2="85"/><line x1="50" y1="110" x2="210" y2="110"/>
+    <line x1="310" y1="60" x2="470" y2="60"/><line x1="310" y1="85" x2="470" y2="85"/><line x1="310" y1="110" x2="470" y2="110"/>
+  </g>
+  <rect x="90" y="35" width="32" height="100" fill="#5b5bd6" fill-opacity=".35"/>
+  <rect x="310" y="60" width="160" height="25" fill="#e5484d" fill-opacity=".35"/>
+  <g font-size="11" fill="currentColor" opacity=".7"><text x="30" y="90" transform="rotate(-90 30 90)">배치 N</text><text x="130" y="150">특성 D</text><text x="290" y="90" transform="rotate(-90 290 90)">배치 N</text><text x="390" y="150">특성 D</text></g>
+</svg></figure>
+<pre class="run"><code>def layer_norm(x, gamma, beta, eps=1e-5):
+    mu = x.mean(-1, keepdims=True); var = x.var(-1, keepdims=True)
+    return gamma * (x - mu) / np.sqrt(var + eps) + beta
+
+x = rng.normal(size=(2, 5, 8)) * 10 + 3     # (배치, 시퀀스 길이, d_model)
+y = layer_norm(x, np.ones(8), np.zeros(8))
+print("토큰별 평균:", y.mean(-1).round(4)[0])
+print("토큰별 표준편차:", y.std(-1).round(4)[0])
+print("→ 배치 크기와 무관하게, 토큰 하나하나가 독립적으로 정규화된다")
+</code></pre>
+<table>
+<tr><th></th><th>BatchNorm</th><th>LayerNorm</th></tr>
+<tr><td>통계 계산 축</td><td>배치 (+공간)</td><td>특성</td></tr>
+<tr><td>학습/추론 차이</td><td>있음 (running 통계)</td><td>없음</td></tr>
+<tr><td>배치 크기 의존</td><td>큼 (작으면 불안정)</td><td>없음</td></tr>
+<tr><td>주 사용처</td><td><b>CNN</b></td><td><b>Transformer, RNN</b></td></tr>
+</table>
+<p>이 밖에 GroupNorm(작은 배치 CNN), RMSNorm(평균을 빼지 않는 LN, LLaMA 등 최신 LLM)도 있습니다.</p>
+
+<h2>7. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"모든 가중치를 0으로 초기화하면?","o":["학습이 더 안정적이다","같은 층의 뉴런들이 대칭이 되어 모두 같은 것을 학습한다","기울기가 폭발한다","아무 문제 없다"],"a":1,"e":"대칭성을 깨기 위해 무작위 초기화가 필요합니다."},
+ {"q":"ReLU 망에 쓰는 He 초기화의 분산은?","o":["1/n","2/n","1/(n_in+n_out)","1"],"a":1,"e":"ReLU가 분산을 절반으로 줄이므로 2배 보상합니다."},
+ {"q":"BatchNorm이 추론 시 사용하는 평균과 분산은?","o":["현재 테스트 배치의 통계","학습 중 EMA로 모은 running 통계","0과 1","전체 테스트 세트의 통계"],"a":1,"e":"그래서 model.eval() 전환이 필수입니다."},
+ {"q":"Transformer가 BatchNorm 대신 LayerNorm을 쓰는 주된 이유는?","o":["더 빨라서","배치 크기와 시퀀스 길이에 의존하지 않고 샘플(토큰)별로 정규화할 수 있어서","파라미터가 없어서","전통이라서"],"a":1,"e":"가변 길이 시퀀스와 작은 배치에서 BN 통계가 불안정합니다."},
+ {"q":"기울기 폭발에 대한 직접적인 대책은?","o":["드롭아웃","기울기 클리핑","데이터 증강","배치 크기 감소"],"a":1,"e":"기울기 노름이 임계값을 넘으면 비율을 유지한 채 잘라냅니다."}
+]</script>
+
+<h2>8. 연습 문제</h2>
+<ol>
+<li>2번 실험을 20층으로 늘리고 "tanh + He", "ReLU + Xavier" 조합도 시도하세요. 어떤 일이 생기나요?</li>
+<li>도전: 위 <code>BatchNorm1d</code>에 <code>params()</code>를 추가해 Day 11 모델의 Linear와 ReLU 사이에 넣고 학습해 보세요. 학습률을 크게 올려도 버티나요?</li>
+</ol>
+<details class="answer"><summary>1번 해설</summary>
+<p>tanh + He: 분산이 커서 포화 쪽으로 치우칩니다(심각하지는 않음). ReLU + Xavier: 층마다 분산이 절반씩 줄어 20층이면 $2^{-20}$배 → 사실상 0. 활성화 함수와 초기화의 짝이 중요합니다.</p></details>

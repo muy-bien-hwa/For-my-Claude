@@ -1,0 +1,39 @@
+name: Deploy deep_learning_study to GitHub Pages
+
+# main 브랜치의 deep_learning_study/ 폴더가 바뀌면 gh-pages 브랜치 루트로 배포한다.
+# 저장소 Settings → Pages → Source: "Deploy from a branch", Branch: gh-pages / (root)
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deep_learning_study/**"
+      - ".github/workflows/deploy-deep-learning-study.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-deep-learning-study
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare site
+        run: |
+          mkdir -p _site
+          cp -r deep_learning_study/index.html deep_learning_study/assets deep_learning_study/content deep_learning_study/notebooks _site/
+          touch _site/.nojekyll
+
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          publish_branch: gh-pages
+          force_orphan: true
+          commit_message: "deploy: ${{ github.sha }}"

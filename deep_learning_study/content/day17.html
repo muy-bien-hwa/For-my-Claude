@@ -1,0 +1,141 @@
+<ul class="goals">
+  <li>이미지에 MLP를 쓰면 왜 비효율적인지 설명한다(파라미터 폭발, 공간 구조 무시).</li>
+  <li>합성곱의 두 원리인 <b>지역적 연결</b>과 <b>가중치 공유</b>를 이해한다.</li>
+  <li>패딩·스트라이드·채널을 포함한 출력 크기 공식을 자유롭게 계산한다.</li>
+  <li>풀링, 수용 영역, 특성 맵 계층 구조를 이해한다.</li>
+  <li>NumPy로 합성곱을 직접 구현하고 <code>nn.Conv2d</code>와 대응시킨다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 눈을 만드는 날</span>
+2012년 딥러닝 붐을 일으킨 AlexNet은 CNN이었습니다. CNN은 "이미지에서는 가까운 픽셀끼리 관련이 있고, 고양이 귀는 사진 왼쪽에 있든 오른쪽에 있든 고양이 귀다"라는 아주 상식적인 가정을 신경망 구조에 넣은 것입니다. 이런 가정을 <b>귀납적 편향(inductive bias)</b>이라고 부릅니다.</div>
+
+<h2>1. MLP로 이미지를 다루면?</h2>
+<p>224×224 컬러 이미지를 펼치면 150,528차원입니다. 은닉 뉴런 1,000개짜리 층 하나에 <b>1억 5천만 개</b>의 가중치가 필요합니다. 게다가 이미지를 1픽셀만 옮겨도 MLP 입장에서는 완전히 다른 입력이 됩니다. 픽셀 사이의 이웃 관계도 무시합니다.</p>
+
+<h2>2. 합성곱: 작은 필터를 미끄러뜨리기</h2>
+<p>작은 커널(예: 3×3)을 이미지 위에서 미끄러뜨리며, 각 위치에서 겹치는 영역과 원소별로 곱해서 더합니다.</p>
+$$Y_{i,j} = \sum_{a=0}^{k-1}\sum_{b=0}^{k-1} X_{i+a,\,j+b}\,K_{a,b} + b$$
+<div class="viz-mount" data-viz="conv"></div>
+<div class="callout key"><span class="ct">🔑 CNN의 두 가지 핵심 원리</span>
+<ol style="margin:0">
+<li><b>지역적 연결 (Local connectivity)</b>: 출력의 각 값은 입력의 작은 영역만 봅니다. 가까운 픽셀끼리 의미 있는 패턴(선, 모서리)을 이룬다는 가정입니다.</li>
+<li><b>가중치 공유 (Weight sharing)</b>: 같은 커널을 모든 위치에 사용합니다. "수직선 검출기"는 이미지 어디서든 쓸모 있으니까요. 파라미터 수가 이미지 크기와 무관해지고, <b>이동 등변성</b>(입력이 움직이면 출력도 같이 움직임)이 생깁니다.</li>
+</ol></div>
+<p>위 시각화에서 "수직 경계 검출" 커널을 써 보세요. 그림의 세로 경계에서만 강한 반응(파랑/빨강)이 나옵니다. CNN은 이런 커널을 손으로 설계하지 않고 <b>학습</b>합니다.</p>
+
+<h2>3. 출력 크기 공식</h2>
+$$H_{out} = \left\lfloor\frac{H_{in} + 2P - K}{S}\right\rfloor + 1$$
+<p>$K$: 커널 크기, $P$: 패딩, $S$: 스트라이드.</p>
+<table>
+<tr><th>설정</th><th>32×32 입력 → 출력</th><th>쓰임</th></tr>
+<tr><td>K=3, P=1, S=1</td><td>32×32</td><td>"same" 합성곱. 크기 유지. 가장 흔함</td></tr>
+<tr><td>K=3, P=0, S=1</td><td>30×30</td><td>"valid" 합성곱</td></tr>
+<tr><td>K=3, P=1, S=2</td><td>16×16</td><td>다운샘플링 (풀링 대신)</td></tr>
+<tr><td>K=1, P=0, S=1</td><td>32×32</td><td>1×1 합성곱: 채널 수만 바꿈</td></tr>
+</table>
+
+<h2>4. 채널: 진짜 합성곱은 3차원</h2>
+<p>컬러 이미지는 (C=3, H, W)입니다. 커널도 입력 채널 수만큼 깊이를 가집니다: (C_in, K, K). 커널 하나가 출력 채널 <b>하나</b>를 만들고, 커널을 C_out개 쓰면 출력은 (C_out, H', W')가 됩니다.</p>
+$$\text{가중치 형상} = (C_{out}, C_{in}, K, K),\qquad \text{파라미터 수} = C_{out}\cdot C_{in}\cdot K^2 + C_{out}$$
+<p>예: <code>nn.Conv2d(3, 64, kernel_size=3)</code> → 64×3×3×3 + 64 = <b>1,792</b>개. 같은 입출력의 완전연결층과 비교하면 수만 배 적습니다.</p>
+
+<h2>5. NumPy로 합성곱 구현</h2>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+
+def conv2d(x, w, b, stride=1, pad=0):
+    """x: (C_in, H, W), w: (C_out, C_in, K, K), b: (C_out,)"""
+    C_in, H, W = x.shape; C_out, _, K, _ = w.shape
+    x = np.pad(x, ((0, 0), (pad, pad), (pad, pad)))
+    Ho = (H + 2*pad - K) // stride + 1; Wo = (W + 2*pad - K) // stride + 1
+    out = np.zeros((C_out, Ho, Wo))
+    for i in range(Ho):
+        for j in range(Wo):
+            patch = x[:, i*stride:i*stride+K, j*stride:j*stride+K]          # (C_in, K, K)
+            out[:, i, j] = (w * patch).sum(axis=(1, 2, 3)) + b             # 모든 출력 채널 한 번에
+    return out
+
+# 테스트 이미지: 사각형과 원
+H = 40; yy, xx = np.mgrid[:H, :H]
+img = ((abs(xx - 12) < 7) & (abs(yy - 20) < 9)).astype(float) + (((xx - 29)**2 + (yy - 20)**2) < 49).astype(float)
+x = img[None]                                                               # (1, 40, 40)
+
+sobel_x = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]], float)
+kernels = np.stack([sobel_x, sobel_x.T, np.ones((3, 3)) / 9])[:, None]      # (3, 1, 3, 3)
+out = conv2d(x, kernels, np.zeros(3), pad=1)
+print("입력", x.shape, "→ 출력", out.shape)
+
+fig, axs = plt.subplots(1, 4, figsize=(13, 3.2))
+for a, im, t in zip(axs, [img, *out], ["입력", "수직 경계", "수평 경계", "평균(흐림)"]):
+    a.imshow(im, cmap='RdBu' if t != "입력" else 'gray'); a.set_title(t); a.axis('off')
+plt.show()
+</code></pre>
+<div class="callout tip"><span class="ct">💡 실제 구현은 im2col</span>
+이중 for 문은 느립니다. 실제 라이브러리는 모든 패치를 펼쳐서 큰 행렬로 만든 뒤(<b>im2col</b>) 행렬곱 한 번으로 계산합니다. 결국 합성곱도 GPU가 잘하는 행렬곱이 됩니다. 또 딥러닝의 "합성곱"은 수학적으로는 커널을 뒤집지 않는 <b>교차상관(cross-correlation)</b>입니다. 커널을 학습하니 뒤집든 말든 상관없습니다.</div>
+
+<h2>6. 풀링</h2>
+<p>영역 안에서 최댓값(Max pooling) 또는 평균(Average pooling)을 취해 공간 크기를 줄입니다. 파라미터가 없습니다.</p>
+<ul>
+<li>연산량 감소, 수용 영역 확대.</li>
+<li>작은 위치 변화에 둔감해짐(약한 이동 불변성).</li>
+<li>현대 구조는 스트라이드 2 합성곱으로 대체하기도 하고, 마지막에 <b>전역 평균 풀링(Global Average Pooling)</b>으로 (C, H, W) → (C,)를 만들어 분류기에 넣는 방식을 많이 씁니다.</li>
+</ul>
+<pre class="run"><code>def maxpool2d(x, k=2):
+    C, H, W = x.shape
+    return x[:, :H//k*k, :W//k*k].reshape(C, H//k, k, W//k, k).max(axis=(2, 4))   # reshape 트릭
+pooled = maxpool2d(np.abs(out))
+print(out.shape, "→ maxpool →", pooled.shape)
+fig, axs = plt.subplots(1, 3, figsize=(9, 3))
+for a, im in zip(axs, pooled): a.imshow(im, cmap='magma'); a.axis('off')
+plt.show()
+</code></pre>
+
+<h2>7. 수용 영역과 특성 계층</h2>
+<p>3×3 합성곱 하나의 출력은 입력의 3×3 영역을 봅니다. 3×3을 두 번 쌓으면 5×5, 세 번이면 7×7. 풀링이나 스트라이드로 해상도를 줄이면 수용 영역이 훨씬 빠르게 커집니다.</p>
+<ul>
+<li><b>앞쪽 층</b>: 작은 수용 영역 → 선, 모서리, 색 덩어리.</li>
+<li><b>중간 층</b>: 질감, 반복 패턴, 부품(눈, 바퀴).</li>
+<li><b>뒤쪽 층</b>: 큰 수용 영역 → 물체 전체, 의미.</li>
+</ul>
+<p>3×3 두 개(파라미터 2·9C² = 18C²)가 5×5 하나(25C²)보다 파라미터가 적고, 비선형성은 두 번 들어가 표현력은 더 좋습니다. 그래서 VGG 이후 3×3 합성곱이 표준이 되었습니다(Day 18).</p>
+
+<h2>8. PyTorch로 첫 CNN</h2>
+<pre><code class="language-python">import torch.nn as nn
+
+class SimpleCNN(nn.Module):
+    def __init__(self, n_classes=10):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1), nn.ReLU(),          # (N,32,28,28)
+            nn.MaxPool2d(2),                                    # (N,32,14,14)
+            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(),         # (N,64,14,14)
+            nn.MaxPool2d(2),                                    # (N,64,7,7)
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),                                       # (N, 3136)
+            nn.Linear(64 * 7 * 7, 128), nn.ReLU(), nn.Dropout(0.3),
+            nn.Linear(128, n_classes),
+        )
+    def forward(self, x): return self.classifier(self.features(x))
+
+model = SimpleCNN()
+print(sum(p.numel() for p in model.parameters()))   # 약 42만 개. 이 CNN이 MNIST에서 99%+를 낸다
+</code></pre>
+<p>Keras: <code>layers.Conv2D(32, 3, padding="same", activation="relu")</code>, <code>layers.MaxPooling2D()</code>. 채널이 마지막 축인 (N, H, W, C) 형식을 씁니다.</p>
+
+<h2>9. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"입력 64×64, K=5, P=2, S=2일 때 출력 크기는?","o":["30","32","60","64"],"a":1,"e":"⌊(64 + 4 − 5)/2⌋ + 1 = ⌊63/2⌋ + 1 = 31 + 1 = 32"},
+ {"q":"nn.Conv2d(16, 32, kernel_size=3)의 파라미터 수는?","o":["4,608","4,640","288","512"],"a":1,"e":"32×16×3×3 + 32 = 4,608 + 32 = 4,640"},
+ {"q":"가중치 공유가 주는 이점이 아닌 것은?","o":["파라미터 수 감소","이동 등변성","입력 크기와 무관한 파라미터 수","회전 불변성"],"a":3,"e":"합성곱 자체는 회전에 불변하지 않습니다. 회전 강건성은 주로 데이터 증강으로 얻습니다."},
+ {"q":"1×1 합성곱의 주된 용도는?","o":["공간 크기 축소","위치별로 채널 수를 바꾸거나 섞는 것","경계 검출","패딩"],"a":1,"e":"각 픽셀 위치의 채널 벡터에 같은 선형층을 적용하는 것과 같습니다."},
+ {"q":"3×3 합성곱(stride 1)을 3층 쌓았을 때 마지막 출력 하나의 수용 영역은?","o":["3×3","7×7","9×9","27×27"],"a":1,"e":"층마다 2씩 커집니다: 3 → 5 → 7."}
+]</script>
+
+<h2>10. 연습 문제</h2>
+<ol>
+<li><code>conv2d</code>에 stride=2를 주고 출력 크기가 공식과 맞는지 확인하세요.</li>
+<li>위 <code>SimpleCNN</code>의 각 층 출력 형상을 손으로 계산하고, 입력이 32×32 컬러(CIFAR-10)라면 무엇을 바꿔야 하는지 적어 보세요.</li>
+</ol>
+<details class="answer"><summary>2번 정답</summary>
+<p>첫 Conv의 입력 채널 1 → 3, 풀링 두 번 후 크기 32 → 16 → 8이므로 Linear 입력이 64×8×8 = 4096. 이런 계산을 피하려면 마지막에 <code>nn.AdaptiveAvgPool2d(1)</code>을 넣어 항상 (N, 64, 1, 1)로 만들면 됩니다.</p></details>

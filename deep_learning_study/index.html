@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>30일 딥러닝 완전 정복</title>
+  <meta name="description" content="기초 수학부터 Transformer·생성 모델까지, 30일 동안 개념과 코드를 함께 익히는 인터랙티브 딥러닝 강의">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="assets/style.css">
+  <script>
+    try { const t = localStorage.getItem('dl30.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn" id="menuBtn" aria-label="목차 열기">☰</button>
+    <a href="#/" class="brand"><span class="logo">🧠</span><span>30일 딥러닝 완전 정복</span></a>
+    <div class="top-progress" title="전체 진도">
+      <div class="bar"><div class="fill" id="topFill"></div></div>
+      <span id="topPct">0%</span>
+    </div>
+    <nav class="top-links">
+      <a href="#/playground">실험실</a>
+      <a href="#/glossary">용어 사전</a>
+      <a href="#/me">내 기록</a>
+    </nav>
+    <button class="icon-btn" id="themeBtn" aria-label="테마 전환">◐</button>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main id="main" tabindex="-1"></main>
+  </div>
+  <div class="scrim" id="scrim"></div>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+  <script src="assets/curriculum.js"></script>
+  <script src="assets/glossary.js"></script>
+  <script src="assets/viz.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>

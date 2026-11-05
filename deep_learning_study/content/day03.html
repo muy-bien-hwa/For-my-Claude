@@ -1,0 +1,155 @@
+<ul class="goals">
+  <li>벡터를 "화살표"와 "숫자 목록" 두 관점으로 이해한다.</li>
+  <li><b>내적</b>의 기하학적 의미(유사도, 투영)를 설명하고 코사인 유사도를 계산한다.</li>
+  <li>행렬곱의 규칙과 의미를 이해한다. 특히 <b>행렬 = 선형변환</b>이라는 관점.</li>
+  <li>노름(norm), 단위행렬, 역행렬, 전치를 알고, 신경망 층을 행렬식으로 읽는다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 수학이 가물가물해도 괜찮습니다</span>
+여러분이 시험 볼 것도 아니고, 딥러닝에 필요한 선형대수는 생각보다 작습니다. 오늘은 증명 대신 <b>직관과 계산</b>에 집중합니다. 목표는 "<code>Q @ K.T</code>를 보면 모든 쌍의 유사도를 한 번에 구하는구나" 하고 바로 읽히는 수준입니다.</div>
+
+<h2>1. 벡터: 화살표이자 숫자 목록</h2>
+<p>벡터 $\mathbf{v} = (3, 4)$는 원점에서 (3, 4)로 향하는 화살표입니다. 동시에 "어떤 대상을 설명하는 숫자 목록"이기도 합니다. 예를 들어 집 한 채를 (면적, 방 개수, 연식)으로 표현하면 3차원 벡터가 됩니다. 딥러닝에서 단어, 이미지, 사용자는 모두 수백~수천 차원의 벡터로 표현됩니다.</p>
+<ul>
+<li><b>덧셈</b>: 성분끼리 더함. 화살표를 이어 붙이는 것.</li>
+<li><b>스칼라배</b>: $c\mathbf{v}$. 같은 방향으로 늘이거나 줄이는 것.</li>
+<li><b>노름(길이)</b>: $\|\mathbf{v}\|_2 = \sqrt{\sum_i v_i^2}$. (3,4)의 길이는 5. $\|\mathbf v\|_1 = \sum |v_i|$는 L1 노름입니다(Day 14 규제에서 다시 나옵니다).</li>
+</ul>
+
+<h2>2. 내적 — 딥러닝에서 가장 중요한 연산</h2>
+$$\mathbf{a}\cdot\mathbf{b} = \sum_{i} a_i b_i = \|\mathbf{a}\|\,\|\mathbf{b}\|\cos\theta$$
+<p>두 정의가 같다는 것이 핵심입니다. 왼쪽은 <b>계산 방법</b>이고, 오른쪽은 <b>의미</b>입니다.</p>
+<ul>
+<li>같은 방향($\theta = 0$): 내적이 크고 양수.</li>
+<li>직교($\theta = 90°$): 내적 = 0. "서로 관계없음".</li>
+<li>반대 방향: 음수.</li>
+</ul>
+<p>그래서 내적은 <b>유사도</b>를 잽니다. 길이의 영향을 없앤 것이 <b>코사인 유사도</b> $\cos\theta = \frac{\mathbf a\cdot\mathbf b}{\|\mathbf a\|\|\mathbf b\|}$입니다.</p>
+<div class="callout key"><span class="ct">🔑 내적이 등장하는 곳</span>
+<ul style="margin:0"><li>뉴런 하나의 계산 $z = \mathbf w\cdot\mathbf x + b$는 "입력이 가중치 패턴과 얼마나 닮았나"입니다.</li>
+<li>어텐션의 $QK^\top$(Day 22)은 모든 Query·Key 쌍의 내적, 즉 유사도 표입니다.</li>
+<li>추천 시스템의 사용자·아이템 점수, 임베딩 검색도 내적입니다.</li></ul></div>
+<pre class="run"><code>import numpy as np
+a = np.array([3., 4.])
+b = np.array([4., 3.])
+c = np.array([-4., 3.])
+print("‖a‖ =", np.linalg.norm(a))
+print("a·b =", a @ b, " a·c =", a @ c, "(직교)")
+
+def cos_sim(u, v):
+    return (u @ v) / (np.linalg.norm(u) * np.linalg.norm(v))
+print("cos(a,b) =", round(cos_sim(a, b), 4))
+
+# '단어 벡터' 장난감 예제 (차원: 동물성, 크기, 귀여움)
+words = {"고양이": [0.9, 0.2, 0.9], "호랑이": [0.9, 0.8, 0.3], "자동차": [0.0, 0.7, 0.1]}
+W = {k: np.array(v) for k, v in words.items()}
+for x in W:
+    for y in W:
+        if x < y:
+            print(f"{x}-{y}: {cos_sim(W[x], W[y]):.3f}")
+</code></pre>
+<p>투영(projection)도 내적으로 표현됩니다. $\mathbf a$를 단위벡터 $\hat{\mathbf u}$ 방향으로 투영한 길이는 $\mathbf a\cdot\hat{\mathbf u}$입니다. "a에서 u 방향 성분이 얼마나 되나"라는 뜻입니다.</p>
+
+<h2>3. 행렬과 행렬곱</h2>
+<p>$m\times n$ 행렬 $A$와 $n\times p$ 행렬 $B$의 곱 $C = AB$는 $m\times p$이고, 각 원소는 <b>A의 i번째 행과 B의 j번째 열의 내적</b>입니다.</p>
+$$C_{ij} = \sum_{k=1}^{n} A_{ik} B_{kj}$$
+<div class="callout key"><span class="ct">🔑 형상 규칙: 안쪽이 같아야 하고, 바깥쪽이 남는다</span>
+$(m \times \underline{n})(\underline{n} \times p) = (m\times p)$. 형상 오류를 만나면 이 규칙부터 확인하세요.</div>
+<ul>
+<li>교환법칙은 성립하지 <b>않습니다</b>: $AB \ne BA$.</li>
+<li>결합법칙은 성립합니다: $(AB)C = A(BC)$.</li>
+<li>전치: $(AB)^\top = B^\top A^\top$. 순서가 뒤집힙니다. 역전파를 유도할 때 계속 쓰입니다.</li>
+</ul>
+<pre class="run"><code>A = np.array([[1, 2],
+              [3, 4],
+              [5, 6]])        # (3,2)
+B = np.array([[1, 0, -1],
+              [2, 1,  0]])    # (2,3)
+C = A @ B                     # (3,3)
+print(C)
+# C[0,2]를 직접: A의 0행 · B의 2열
+print("C[0,2] =", A[0] @ B[:, 2])
+print("B@A shape:", (B @ A).shape, "← AB와 BA는 모양부터 다르다")
+print("(AB)^T == B^T A^T ?", np.allclose((A @ B).T, B.T @ A.T))
+</code></pre>
+
+<h2>4. 행렬 = 공간을 변형하는 함수</h2>
+<p>행렬 $A$를 벡터에 곱하는 것($\mathbf y = A\mathbf x$)은 공간을 <b>늘이고, 돌리고, 기울이고, 뒤집는</b> 변환입니다. 이것을 선형변환이라고 합니다. 직선은 직선으로, 원점은 원점으로 갑니다.</p>
+<pre class="run"><code>import matplotlib.pyplot as plt
+theta = np.linspace(0, 2*np.pi, 200)
+circle = np.stack([np.cos(theta), np.sin(theta)])     # (2, 200): 단위원 위의 점들
+grid = np.array([[1, 0], [0, 1]]).T
+
+mats = {
+  "회전 45°": np.array([[np.cos(np.pi/4), -np.sin(np.pi/4)], [np.sin(np.pi/4), np.cos(np.pi/4)]]),
+  "늘이기 (x2, y0.5)": np.array([[2, 0], [0, 0.5]]),
+  "기울이기(shear)": np.array([[1, 1], [0, 1]]),
+  "임의 행렬": np.array([[1.5, 0.8], [0.3, 1.0]]),
+}
+fig, axs = plt.subplots(1, 4, figsize=(13, 3.4))
+for ax, (name, M) in zip(axs, mats.items()):
+    out = M @ circle
+    ax.plot(*circle, '--', color='gray', lw=1)
+    ax.plot(*out, color='#5b5bd6', lw=2)
+    for v, c in zip((M @ grid).T, ['#e5484d', '#12a594']):
+        ax.arrow(0, 0, *v, head_width=0.08, color=c, length_includes_head=True)
+    ax.set_title(name); ax.set_aspect('equal'); ax.set_xlim(-2.3, 2.3); ax.set_ylim(-2.3, 2.3); ax.grid(alpha=.3)
+plt.tight_layout(); plt.show()
+</code></pre>
+<p>빨강·초록 화살표는 기저벡터 $(1,0)$, $(0,1)$이 변환된 결과입니다. <b>행렬의 각 열은 기저벡터가 어디로 가는지를 나타냅니다.</b> 이 한 문장이 선형대수 직관의 핵심입니다.</p>
+<div class="callout prof"><span class="ct">👨‍🏫 그래서 신경망은?</span>
+신경망의 층 $\mathbf h = \mathrm{ReLU}(W\mathbf x + \mathbf b)$는 "공간을 선형으로 변형(W)하고, 옮기고(b), 접는다(ReLU)"입니다. 이걸 여러 번 반복해서, 처음에는 뒤엉켜 있던 데이터(예: 나선형으로 꼬인 두 클래스)를 마지막 층에서는 직선 하나로 나눌 수 있는 모양으로 펴 줍니다. Day 8 실험실에서 직접 보게 됩니다.</div>
+<p>선형변환을 여러 번 해도 결국 하나의 선형변환입니다: $A(B\mathbf x) = (AB)\mathbf x$. 그래서 <b>활성화 함수 없이 층을 쌓으면 아무 의미가 없습니다</b>. 비선형성이 꼭 필요한 이유입니다.</p>
+
+<h2>5. 특별한 행렬들</h2>
+<ul>
+<li><b>단위행렬 $I$</b>: $I\mathbf x = \mathbf x$. 아무것도 안 하는 변환. <code>np.eye(n)</code>.</li>
+<li><b>역행렬 $A^{-1}$</b>: $A^{-1}A = I$. 변환을 되돌림. 공간을 납작하게 눌러 버리는 행렬(행렬식 0)은 역행렬이 없습니다. 실무에서는 역행렬을 직접 구하기보다 <code>np.linalg.solve</code>를 씁니다.</li>
+<li><b>대각행렬</b>: 각 축을 독립적으로 늘이거나 줄임.</li>
+<li><b>직교행렬</b>: $Q^\top Q = I$. 회전·반사. 길이를 보존합니다.</li>
+</ul>
+
+<h2>6. 신경망을 행렬로 읽기 — 배치 처리</h2>
+<p>샘플 하나 $\mathbf x \in \mathbb R^{d}$에 대해 출력 $\mathbf h \in \mathbb R^{k}$를 만드는 층은 $\mathbf h = W\mathbf x + \mathbf b$ ($W$: $k\times d$)입니다. 하지만 코드에서는 샘플 $N$개를 <b>행으로 쌓은</b> 행렬 $X$ ($N\times d$)를 한 번에 처리합니다.</p>
+$$H = XW + \mathbf b,\quad X\in\mathbb R^{N\times d},\; W\in\mathbb R^{d\times k},\; H\in\mathbb R^{N\times k}$$
+<p>(PyTorch의 <code>nn.Linear</code>는 내부적으로 $W$를 $k\times d$로 저장하고 $XW^\top$을 계산합니다. 관례 차이일 뿐 내용은 같습니다.)</p>
+<pre class="run"><code>N, d, k = 4, 3, 2
+X = np.random.randn(N, d)
+W = np.random.randn(d, k)
+b = np.array([0.5, -0.5])
+H = X @ W + b
+print("H shape:", H.shape)
+# 샘플 하나씩 계산한 것과 같은지 확인
+H_loop = np.stack([x @ W + b for x in X])
+print("배치 계산 == 하나씩 계산:", np.allclose(H, H_loop))
+# 모든 샘플 쌍의 유사도 행렬 (어텐션 점수의 원형)
+S = X @ X.T
+print("유사도 행렬 shape:", S.shape)
+</code></pre>
+
+<h2>7. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"두 벡터의 내적이 0이라는 것은 기하학적으로?","o":["두 벡터가 같다","두 벡터가 직교한다","한 벡터가 영벡터다(만)","두 벡터가 평행하다"],"a":1,"e":"$\\cos 90° = 0$입니다. (영벡터인 경우도 0이지만, 일반적인 의미는 직교입니다.)"},
+ {"q":"A가 (8, 5), B가 (5, 3)일 때 A @ B의 형상은?","o":["(5, 5)","(8, 3)","(3, 8)","에러"],"a":1,"e":"안쪽 5가 맞고 바깥 (8, 3)이 남습니다."},
+ {"q":"활성화 함수 없이 선형층 10개를 쌓으면?","o":["10배 강력해진다","선형층 1개와 표현력이 같다","학습이 불가능하다","과적합이 줄어든다"],"a":1,"e":"$W_{10}\\cdots W_1 x$는 하나의 행렬 $W x$로 합쳐집니다."},
+ {"q":"행렬 [[2,0],[0,3]]의 첫 번째 열 (2,0)이 의미하는 것은?","o":["y축 방향 늘이기","기저벡터 (1,0)이 변환 후 (2,0)으로 간다","회전 각도","역행렬"],"a":1,"e":"행렬의 각 열 = 각 기저벡터의 행선지."},
+ {"q":"(AB)ᵀ는?","o":["AᵀBᵀ","BᵀAᵀ","AB","BA"],"a":1,"e":"전치하면 곱의 순서가 뒤집힙니다."}
+]</script>
+
+<h2>8. 연습 문제</h2>
+<ol>
+<li>X (5×3)의 모든 행 쌍 사이의 <b>코사인 유사도 행렬</b> (5×5)을 for 문 없이 구하세요. 힌트: 먼저 각 행을 길이 1로 정규화하세요.</li>
+<li>각도 θ만큼 회전하는 행렬 R(θ)를 만들고, R(30°)를 세 번 곱한 것이 R(90°)와 같은지 확인하세요.</li>
+</ol>
+<pre class="run"><code>X = np.random.randn(5, 3)
+# 1) 여기에
+
+# 2) 여기에
+</code></pre>
+<details class="answer"><summary>정답 보기</summary>
+<pre><code>Xn = X / np.linalg.norm(X, axis=1, keepdims=True)
+C = Xn @ Xn.T          # 대각선은 모두 1
+
+R = lambda t: np.array([[np.cos(t), -np.sin(t)], [np.sin(t), np.cos(t)]])
+print(np.allclose(R(np.pi/6) @ R(np.pi/6) @ R(np.pi/6), R(np.pi/2)))
+</code></pre></details>

@@ -1,0 +1,190 @@
+<ul class="goals">
+  <li>문자 단위 <b>미니 GPT</b>를 PyTorch로 처음부터 끝까지 구현한다(약 150줄).</li>
+  <li>언어 모델 데이터 준비(블록, 입력/타깃 시프트)와 손실 계산을 이해한다.</li>
+  <li>생성 전략(탐욕, 온도, top-k, top-p)을 구현하고 비교한다.</li>
+  <li>KV 캐시, 가중치 공유, 학습 안정화 기법 등 실제 LLM 구현의 디테일을 안다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 오늘 여러분은 GPT를 만듭니다</span>
+과장이 아닙니다. 오늘 만드는 코드는 GPT-2와 <b>구조적으로 같습니다</b>. 차이는 크기(층 수, 차원)와 데이터(수십억 토큰)뿐입니다. 노트북을 Colab GPU로 열고 학습을 먼저 시작해 둔 뒤(약 10~15분), 학습이 도는 동안 본문을 읽으세요.</div>
+
+<h2>1. 데이터: 다음 글자 맞히기</h2>
+<p>텍스트 전체를 정수 ID 배열로 만든 뒤, 길이 <code>block_size</code>의 조각을 무작위로 뽑습니다. 타깃은 입력을 <b>한 칸 민 것</b>입니다.</p>
+<pre><code class="language-python">text = open("input.txt").read()                  # 셰익스피어 약 100만 글자
+chars = sorted(set(text)); V = len(chars)         # 어휘 = 등장하는 모든 글자 (약 65개)
+stoi = {c: i for i, c in enumerate(chars)}; itos = {i: c for c, i in stoi.items()}
+encode = lambda s: [stoi[c] for c in s]
+decode = lambda ids: "".join(itos[i] for i in ids)
+
+data = torch.tensor(encode(text), dtype=torch.long)
+n = int(0.9 * len(data)); train_data, val_data = data[:n], data[n:]
+
+def get_batch(split, block_size=256, batch_size=64):
+    d = train_data if split == "train" else val_data
+    ix = torch.randint(len(d) - block_size - 1, (batch_size,))
+    x = torch.stack([d[i:i + block_size] for i in ix])            # (B, T)
+    y = torch.stack([d[i + 1:i + block_size + 1] for i in ix])    # (B, T) 한 칸 민 정답
+    return x.to(device), y.to(device)
+</code></pre>
+<div class="callout key"><span class="ct">🔑 한 샘플 = T개의 학습 문제</span>
+입력 "hello"(T=5)에서 모델은 동시에 다섯 문제를 풉니다: "h"→"e", "he"→"l", "hel"→"l", "hell"→"o", "hello"→다음 글자. Causal 마스크 덕분에 각 위치는 자기까지만 보므로 부정행위가 없습니다.</div>
+
+<h2>2. 모델 전체 코드</h2>
+<pre><code class="language-python">import math, torch, torch.nn as nn, torch.nn.functional as F
+from dataclasses import dataclass
+
+@dataclass
+class GPTConfig:
+    vocab_size: int = 65
+    block_size: int = 256     # 최대 문맥 길이
+    n_layer: int = 6
+    n_head: int = 6
+    d_model: int = 384
+    dropout: float = 0.2
+
+class CausalSelfAttention(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.n_head = cfg.n_head
+        self.qkv = nn.Linear(cfg.d_model, 3 * cfg.d_model)      # Q, K, V를 한 번에
+        self.proj = nn.Linear(cfg.d_model, cfg.d_model)          # W_O
+        self.drop = nn.Dropout(cfg.dropout); self.p = cfg.dropout
+    def forward(self, x):
+        B, T, D = x.shape
+        q, k, v = self.qkv(x).split(D, dim=2)
+        q, k, v = [t.view(B, T, self.n_head, D // self.n_head).transpose(1, 2) for t in (q, k, v)]   # (B, h, T, dk)
+        # 직접 쓰면: att = softmax((q @ k.transpose(-2,-1)) / sqrt(dk) + causal) @ v
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True, dropout_p=self.p if self.training else 0)  # FlashAttention 자동 사용
+        y = y.transpose(1, 2).contiguous().view(B, T, D)        # 헤드 합치기
+        return self.drop(self.proj(y))
+
+class MLP(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(cfg.d_model, 4 * cfg.d_model), nn.GELU(),
+                                 nn.Linear(4 * cfg.d_model, cfg.d_model), nn.Dropout(cfg.dropout))
+    def forward(self, x): return self.net(x)
+
+class Block(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.ln1, self.ln2 = nn.LayerNorm(cfg.d_model), nn.LayerNorm(cfg.d_model)
+        self.attn, self.mlp = CausalSelfAttention(cfg), MLP(cfg)
+    def forward(self, x):
+        x = x + self.attn(self.ln1(x))      # 소통
+        x = x + self.mlp(self.ln2(x))       # 생각
+        return x
+
+class GPT(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+        self.tok_emb = nn.Embedding(cfg.vocab_size, cfg.d_model)
+        self.pos_emb = nn.Embedding(cfg.block_size, cfg.d_model)     # 학습형 위치 임베딩
+        self.drop = nn.Dropout(cfg.dropout)
+        self.blocks = nn.Sequential(*[Block(cfg) for _ in range(cfg.n_layer)])
+        self.ln_f = nn.LayerNorm(cfg.d_model)
+        self.head = nn.Linear(cfg.d_model, cfg.vocab_size, bias=False)
+        self.head.weight = self.tok_emb.weight                       # 가중치 공유 (weight tying)
+        self.apply(self._init)
+    def _init(self, m):
+        if isinstance(m, (nn.Linear, nn.Embedding)): nn.init.normal_(m.weight, 0.0, 0.02)
+        if isinstance(m, nn.Linear) and m.bias is not None: nn.init.zeros_(m.bias)
+
+    def forward(self, idx, targets=None):
+        B, T = idx.shape
+        pos = torch.arange(T, device=idx.device)
+        x = self.drop(self.tok_emb(idx) + self.pos_emb(pos))      # (B, T, D)
+        x = self.ln_f(self.blocks(x))
+        logits = self.head(x)                                      # (B, T, V)
+        loss = None if targets is None else F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+        return logits, loss
+
+model = GPT(GPTConfig(vocab_size=V)).to(device)
+print(f"{sum(p.numel() for p in model.parameters())/1e6:.2f}M 파라미터")   # 약 10.7M
+</code></pre>
+
+<h2>3. 학습 루프</h2>
+<pre><code class="language-python">opt = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.9, 0.95), weight_decay=0.1)
+max_iters, warmup = 5000, 200
+def lr_at(it):                                          # 워밍업 + 코사인 감쇠 (Day 28)
+    if it < warmup: return 3e-4 * (it + 1) / warmup
+    r = (it - warmup) / (max_iters - warmup); return 3e-5 + 0.5 * (3e-4 - 3e-5) * (1 + math.cos(math.pi * r))
+
+@torch.no_grad()
+def estimate_loss(iters=50):
+    model.eval(); out = {}
+    for split in ("train", "val"):
+        out[split] = torch.stack([model(*get_batch(split))[1] for _ in range(iters)]).mean().item()
+    model.train(); return out
+
+for it in range(max_iters):
+    for g in opt.param_groups: g["lr"] = lr_at(it)
+    x, y = get_batch("train")
+    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):     # 혼합 정밀도
+        _, loss = model(x, y)
+    opt.zero_grad(set_to_none=True)
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)            # 기울기 클리핑
+    opt.step()
+    if it % 500 == 0:
+        l = estimate_loss(); print(f"iter {it}: train {l['train']:.3f}  val {l['val']:.3f}")
+</code></pre>
+<p>초기 손실은 $\ln 65\approx 4.17$이어야 합니다(Day 9의 점검법). 학습이 끝나면 검증 손실이 약 1.5 근처까지 내려갑니다.</p>
+
+<h2>4. 생성 전략</h2>
+<pre><code class="language-python">@torch.no_grad()
+def generate(model, idx, max_new_tokens, temperature=1.0, top_k=None, top_p=None):
+    model.eval()
+    for _ in range(max_new_tokens):
+        idx_cond = idx[:, -model.cfg.block_size:]                 # 문맥 창을 넘으면 잘라냄
+        logits, _ = model(idx_cond)
+        logits = logits[:, -1, :] / temperature                    # 마지막 위치만 사용
+        if top_k is not None:                                      # 상위 k개만 남기기
+            v, _ = torch.topk(logits, top_k); logits[logits &lt; v[:, [-1]]] = -float("inf")
+        probs = F.softmax(logits, dim=-1)
+        if top_p is not None:                                      # 누적 확률 p까지만 (nucleus)
+            sp, si = torch.sort(probs, descending=True); cum = sp.cumsum(-1)
+            sp[cum - sp > top_p] = 0; probs = torch.zeros_like(probs).scatter(-1, si, sp); probs /= probs.sum(-1, keepdim=True)
+        nxt = torch.multinomial(probs, 1)                          # 샘플링
+        idx = torch.cat([idx, nxt], dim=1)
+    return idx
+
+start = torch.tensor([encode("ROMEO:")], device=device)
+print(decode(generate(model, start, 500, temperature=0.8, top_k=40)[0].tolist()))
+</code></pre>
+<table>
+<tr><th>전략</th><th>방법</th><th>특징</th></tr>
+<tr><td>탐욕(Greedy)</td><td>항상 argmax</td><td>결정적, 반복 루프에 빠지기 쉬움</td></tr>
+<tr><td>온도 샘플링</td><td>로짓 / τ 후 샘플링</td><td>τ↓ 보수적, τ↑ 다양하지만 엉뚱함</td></tr>
+<tr><td>Top-k</td><td>상위 k개 중에서만 샘플링</td><td>꼬리의 이상한 토큰 제거</td></tr>
+<tr><td>Top-p (nucleus)</td><td>누적 확률 p가 될 때까지의 토큰만</td><td>분포 모양에 따라 후보 수가 적응적. 실무 표준</td></tr>
+</table>
+
+<h2>5. 실제 LLM으로 가는 디테일</h2>
+<ul>
+<li><b>KV 캐시</b>: 생성할 때 매 스텝 전체 문맥을 다시 계산하는 것은 낭비입니다. 이전 토큰들의 K, V를 저장해 두고 새 토큰의 Q만 계산합니다. 생성 속도를 수십 배 높이지만 메모리를 많이 씁니다(긴 문맥이 비싼 또 다른 이유).</li>
+<li><b>가중치 공유</b>: 입력 임베딩과 출력층이 같은 행렬. 파라미터 절약 + 성능 향상.</li>
+<li><b>초기화</b>: 잔차 경로로 들어가는 출력 투영층을 $1/\sqrt{2N}$로 작게 초기화(GPT-2)하면 깊은 모델이 안정적입니다.</li>
+<li><b>BPE 토큰화</b>: 문자 대신 서브워드를 쓰면 같은 문맥 길이에 훨씬 많은 내용이 들어갑니다(Day 21).</li>
+<li><b>스케일</b>: 같은 코드에서 <code>n_layer=12, n_head=12, d_model=768</code>, 문맥 1024, GPT-2 토크나이저, 웹 텍스트 수십억 토큰 → GPT-2 small(124M).</li>
+</ul>
+<div class="callout tip"><span class="ct">💡 더 공부하려면</span>
+Andrej Karpathy의 <b>nanoGPT</b> 저장소와 "Let's build GPT: from scratch, in code, spelled out" 영상은 오늘 코드의 훌륭한 확장판입니다. 오늘 내용을 이해했다면 그 코드를 거의 다 읽을 수 있습니다.</div>
+
+<h2>6. 확인 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"입력 x = data[i:i+T]일 때 타깃 y는?","o":["data[i:i+T]","data[i+1:i+T+1]","data[i-1:i+T-1]","data[i+T]"],"a":1,"e":"각 위치의 정답은 바로 다음 토큰입니다."},
+ {"q":"어휘 65개 문자 GPT의 학습 전 손실로 정상적인 값은?","o":["약 0.69","약 4.17","약 65","약 1.0"],"a":1,"e":"ln(65) ≈ 4.17"},
+ {"q":"생성 시 logits[:, -1, :]만 쓰는 이유는?","o":["메모리 절약","마지막 위치의 출력이 '지금까지 전체 문맥 다음에 올 토큰'의 예측이므로","첫 위치가 가장 정확해서","관례"],"a":1,"e":"다른 위치의 출력은 이미 아는 토큰들의 예측입니다."},
+ {"q":"KV 캐시가 절약하는 것은?","o":["학습 시간","생성 시 이전 토큰들의 Key, Value를 매 스텝 다시 계산하는 비용","파라미터 수","토큰화 시간"],"a":1,"e":"새 토큰의 Q와 저장된 K, V로 어텐션만 계산합니다."},
+ {"q":"Top-p=0.9 샘플링의 의미는?","o":["상위 90개 토큰","확률이 큰 순서로 누적 확률 0.9에 도달할 때까지의 토큰 중에서 샘플링","90% 확률로 argmax","온도 0.9"],"a":1,"e":"분포가 날카로우면 후보가 적고, 평평하면 많아집니다."}
+]</script>
+
+<h2>7. 오늘의 과제 (Colab)</h2>
+<ol>
+<li>노트북으로 미니 GPT를 학습하고, 검증 손실이 1.6 이하로 내려가는지 확인하세요.</li>
+<li>같은 프롬프트로 (온도 0.5, top-k 없음), (온도 1.0, top-k 40), (온도 1.0, top-p 0.9)를 비교해 노트에 붙이세요.</li>
+<li>도전: <code>n_layer</code>를 2로 줄인 모델과 비교하세요. 깊이에 따라 생성 품질이 어떻게 다른가요?</li>
+<li>도전: 학습된 모델의 어텐션 가중치를 뽑아 한 헤드가 무엇을 보는지 시각화해 보세요(노트북에 힌트가 있습니다).</li>
+</ol>

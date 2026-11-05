@@ -1,0 +1,172 @@
+<ul class="goals">
+  <li>이진 분류를 위한 <b>로지스틱 회귀</b>(선형 + 시그모이드 + BCE)를 구현한다.</li>
+  <li>BCE의 그래디언트가 $\hat p - y$라는 아름다운 형태가 되는 이유를 유도한다.</li>
+  <li>다중 분류를 위한 <b>소프트맥스 회귀</b>와 교차 엔트로피를 구현한다.</li>
+  <li>log-sum-exp 트릭으로 수치적으로 안정한 소프트맥스를 작성한다.</li>
+  <li>정확도·정밀도·재현율 등 분류 평가 지표를 계산한다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 1주차의 마지막 퍼즐</span>
+로지스틱 회귀는 이름과 달리 <b>분류</b> 모델입니다. 그리고 사실 <b>뉴런 하나짜리 신경망</b>입니다. 오늘 배우는 '선형 → 비선형 함수 → 교차 엔트로피' 구조는 모든 분류 신경망의 마지막 층과 똑같습니다. 다음 주에는 이 뉴런을 여러 개 쌓기만 하면 됩니다.</div>
+
+<h2>1. 회귀로 분류하면 안 되는 이유</h2>
+<p>레이블이 0/1인데 선형회귀 $\hat y = \mathbf w\cdot\mathbf x+b$를 쓰면 예측이 $-3$이나 $5$처럼 확률로 해석할 수 없는 값이 나옵니다. 우리는 출력을 $(0,1)$ 사이의 <b>확률</b>로 만들고 싶습니다.</p>
+
+<h2>2. 로지스틱 회귀</h2>
+$$z = \mathbf w\cdot\mathbf x + b \quad(\text{로짓}),\qquad \hat p = \sigma(z) = \frac{1}{1+e^{-z}}$$
+<p>$\hat p$는 "클래스 1일 확률"입니다. $\hat p &gt; 0.5 \iff z &gt; 0$이므로 결정 경계는 $\mathbf w\cdot\mathbf x + b = 0$, 즉 <b>직선(초평면)</b>입니다.</p>
+<p>손실은 Day 5에서 유도한 베르누이 NLL, 즉 <b>이진 교차 엔트로피(BCE)</b>입니다.</p>
+$$L = -\frac1N\sum_i\big[y_i\log\hat p_i + (1-y_i)\log(1-\hat p_i)\big]$$
+
+<h2>3. 그래디언트: 놀랍도록 깔끔한 결과</h2>
+<p>샘플 하나에 대해 연쇄법칙 $\frac{\partial L}{\partial z} = \frac{\partial L}{\partial\hat p}\cdot\frac{\partial\hat p}{\partial z}$를 계산합니다.</p>
+$$\frac{\partial L}{\partial\hat p} = -\frac{y}{\hat p} + \frac{1-y}{1-\hat p},\qquad \frac{\partial\hat p}{\partial z} = \hat p(1-\hat p)$$
+$$\Rightarrow\quad\frac{\partial L}{\partial z} = -y(1-\hat p) + (1-y)\hat p = \boxed{\hat p - y}$$
+<div class="callout key"><span class="ct">🔑 "예측 − 정답"</span>
+로짓에 대한 그래디언트가 단순히 <b>예측 확률 − 정답</b>입니다. 선형회귀의 잔차 $\hat y - y$와 같은 꼴이죠. 우연이 아닙니다. 시그모이드+BCE, 소프트맥스+CE, 항등함수+MSE는 모두 이런 형태가 나오도록 짝지어진 조합입니다(정준 연결 함수). 그래서 이 조합을 항상 함께 씁니다.</div>
+<p>그러면 $\frac{\partial L}{\partial\mathbf w} = (\hat p - y)\mathbf x$, $\frac{\partial L}{\partial b} = \hat p - y$. 배치로는 $\nabla_{\mathbf w} = \frac1N X^\top(\hat{\mathbf p} - \mathbf y)$.</p>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(0)
+
+# 2차원 두 클래스 데이터
+N = 200
+X0 = rng.normal([-1, -1], 0.8, size=(N//2, 2))
+X1 = rng.normal([1.2, 1.0], 0.8, size=(N//2, 2))
+X = np.vstack([X0, X1]); y = np.r_[np.zeros(N//2), np.ones(N//2)]
+
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+w = np.zeros(2); b = 0.0; lr = 0.5
+for step in range(300):
+    p = sigmoid(X @ w + b)
+    loss = -np.mean(y*np.log(p + 1e-12) + (1-y)*np.log(1-p + 1e-12))
+    g = p - y                                   # ∂L/∂z
+    w -= lr * X.T @ g / N
+    b -= lr * g.mean()
+    if step % 60 == 0: print(f"step {step:3d}  BCE {loss:.4f}")
+acc = ((sigmoid(X @ w + b) > 0.5) == y).mean()
+print("w =", w.round(3), " b =", round(b, 3), " 정확도 =", acc)
+
+# 결정 경계 시각화
+xx, yy = np.meshgrid(np.linspace(-4, 4, 200), np.linspace(-4, 4, 200))
+P = sigmoid(np.c_[xx.ravel(), yy.ravel()] @ w + b).reshape(xx.shape)
+plt.figure(figsize=(5, 4.2))
+plt.contourf(xx, yy, P, levels=20, cmap='RdBu', alpha=.6); plt.colorbar(label='P(y=1)')
+plt.contour(xx, yy, P, levels=[0.5], colors='k')
+plt.scatter(*X.T, c=y, cmap='RdBu', edgecolor='k', s=18); plt.title('로지스틱 회귀의 결정 경계'); plt.show()
+</code></pre>
+
+<h2>4. 다중 분류: 소프트맥스</h2>
+<p>클래스가 $K$개면 로짓도 $K$개 만듭니다: $\mathbf z = W\mathbf x + \mathbf b$ ($W$: $K\times d$). 소프트맥스로 확률분포로 바꿉니다.</p>
+$$\mathrm{softmax}(\mathbf z)_k = \frac{e^{z_k}}{\sum_{j=1}^K e^{z_j}}$$
+<ul>
+<li>모든 출력이 양수이고 합이 1 → 확률분포.</li>
+<li>가장 큰 로짓이 가장 큰 확률을 얻지만, 나머지도 0이 아닙니다("부드러운 argmax").</li>
+<li>모든 로짓에 같은 상수를 더해도 결과가 같습니다 → 수치 안정성 트릭에 사용.</li>
+</ul>
+<p>손실은 교차 엔트로피 $L = -\log\hat p_{y}$이고, 그래디언트는 역시</p>
+$$\frac{\partial L}{\partial\mathbf z} = \hat{\mathbf p} - \mathbf e_y\quad(\mathbf e_y: \text{정답의 원-핫 벡터})$$
+
+<h2>5. 수치 안정성: log-sum-exp 트릭</h2>
+<p>$e^{1000}$은 오버플로(inf)입니다. 그래서 최댓값을 빼고 계산합니다: $\mathrm{softmax}(\mathbf z) = \mathrm{softmax}(\mathbf z - \max\mathbf z)$. 또 교차 엔트로피는 $\log\hat p_y = z_y - \log\sum_j e^{z_j}$로 직접 계산해야 $\log 0$을 피할 수 있습니다.</p>
+<pre class="run"><code>def softmax_naive(z):
+    e = np.exp(z); return e / e.sum(axis=-1, keepdims=True)
+
+def softmax(z):
+    z = z - z.max(axis=-1, keepdims=True)       # 안정화
+    e = np.exp(z); return e / e.sum(axis=-1, keepdims=True)
+
+def log_softmax(z):
+    z = z - z.max(axis=-1, keepdims=True)
+    return z - np.log(np.exp(z).sum(axis=-1, keepdims=True))
+
+def cross_entropy(logits, y):                    # logits: (N,K), y: (N,) 정수 레이블
+    return -log_softmax(logits)[np.arange(len(y)), y].mean()
+
+z = np.array([[2.0, 1.0, 0.1]])
+print("softmax:", softmax(z).round(4))
+big = np.array([[1000., 1001., 1002.]])
+with np.errstate(all='ignore'):
+    print("naive (큰 로짓):", softmax_naive(big))
+print("안정화 (큰 로짓):", softmax(big).round(4))
+print("CE:", cross_entropy(np.array([[2., 1., .1], [.5, 2.5, .3]]), np.array([0, 1])).round(4))
+</code></pre>
+<div class="callout warn"><span class="ct">⚠️ PyTorch에서 가장 흔한 실수</span>
+<code>nn.CrossEntropyLoss</code>는 내부에서 log-softmax를 수행하므로 <b>로짓을 그대로</b> 넣어야 합니다. 모델 끝에 <code>softmax</code>를 붙이고 넣으면 소프트맥스가 두 번 적용되어 학습이 느려지고 성능이 떨어집니다. 이진 분류도 마찬가지로 <code>nn.BCEWithLogitsLoss</code>를 쓰세요.</div>
+
+<h2>6. 소프트맥스 회귀로 3클래스 분류</h2>
+<pre class="run"><code>K = 3
+centers = np.array([[0, 2], [-2, -1], [2, -1]])
+Xs = np.vstack([rng.normal(c, 0.7, size=(100, 2)) for c in centers])
+ys = np.repeat(np.arange(K), 100)
+
+W = np.zeros((2, K)); bvec = np.zeros(K); lr = 0.3
+for step in range(300):
+    logits = Xs @ W + bvec                       # (300,3)
+    P = softmax(logits)
+    G = P.copy(); G[np.arange(len(ys)), ys] -= 1  # p - onehot
+    G /= len(ys)
+    W -= lr * Xs.T @ G; bvec -= lr * G.sum(0)
+    if step % 100 == 0: print(f"step {step} CE {cross_entropy(logits, ys):.4f}")
+pred = (Xs @ W + bvec).argmax(1)
+print("정확도:", (pred == ys).mean())
+
+xx, yy = np.meshgrid(np.linspace(-4.5, 4.5, 200), np.linspace(-4, 4.5, 200))
+Z = (np.c_[xx.ravel(), yy.ravel()] @ W + bvec).argmax(1).reshape(xx.shape)
+plt.figure(figsize=(5, 4)); plt.contourf(xx, yy, Z, alpha=.3, cmap='viridis')
+plt.scatter(*Xs.T, c=ys, s=12, cmap='viridis', edgecolor='k'); plt.title('소프트맥스 회귀: 경계는 모두 직선'); plt.show()
+</code></pre>
+
+<h2>7. 분류 평가 지표</h2>
+<p>정확도만 보면 속기 쉽습니다. 환자 1%인 데이터에서 "모두 정상"이라고 답하면 정확도 99%입니다!</p>
+<table>
+<tr><th></th><th>실제 양성</th><th>실제 음성</th></tr>
+<tr><td><b>예측 양성</b></td><td>TP (진양성)</td><td>FP (위양성)</td></tr>
+<tr><td><b>예측 음성</b></td><td>FN (위음성)</td><td>TN (진음성)</td></tr>
+</table>
+<ul>
+<li><b>정밀도(Precision)</b> = TP / (TP+FP): 양성이라고 한 것 중 진짜 비율. 스팸 필터에 중요(정상 메일을 스팸 처리하면 곤란).</li>
+<li><b>재현율(Recall)</b> = TP / (TP+FN): 진짜 양성 중 잡아낸 비율. 암 진단에 중요(놓치면 치명적).</li>
+<li><b>F1</b> = 정밀도와 재현율의 조화평균.</li>
+</ul>
+<pre class="run"><code>p = sigmoid(X @ w + b)
+for th in [0.3, 0.5, 0.7]:
+    pr = p > th
+    TP = (pr & (y == 1)).sum(); FP = (pr & (y == 0)).sum(); FN = (~pr & (y == 1)).sum()
+    prec, rec = TP / (TP + FP), TP / (TP + FN)
+    print(f"임계값 {th}: 정밀도 {prec:.3f}  재현율 {rec:.3f}  F1 {2*prec*rec/(prec+rec):.3f}")
+</code></pre>
+<p>임계값을 올리면 정밀도는 오르고 재현율은 내려갑니다. 트레이드오프입니다.</p>
+
+<h2>8. 1주차 총정리</h2>
+<div class="callout key"><span class="ct">📚 1주차에 배운 것 한 장 요약</span>
+<ul style="margin:0">
+<li><b>텐서와 형상</b>: 모든 데이터는 텐서, 형상을 읽는 습관. 브로드캐스팅 규칙과 함정.</li>
+<li><b>선형대수</b>: 내적 = 유사도, 행렬 = 선형변환, $XW+b$ = 층 하나.</li>
+<li><b>미분</b>: 그래디언트 = 가장 가파른 오르막, 연쇄법칙 = 국소 미분의 곱.</li>
+<li><b>확률</b>: 손실 함수 = 음의 로그 우도. 가우시안 → MSE, 범주형 → 교차 엔트로피.</li>
+<li><b>학습</b>: 순전파 → 손실 → 그래디언트 → 업데이트. 학습률, 미니배치, 에폭.</li>
+<li><b>분류</b>: 시그모이드/소프트맥스 + 교차 엔트로피, 그래디언트 = 예측 − 정답.</li>
+</ul></div>
+<p>그런데 오늘 만든 모델들은 모두 <b>직선</b> 경계밖에 못 그립니다. 데이터가 원형으로 섞여 있거나 XOR 모양이면 어떻게 할까요? 다음 주의 주제입니다.</p>
+
+<h2>9. 1주차 종합 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"시그모이드 + BCE 조합에서 로짓 z에 대한 그래디언트는?","o":["σ(z)(1−σ(z))","p̂ − y","y / p̂","−log p̂"],"a":1,"e":"시그모이드의 도함수가 BCE의 분모와 상쇄되어 p̂ − y만 남습니다."},
+ {"q":"nn.CrossEntropyLoss에 넣어야 하는 것은?","o":["소프트맥스 확률","로짓(소프트맥스 이전 값)","원-핫 확률","로그 확률"],"a":1,"e":"내부에서 log-softmax를 하므로 로짓을 넣습니다."},
+ {"q":"softmax([1, 2, 3])과 softmax([101, 102, 103])의 관계는?","o":["완전히 같다","두 번째가 더 날카롭다","두 번째는 오버플로","첫 번째가 더 날카롭다"],"a":0,"e":"모든 로짓에 같은 상수를 더해도 소프트맥스 결과는 같습니다. 이 성질로 max를 빼서 안정화합니다."},
+ {"q":"양성 비율 1%인 데이터에서 정확도 99%인 모델에 대해 맞는 말은?","o":["매우 좋은 모델이다","모두 음성으로 예측하는 쓸모없는 모델일 수도 있다. 재현율을 확인해야 한다","과적합이다","정밀도가 99%다"],"a":1,"e":"클래스 불균형에서는 정확도가 무의미할 수 있습니다."},
+ {"q":"로지스틱 회귀의 결정 경계 모양은?","o":["원","직선(초평면)","임의 곡선","항상 x축"],"a":1,"e":"σ(w·x+b)=0.5 ⟺ w·x+b=0, 즉 선형 경계입니다. 이것이 한계이자 다음 주의 동기입니다."},
+ {"q":"다음 중 '학습률이 너무 크다'의 증상이 아닌 것은?","o":["손실이 진동한다","손실이 NaN이 된다","손실이 매우 천천히 꾸준히 줄어든다","손실이 갑자기 튄다"],"a":2,"e":"천천히 꾸준히 줄어드는 것은 학습률이 작을 때의 증상입니다."}
+]</script>
+
+<h2>10. 주말 과제</h2>
+<ol>
+<li>소프트맥스 회귀 코드의 그래디언트를 Day 4의 <code>num_grad</code>로 검증해 보세요.</li>
+<li>데이터를 원형으로 바꿔 보세요: 반지름 1 안쪽은 클래스 0, 바깥은 클래스 1. 로지스틱 회귀의 정확도는? 입력 특성에 $x_1^2, x_2^2$를 추가하면? (특징 공학으로 해결 → 다음 주에는 신경망이 이 특징을 스스로 학습합니다.)</li>
+</ol>
+<pre class="run"><code># 원형 데이터 실험
+R = rng.uniform(0, 2, 400); T = rng.uniform(0, 2*np.pi, 400)
+Xc = np.c_[R*np.cos(T), R*np.sin(T)]; yc = (R > 1).astype(float)
+# 여기서 로지스틱 회귀를 학습해 보세요. 그다음 Xc2 = np.c_[Xc, Xc**2] 로도.
+</code></pre>

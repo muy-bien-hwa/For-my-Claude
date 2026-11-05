@@ -1,0 +1,157 @@
+<ul class="goals">
+  <li>텍스트를 숫자로 바꾸는 과정(토큰화 → 정수 ID → 임베딩)을 이해한다.</li>
+  <li>문자·단어·<b>서브워드(BPE)</b> 토큰화의 장단점을 비교하고, BPE를 직접 구현한다.</li>
+  <li>원-핫 벡터의 한계와 <b>임베딩</b>이 의미를 담는 원리(분포 가설, word2vec)를 이해한다.</li>
+  <li>패딩·마스크·<code>collate_fn</code>으로 가변 길이 배치를 만든다.</li>
+  <li><b>3주차 프로젝트</b>: CIFAR-10 CNN 종합 프로젝트를 수행한다.</li>
+</ul>
+
+<div class="callout prof"><span class="ct">👨‍🏫 언어를 벡터로</span>
+신경망은 숫자만 먹습니다. "고양이"라는 글자를 어떻게 숫자로 바꿀까요? 이 질문에 대한 답이 다음 주 Transformer와 LLM의 입구입니다. 그리고 "왕 − 남자 + 여자 ≈ 여왕"이라는 유명한 결과가 왜 가능한지도 오늘 알게 됩니다.</div>
+
+<h2>1. 텍스트 → 숫자 파이프라인</h2>
+<ol>
+<li><b>정규화</b>: 소문자화, 유니코드 정규화(NFC/NFKC), 공백 정리.</li>
+<li><b>토큰화</b>: 문자열을 토큰의 열로 쪼갬. <code>"I love cats"</code> → <code>["I", " love", " cats"]</code>.</li>
+<li><b>정수 인코딩</b>: 어휘 사전(vocabulary)으로 토큰 → ID. <code>[40, 1842, 11875]</code>.</li>
+<li><b>임베딩</b>: ID → 학습 가능한 벡터. <code>(시퀀스 길이,)</code> → <code>(시퀀스 길이, d_model)</code>.</li>
+</ol>
+
+<h2>2. 토큰화 방식 비교</h2>
+<table>
+<tr><th>방식</th><th>어휘 크기</th><th>장점</th><th>단점</th></tr>
+<tr><td>문자 단위</td><td>작음 (수십~수천)</td><td>모르는 단어(OOV) 없음</td><td>시퀀스가 매우 길어짐, 의미 단위가 아님</td></tr>
+<tr><td>단어 단위</td><td>매우 큼 (수십만+)</td><td>의미 단위</td><td>OOV 문제, 활용형마다 다른 토큰(run/runs/running), 한국어 조사 문제</td></tr>
+<tr><td><b>서브워드 (BPE, WordPiece, Unigram)</b></td><td>중간 (3만~25만)</td><td>자주 나오는 단어는 통째로, 드문 단어는 조각으로. OOV 없음</td><td>토큰 경계가 직관적이지 않을 수 있음</td></tr>
+</table>
+<p>현대 LLM은 모두 서브워드 토큰화를 씁니다. GPT 계열은 <b>바이트 수준 BPE</b>를 써서 어떤 문자열이든(이모지, 한국어 포함) 표현할 수 있습니다.</p>
+
+<h2>3. BPE 직접 구현하기</h2>
+<p>Byte Pair Encoding의 아이디어는 단순합니다. 문자에서 시작해, <b>가장 자주 함께 나오는 쌍을 하나로 합치는 것</b>을 원하는 어휘 크기가 될 때까지 반복합니다.</p>
+<pre class="run"><code>from collections import Counter
+
+corpus = "low lower lowest newer newest wider widest low low new new".split()
+# 각 단어를 문자 튜플로, 단어 끝 표시 '_'
+words = Counter(tuple(w) + ('_',) for w in corpus)
+
+def get_pairs(words):
+    pairs = Counter()
+    for w, f in words.items():
+        for a, b in zip(w, w[1:]): pairs[(a, b)] += f
+    return pairs
+
+def merge(words, pair):
+    new = Counter()
+    for w, f in words.items():
+        out, i = [], 0
+        while i < len(w):
+            if i < len(w) - 1 and (w[i], w[i+1]) == pair: out.append(w[i] + w[i+1]); i += 2
+            else: out.append(w[i]); i += 1
+        new[tuple(out)] += f
+    return new
+
+merges = []
+for step in range(10):
+    pairs = get_pairs(words)
+    best = pairs.most_common(1)[0][0]
+    words = merge(words, best); merges.append(best)
+    print(f"병합 {step+1:2d}: {best[0]!r} + {best[1]!r} → {best[0]+best[1]!r}")
+print("\n최종 토큰화:")
+for w in words: print("  ", " | ".join(w))
+
+def tokenize(word):
+    w = tuple(word) + ('_',)
+    for p in merges:
+        w = tuple(merge(Counter({w: 1}), p).keys())[0]
+    return list(w)
+print("\n처음 보는 단어 'lowly' →", tokenize("lowly"), " ← OOV 없이 조각으로 분해")
+</code></pre>
+<div class="callout tip"><span class="ct">💡 토큰이 LLM의 '눈'이다</span>
+LLM이 "strawberry에 r이 몇 개?" 같은 질문을 틀리는 이유 중 하나는, 모델이 글자가 아니라 <code>["str", "aw", "berry"]</code> 같은 토큰을 보기 때문입니다. 한국어는 영어보다 같은 내용에 토큰이 더 많이 드는 경우가 많아서 비용과 문맥 길이에서 불리할 수 있습니다. 실무에서는 Hugging Face <code>tokenizers</code>나 <code>tiktoken</code>을 씁니다.</div>
+
+<h2>4. 원-핫의 한계와 임베딩</h2>
+<p>어휘가 5만 개면 원-핫 벡터는 5만 차원이고, <b>모든 단어 쌍의 내적이 0</b>입니다. "고양이"와 "강아지"가 "고양이"와 "자동차"만큼 다르다는 뜻입니다. 의미적 유사성이 전혀 없습니다.</p>
+<p><b>임베딩</b>은 각 토큰에 작은 밀집 벡터(예: 256차원)를 대응시키는 학습 가능한 테이블입니다.</p>
+$$E\in\mathbb R^{V\times d},\qquad \text{embed}(i) = E[i]\quad(\text{= 원-핫}(i)^\top E)$$
+<p>원-핫 벡터에 행렬을 곱하는 것과 같지만, 실제로는 행을 꺼내기만 하므로 매우 빠릅니다. <code>nn.Embedding(V, d)</code>가 이것입니다. 역전파 때는 사용된 행만 기울기를 받습니다.</p>
+<pre class="run"><code>import numpy as np
+V, d = 10, 4
+E = np.random.default_rng(0).normal(size=(V, d))
+ids = np.array([3, 7, 3, 1])
+print("임베딩 조회 결과 shape:", E[ids].shape)
+onehot = np.eye(V)[ids]
+print("원-핫 @ E 와 같은가?", np.allclose(onehot @ E, E[ids]))
+</code></pre>
+
+<h2>5. word2vec: 의미는 문맥에서 온다</h2>
+<p><b>분포 가설</b>: "단어의 의미는 그 단어가 함께 나오는 단어들로 알 수 있다." "커피를 마셨다", "차를 마셨다"에서 커피와 차는 비슷한 문맥에 나오므로 비슷한 의미입니다.</p>
+<p>word2vec(2013)의 Skip-gram은 단어로 주변 단어를 예측하도록 임베딩을 학습합니다. 학습이 끝나면 비슷한 문맥의 단어들이 벡터 공간에서 가까워지고, 의미 관계가 <b>방향</b>으로 나타납니다: $\vec{왕} - \vec{남자} + \vec{여자} \approx \vec{여왕}$.</p>
+<p>아래는 작은 말뭉치로 학습하는 Skip-gram(네거티브 샘플링) 구현입니다. 실행해서 비슷한 단어끼리 모이는지 확인하세요.</p>
+<pre class="run"><code>rng = np.random.default_rng(0)
+sents = []
+animals, foods, places = ["고양이", "강아지", "토끼", "햄스터"], ["사과", "바나나", "포도", "딸기"], ["서울", "부산", "대구", "광주"]
+for _ in range(150):
+    a, f, p = str(rng.choice(animals)), str(rng.choice(foods)), str(rng.choice(places))
+    sents += [[a, "가", "귀엽게", "잔다"], [a, "가", "밥을", "먹는다"], ["나는", f, "를", "먹었다"], [f, "는", "달고", "맛있다"],
+              ["나는", p, "에", "산다"], [p, "는", "큰", "도시다"]]
+vocab = sorted({w for s in sents for w in s}); w2i = {w: i for i, w in enumerate(vocab)}; V = len(vocab)
+pairs = [(w2i[s[i]], w2i[s[j]]) for s in sents for i in range(len(s)) for j in range(max(0, i-2), min(len(s), i+3)) if i != j]
+pairs = np.array(pairs); print("어휘", V, "개, 학습 쌍", len(pairs), "개")
+
+d = 16; Win = rng.normal(0, .1, (V, d)); Wout = rng.normal(0, .1, (V, d)); lr = 0.05; K = 5
+sig = lambda z: 1 / (1 + np.exp(-z))
+for ep in range(3):
+    rng.shuffle(pairs); tot = 0
+    for c, o in pairs:
+        neg = rng.integers(0, V, K)
+        v = Win[c]; u = Wout[np.r_[o, neg]]                 # 정답 1개 + 네거티브 K개
+        lab = np.r_[1.0, np.zeros(K)]
+        p = sig(u @ v); g = p - lab                          # 로지스틱 회귀의 기울기 (Day 7!)
+        tot += -np.log(p[0] + 1e-9) - np.log(1 - p[1:] + 1e-9).sum()
+        Wout[np.r_[o, neg]] -= lr * g[:, None] * v; Win[c] -= lr * g @ u
+    print(f"epoch {ep}  loss {tot/len(pairs):.3f}")
+
+Wn = Win / np.linalg.norm(Win, axis=1, keepdims=True)
+for q in ["고양이", "사과", "서울"]:
+    sims = Wn @ Wn[w2i[q]]; top = [vocab[i] for i in sims.argsort()[::-1][1:5]]
+    print(f"'{q}'와 가장 가까운 단어: {top}")
+</code></pre>
+<p>현대 모델에서 임베딩은 별도로 학습하지 않고 모델의 첫 층으로서 과제와 함께 학습됩니다. 하지만 "비슷한 것은 가까운 벡터"라는 원리는 같습니다. 문장 임베딩은 검색, 추천, RAG의 핵심입니다.</p>
+
+<h2>6. 가변 길이 배치: 패딩과 마스크</h2>
+<pre><code class="language-python">from torch.nn.utils.rnn import pad_sequence
+PAD = 0
+def collate(batch):                                         # batch: [(ids_tensor, label), ...]
+    seqs, labels = zip(*batch)
+    lengths = torch.tensor([len(s) for s in seqs])
+    x = pad_sequence(seqs, batch_first=True, padding_value=PAD)   # (B, T_max)
+    mask = x != PAD                                         # (B, T_max) True = 진짜 토큰
+    return x, mask, lengths, torch.tensor(labels)
+loader = DataLoader(ds, batch_size=32, shuffle=True, collate_fn=collate)
+
+emb = nn.Embedding(vocab_size, 128, padding_idx=PAD)        # PAD 임베딩은 0으로 고정, 기울기 없음
+# 평균 풀링할 때 패딩 제외:
+h = emb(x)                                                  # (B, T, 128)
+sent_vec = (h * mask[..., None]).sum(1) / mask.sum(1, keepdim=True)
+</code></pre>
+<p>마스크는 다음 주 어텐션에서 핵심 역할을 합니다(패딩 마스크, causal 마스크).</p>
+
+<h2>7. 3주차 프로젝트: CIFAR-10 종합</h2>
+<p>상단 버튼으로 노트북을 여세요. 지난 1주일의 모든 기술을 결합합니다.</p>
+<ol>
+<li>Day 16 템플릿 (Dataset, DataLoader, train/evaluate, 체크포인트)</li>
+<li>Day 18 ResNet + Day 19 데이터 증강</li>
+<li>OneCycle 스케줄 + 혼합 정밀도 + label smoothing</li>
+<li><b>목표</b>: 테스트 정확도 93% 이상. 오분류 분석과 클래스별 정확도 보고</li>
+<li><b>보너스</b>: 사전학습 ResNet 미세조정으로 96% 이상</li>
+</ol>
+
+<h2>8. 3주차 종합 퀴즈</h2>
+<script type="application/json" class="quiz">[
+ {"q":"서브워드 토큰화의 가장 큰 장점은?","o":["어휘가 가장 작다","자주 쓰는 단어는 통째로, 드문 단어는 조각으로 표현해 OOV 없이 적당한 길이를 유지한다","항상 단어 경계와 일치한다","학습이 필요 없다"],"a":1,"e":"문자 단위와 단어 단위의 절충입니다."},
+ {"q":"nn.Embedding(V, d)의 동작과 같은 것은?","o":["원-핫 벡터에 V×d 행렬을 곱한 것","d×d 행렬곱","합성곱","소프트맥스"],"a":0,"e":"실제로는 해당 행을 꺼내기만 합니다."},
+ {"q":"원-핫 표현의 문제점은?","o":["계산이 느리다(만)","모든 단어 쌍이 직교해 의미적 유사성을 표현하지 못하고 차원이 매우 크다","OOV가 없다","학습이 필요하다"],"a":1,"e":"그래서 밀집 임베딩을 학습합니다."},
+ {"q":"CNN에서 가중치 공유가, RNN에서는 무엇에 해당하는가?","o":["채널 공유","시간 축 가중치 공유","배치 공유","공유 없음"],"a":1,"e":"CNN은 공간, RNN은 시간에서 같은 가중치를 재사용합니다."},
+ {"q":"미세조정할 때 새로 붙인 분류기를 먼저 학습시키는 이유는?","o":["속도","무작위 분류기의 큰 기울기가 사전학습된 백본을 망가뜨리지 않게","메모리","정규화 때문에"],"a":1,"e":"분류기가 어느 정도 맞춰진 뒤 백본을 풀면 안정적입니다."},
+ {"q":"nn.LSTM 출력 out[:, -1]은 무엇인가? (batch_first=True)","o":["첫 시점 은닉","마지막 층의 마지막 시점 은닉 상태","셀 상태","모든 층의 평균"],"a":1,"e":"패딩이 있으면 진짜 마지막 위치가 샘플마다 다르므로 주의!"}
+]</script>
