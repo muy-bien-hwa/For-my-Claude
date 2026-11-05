@@ -1,0 +1,148 @@
+<ul class="goals">
+  <li>층을 깊게 쌓으면 학습 오차가 오히려 커지는 성능 저하 문제를 과적합과 구별해 설명할 수 있다.</li>
+  <li>잔차 연결이 최적화를 쉽게 하는 이유를 항등 함수 학습과 기울기 흐름의 두 관점에서 설명할 수 있다.</li>
+  <li>기본 블록, 사영 지름길, 병목 블록을 구현하고 ResNet-18/50의 구조를 읽을 수 있다.</li>
+  <li>깊이별 분리 합성곱 등 현대 CNN의 효율화 기법을 계산량으로 비교할 수 있다.</li>
+  <li>CIFAR-10에서 평범한 망과 ResNet을 직접 학습해 성능 저하 문제와 그 해결을 확인할 수 있다.</li>
+</ul>
+
+<h2 data-min="15" data-kind="concept">더 깊게 쌓으면 더 좋아지는가</h2>
+<p>32일차의 흐름(LeNet 5층 → AlexNet 8층 → VGG 19층)은 "깊을수록 좋다"를 보여 준다. 그렇다면 층을 계속 쌓기만 하면 될까? 24, 25일차에서 본 기울기 소실은 He 초기화와 배치 정규화로 상당 부분 해결되었다. 그런데도 2015년 He 등은 이상한 현상을 보고했다. 배치 정규화를 쓴 평범한 망(합성곱을 쌓기만 한 망)에서 56층이 20층보다 <b>학습 오차</b>도 테스트 오차도 컸다. 이것을 <dfn data-t="degradation">성능 저하 문제</dfn>라 한다.</p>
+<div class="box warn" data-title="과적합이 아니다"><p>과적합이라면 큰 모델의 학습 오차는 더 작아야 한다. 학습 데이터를 더 잘 외울 수 있기 때문이다. 56층 망의 학습 오차가 20층보다 크다는 것은, 56층 망이 표현할 수 있는 함수가 더 많은데도 최적화가 그런 해를 찾지 못한다는 뜻이다. 실제로 20층 망의 가중치를 복사하고 나머지 36층을 항등 함수로 만들면 56층 망도 20층 망과 똑같은 함수가 된다. 해가 존재하는데 찾지 못하는 것이다.</p></div>
+
+<h2 data-min="25" data-kind="concept">잔차 연결</h2>
+<p>He 등의 해결책은 블록이 원하는 함수 $H(x)$를 직접 배우는 대신, 입력과의 차이(잔차) $F(x) = H(x) - x$를 배우게 하는 것이다. 블록의 출력을 $F(x) + x$로 만든다. 입력을 그대로 출력에 더해 주는 이 길이 <dfn data-t="residual-connection">잔차 연결</dfn>(지름길 연결)이다. 이렇게 만든 신경망이 <dfn data-t="resnet">ResNet</dfn>이다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 260" width="640" role="img" aria-label="평범한 블록과 잔차 블록 비교">
+  <g font-size="12">
+  <g transform="translate(60,0)">
+    <text x="90" y="20" text-anchor="middle" class="s-tx" font-weight="700">평범한 블록</text>
+    <text x="90" y="246" text-anchor="middle" class="s-txm">x</text>
+    <path d="M90 236 V214" class="s-ln" stroke-width="1.4"/><path d="M90 208 l-4 7 h8 z" class="s-tx"/>
+    <rect x="30" y="178" width="120" height="30" rx="4" class="s-f" stroke-width="1"/><text x="90" y="197" text-anchor="middle" class="s-tx">3×3 합성곱, BN</text>
+    <path d="M90 178 V160" class="s-ln" stroke-width="1.4"/><text x="100" y="166" class="s-txm" font-size="11">ReLU</text>
+    <rect x="30" y="126" width="120" height="30" rx="4" class="s-f" stroke-width="1"/><text x="90" y="145" text-anchor="middle" class="s-tx">3×3 합성곱, BN</text>
+    <path d="M90 126 V60" class="s-ln" stroke-width="1.4"/><path d="M90 54 l-4 7 h8 z" class="s-tx"/>
+    <text x="100" y="96" class="s-txm" font-size="11">ReLU</text>
+    <text x="90" y="44" text-anchor="middle" class="s-tx">H(x)</text>
+  </g>
+  <g transform="translate(340,0)">
+    <text x="90" y="20" text-anchor="middle" class="s-tx" font-weight="700">잔차 블록</text>
+    <text x="90" y="246" text-anchor="middle" class="s-txm">x</text>
+    <path d="M90 236 V214" class="s-ln" stroke-width="1.4"/><path d="M90 208 l-4 7 h8 z" class="s-tx"/>
+    <rect x="30" y="178" width="120" height="30" rx="4" class="s-f" stroke-width="1"/><text x="90" y="197" text-anchor="middle" class="s-tx">3×3 합성곱, BN</text>
+    <path d="M90 178 V160" class="s-ln" stroke-width="1.4"/><text x="100" y="166" class="s-txm" font-size="11">ReLU</text>
+    <rect x="30" y="126" width="120" height="30" rx="4" class="s-f" stroke-width="1"/><text x="90" y="145" text-anchor="middle" class="s-tx">3×3 합성곱, BN</text>
+    <text x="16" y="118" text-anchor="end" class="s-txa">F(x)</text>
+    <path d="M90 126 V96" class="s-ln" stroke-width="1.4"/>
+    <circle cx="90" cy="84" r="11" class="s-bg" stroke-width="1.6"/><text x="90" y="88" text-anchor="middle" class="s-txa" font-weight="700">+</text>
+    <path d="M90 230 H190 V84 H104" class="s-ac" stroke-width="2.4" fill="none"/><path d="M101 84 l8 -4 v8 z" class="s-acf"/>
+    <text x="198" y="160" class="s-txa">항등 지름길</text>
+    <path d="M90 73 V60" class="s-ln" stroke-width="1.4"/><path d="M90 54 l-4 7 h8 z" class="s-tx"/>
+    <text x="100" y="66" class="s-txm" font-size="11">ReLU</text>
+    <text x="90" y="44" text-anchor="middle" class="s-tx">H(x) = F(x) + x</text>
+  </g>
+  </g>
+</svg>
+<figcaption>왼쪽은 원하는 함수 H(x)를 직접 배운다. 오른쪽은 차이 F(x)만 배우고 입력 x를 그대로 더한다. 지름길에는 파라미터가 없다.</figcaption>
+</figure>
+<h3>왜 쉬워지는가 (1) 항등 함수가 기본값이다</h3>
+<p>평범한 블록이 항등 함수 $H(x) = x$를 배우려면 두 합성곱의 가중치가 정확히 항등 변환을 만들어야 한다. 비선형 활성화를 지나면서 이것은 쉽지 않다. 잔차 블록은 $F(x) = 0$, 즉 가중치를 0 근처로 보내기만 하면 항등 함수가 된다. 가중치 감쇠(26일차)가 바로 가중치를 0 쪽으로 미는 힘이다. 그래서 필요 없는 블록은 "아무것도 안 하는" 쪽으로 쉽게 가고, 깊이를 늘려도 얕은 망보다 나빠지기 어렵다.</p>
+<h3>왜 쉬워지는가 (2) 기울기가 지나가는 지름길</h3>
+<p>블록 $l$의 출력 $x_{l+1} = x_l + F(x_l)$을 미분하면 $\frac{\partial x_{l+1}}{\partial x_l} = I + \frac{\partial F}{\partial x_l}$이다. 이것을 여러 블록에 걸쳐 곱하면(연쇄법칙)</p>
+<p>$$\frac{\partial L}{\partial x_l} = \frac{\partial L}{\partial x_L}\prod_{i=l}^{L-1}\left(I + \frac{\partial F_i}{\partial x_i}\right) = \frac{\partial L}{\partial x_L}\left(I + \cdots\right).$$</p>
+<p>곱을 전개하면 맨 앞에 $\frac{\partial L}{\partial x_L}$이 그대로 들어 있다. 출력의 기울기가 어떤 층의 가중치도 곱해지지 않고 앞쪽 층까지 바로 전달되는 길이 있다는 뜻이다. 평범한 망에서는 기울기가 층마다 야코비 행렬과 곱해져야 해서, 그 크기가 1보다 조금만 작아도 깊이에 따라 지수적으로 줄어든다(24일차).</p>
+<div class="viz-mount" data-viz="residual-flow"></div>
+
+<h2 data-min="20" data-kind="concept">ResNet의 구조</h2>
+<p>잔차 블록의 입력과 출력은 더할 수 있도록 형상이 같아야 한다. 단계가 바뀌어 해상도가 절반이 되고 채널이 두 배가 되는 첫 블록에서는 지름길의 형상을 맞춰야 한다. 1×1 합성곱(스트라이드 2) + 배치 정규화로 사영하는 방법이 가장 흔하다(사영 지름길). 원 논문의 CIFAR 실험은 해상도를 건너뛰어 줄이고 늘어난 채널을 0으로 채우는, 파라미터 없는 방법을 썼다.</p>
+<table>
+  <thead><tr><th>단계</th><th>출력 (224 입력)</th><th>ResNet-18</th><th>ResNet-50</th></tr></thead>
+  <tbody>
+    <tr><td>stem</td><td>112 × 112 → 56 × 56</td><td colspan="2">7×7 합성곱 64, 스트라이드 2 → 3×3 최대 풀링, 스트라이드 2</td></tr>
+    <tr><td>layer1</td><td>56 × 56</td><td>기본 블록 [3×3, 64] × 2</td><td>병목 블록 [1×1 64, 3×3 64, 1×1 256] × 3</td></tr>
+    <tr><td>layer2</td><td>28 × 28</td><td>[3×3, 128] × 2</td><td>[1×1 128, 3×3 128, 1×1 512] × 4</td></tr>
+    <tr><td>layer3</td><td>14 × 14</td><td>[3×3, 256] × 2</td><td>[1×1 256, 3×3 256, 1×1 1024] × 6</td></tr>
+    <tr><td>layer4</td><td>7 × 7</td><td>[3×3, 512] × 2</td><td>[1×1 512, 3×3 512, 1×1 2048] × 3</td></tr>
+    <tr><td>head</td><td>1 × 1</td><td colspan="2">전역 평균 풀링 → 1000클래스 선형층</td></tr>
+    <tr><td colspan="2">파라미터 / 곱셈-덧셈</td><td>1,170만 / 18억</td><td>2,560만 / 41억</td></tr>
+  </tbody>
+</table>
+<p>층이 50개 이상인 ResNet은 <dfn data-t="bottleneck">병목 블록</dfn>을 쓴다. 1×1 합성곱으로 채널을 4분의 1로 줄이고, 줄인 채널에서 3×3 합성곱을 한 뒤, 1×1로 다시 늘린다. 비싼 3×3 합성곱을 좁은 채널에서만 하므로 같은 계산량으로 층을 훨씬 많이 쌓을 수 있다. 56×56, 256채널에서 3×3 합성곱 두 층(기본 블록 방식)의 곱셈-덧셈은 37억 회지만 병목 블록은 2.2억 회다.</p>
+
+<h2 data-min="15" data-kind="concept">현대 CNN의 효율화</h2>
+<p>ResNet 이후의 CNN은 정확도만큼 효율을 따진다. 휴대폰에서 돌릴 모델은 파라미터와 계산량이 작아야 하기 때문이다.</p>
+<ul>
+  <li><b><dfn data-t="depthwise">깊이별 분리 합성곱</dfn></b>(MobileNet, Xception). 보통 합성곱은 공간(3×3)과 채널을 한꺼번에 섞는다. 이것을 둘로 나눈다. 깊이별 합성곱은 채널마다 따로 3×3 합성곱을 하고(채널을 섞지 않음, <code>groups=C</code>), 점별 합성곱(1×1)이 채널을 섞는다. 계산량이 보통 합성곱의 약 $\frac{1}{C_{\text{out}}} + \frac{1}{k^2}$, 3×3이면 9분의 1 가까이로 준다.</li>
+  <li><b>채널 주의</b>(Squeeze-and-Excitation, Hu et al., 2018). 채널마다 전역 평균을 구해 작은 신경망으로 채널별 가중치(0~1)를 만들고, 특성 맵에 곱한다. "지금 이미지에서 중요한 특징 채널"을 강조한다. 7주차의 주의 집중과 같은 생각이다.</li>
+  <li><b>균형 잡힌 확장</b>(EfficientNet, Tan &amp; Le, 2019). 모델을 키울 때 깊이, 너비(채널), 입력 해상도를 일정한 비율로 함께 키우는 것이 하나만 키우는 것보다 효율적이다.</li>
+  <li><b>ConvNeXt</b>(Liu et al., 2022). ResNet에 트랜스포머의 설계(큰 7×7 깊이별 합성곱, 층 정규화, GELU, 거꾸로 된 병목)를 하나씩 들여와, 같은 계산량에서 비전 트랜스포머(48일차)와 같은 성능을 냈다. 합성곱 신경망이 여전히 강력하다는 것을 보였다.</li>
+</ul>
+<pre class="out"><code class="language-plaintext">입력 256 × 56 × 56에서 (노트북 5절)
+3x3 conv x2 (256)                가중치 1,179,648개   곱셈-덧셈   3699.4M
+bottleneck 1x1-3x3-1x1           가중치    69,632개   곱셈-덧셈    218.4M
+depthwise 3x3 + pointwise 1x1    가중치    67,840개   곱셈-덧셈    212.7M</code></pre>
+
+<h2 data-min="10" data-kind="practice">초기화 직후의 기울기 흐름</h2>
+<p>노트북 3절은 학습 전의 평범한 망-56과 ResNet-56에 같은 배치를 넣고 역전파해, 블록마다 출력에 대한 기울기의 크기(제곱평균제곱근)를 잰다.</p>
+{{RES:grad}}
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>성능 저하 문제: 깊은 평범한 망은 학습 오차부터 크다. 과적합이 아니라 최적화의 문제다.</li>
+  <li>잔차 연결 $H(x) = F(x) + x$: 항등 함수가 $F = 0$으로 쉬워지고, 기울기가 지름길로 그대로 전달된다.</li>
+  <li>형상이 바뀌는 블록은 1×1 합성곱(사영)으로 지름길을 맞춘다. 50층 이상은 병목 블록(1×1 → 3×3 → 1×1).</li>
+  <li>효율화: 깊이별 분리 합성곱(약 1/9 계산), 채널 주의(SE), 균형 확장(EfficientNet), ConvNeXt.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"평범한 망 56층의 학습 오차가 20층보다 크다. 원인으로 가장 알맞은 것은?","o":["과적합","데이터 부족","깊은 망의 최적화가 어려움(성능 저하 문제)","학습률이 작음"],"a":2,"e":"과적합이면 학습 오차는 더 작아야 한다."},
+ {"q":"잔차 블록이 항등 함수를 쉽게 표현하는 이유는?","o":["지름길에 파라미터가 많아서","F(x)의 가중치를 0 근처로 보내면 출력이 x가 되므로","ReLU 때문에","배치 정규화 때문에"],"a":1,"e":"평범한 블록은 가중치로 항등 변환을 정확히 만들어야 한다."},
+ {"q":"x_{l+1} = x_l + F(x_l)일 때 ∂x_{l+1}/∂x_l은?","o":["∂F/∂x_l","I + ∂F/∂x_l","I − ∂F/∂x_l","0"],"a":1,"e":"항등 행렬 I가 기울기의 지름길이 된다."},
+ {"q":"해상도가 절반이 되고 채널이 64 → 128로 바뀌는 블록에서 지름길을 맞추는 흔한 방법은?","o":["지름길을 뺀다","1×1 합성곱(스트라이드 2) + BN","3×3 최대 풀링","드롭아웃"],"a":1,"e":"사영 지름길이다."},
+ {"q":"병목 블록에서 1×1 합성곱의 역할은?","o":["해상도를 줄인다","비싼 3×3 합성곱 앞뒤에서 채널을 줄였다 늘린다","활성화 함수","정규화"],"a":1,"e":"256 → 64 → 64 → 256."},
+ {"q":"깊이별 분리 합성곱(3×3, 채널 C → C)의 곱셈-덧셈은 보통 3×3 합성곱의 약 얼마인가? (C가 클 때)","o":["1/2","1/3","1/9","1/C"],"a":2,"e":"1/C + 1/k² ≈ 1/9."},
+ {"q":"ResNet-18과 ResNet-50의 블록 차이는?","o":["둘 다 병목 블록","ResNet-18은 기본 블록(3×3 두 개), ResNet-50은 병목 블록","ResNet-50에는 잔차 연결이 없다","ResNet-18에는 배치 정규화가 없다"],"a":1,"e":"표를 참고한다."},
+ {"q":"ConvNeXt가 보인 것은?","o":["합성곱이 쓸모없다","합성곱 신경망도 트랜스포머의 설계 요소를 들여오면 같은 계산량에서 비전 트랜스포머만큼 강하다","ResNet이 가장 정확하다","풀링이 필요 없다"],"a":1,"e":"설계 요소의 차이가 컸다는 뜻이다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>CIFAR용 ResNet에서 블록 수 $n$이 깊이 $6n + 2$를 정한다. $n = 18$이면 몇 층이고, 파라미터는 $n = 9$(56층)의 약 몇 배인가?
+    <details class="sol"><summary>풀이</summary><p>110층. 파라미터는 블록 수에 거의 비례하므로 약 2배다(56층 85만 개, 110층 약 170만 개). He et al.은 1202층까지 학습했는데, 110층보다 테스트 오차가 나빴다. 이번에는 최적화가 아니라 과적합 때문이었다(학습 오차는 비슷).</p></details></li>
+  <li>잔차 블록의 순서를 BN → ReLU → 합성곱(사전 활성화, He et al., 2016b)으로 바꾸면 지름길 위에 ReLU가 없어진다. 이것이 기울기 흐름에 왜 유리한가?
+    <details class="sol"><summary>풀이</summary><p>원래 블록은 $x_{l+1} = \mathrm{ReLU}(x_l + F(x_l))$라 더한 뒤 ReLU가 지름길의 신호도 자른다. 사전 활성화 블록은 $x_{l+1} = x_l + F(x_l)$이 정확히 성립해, 출력의 기울기가 어떤 비선형 함수도 거치지 않고 모든 층에 전달된다. 이 구조로 1001층 ResNet을 학습했다.</p></details></li>
+  <li>입력 채널 128, 출력 채널 128, 3×3 합성곱의 가중치 수를 보통 합성곱과 깊이별 분리 합성곱(깊이별 3×3 + 점별 1×1)으로 비교하라.
+    <details class="sol"><summary>풀이</summary><p>보통: $128 \times 128 \times 9 = 147{,}456$. 분리: $128 \times 9 + 128 \times 128 = 1{,}152 + 16{,}384 = 17{,}536$. 약 8.4분의 1. 곱셈-덧셈도 같은 비율로 준다.</p></details></li>
+</ol>
+
+<h2 data-min="45" data-kind="project">미니 프로젝트: 평범한 망과 ResNet 비교</h2>
+<section class="project" data-title="같은 구조에서 잔차 연결만 바꾼 네 모델을 학습해 성능 저하 문제를 재현하기" data-min="45">
+<p class="lead">He et al.(2016)의 CIFAR-10 실험을 작게 재현한다. 깊이 20과 56, 잔차 연결 있음과 없음의 네 모델을 같은 조건으로 학습해, 평범한 망은 깊을수록 학습 오차가 커지고 ResNet은 깊을수록 좋아지는지 확인한다.</p>
+<p><a class="colab" data-nb="d33_resnet.ipynb">Colab에서 노트북 열기</a></p>
+<ol class="steps">
+<li><b>블록과 모델.</b> 같은 <code>Block</code> 클래스에서 <code>residual</code> 인자로 지름길만 켜고 끈다. 그래야 비교가 공정하다.
+<pre><code class="language-python">class Block(nn.Module):
+    def __init__(self, c_in, c_out, stride, residual):
+        super().__init__()
+        self.residual = residual
+        self.conv1 = nn.Conv2d(c_in, c_out, 3, stride, 1, bias=False)
+        self.bn1 = nn.BatchNorm2d(c_out)
+        self.conv2 = nn.Conv2d(c_out, c_out, 3, 1, 1, bias=False)
+        self.bn2 = nn.BatchNorm2d(c_out)
+        self.shortcut = nn.Identity()
+        if residual and (stride != 1 or c_in != c_out):          # 사영 지름길
+            self.shortcut = nn.Sequential(nn.Conv2d(c_in, c_out, 1, stride, bias=False),
+                                          nn.BatchNorm2d(c_out))
+
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        if self.residual:
+            out = out + self.shortcut(x)                        # F(x) + x
+        return F.relu(out)
+</code></pre></li>
+{{RES:project}}
+</ol>
+</section>

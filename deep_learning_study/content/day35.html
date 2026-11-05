@@ -1,0 +1,149 @@
+<ul class="goals">
+  <li>5주차의 기법(PyTorch 학습 템플릿, 합성곱 블록, 잔차 연결, 증강, 혼합 정밀도)을 묶어 CIFAR-10 분류기를 처음부터 학습한다.</li>
+  <li>알려진 학습 설정(원사이클 학습률, 레이블 스무딩, 컷아웃)을 읽고 그대로 재현할 수 있다.</li>
+  <li>Grad-CAM으로 모델이 이미지의 어느 부분을 근거로 판단했는지 시각화하고 해석할 수 있다.</li>
+  <li>정확도 숫자 너머로 모델의 성공과 실패를 분석할 수 있다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="review">프로젝트 개요</h2>
+<p>32일차의 작은 CNN은 증강 없이 CIFAR-10에서 {{CNN32}}에 머물렀고, 학습 정확도와의 간격이 컸다. 이번에는 33일차의 잔차 연결과 34일차의 증강, 30일차의 학습 템플릿을 묶어 <b>테스트 정확도 93% 이상</b>을 목표로 한다. 모델은 Page(2018)가 CIFAR-10 학습 속도 경연(DAWNBench)에서 쓴 ResNet-9이고, 학습 설정도 그 구성을 거의 그대로 따른다. 알려진 설정을 정확히 재현하는 것도 중요한 실력이다. 다 학습한 뒤에는 <b>Grad-CAM</b>으로 모델이 무엇을 보고 판단하는지 들여다본다.</p>
+<div class="flow"><div>데이터<br>GPU 텐서</div><div>증강<br>자르기·뒤집기·컷아웃</div><div>ResNet-9</div><div>학습<br>24에폭</div><div>평가<br>TTA</div><div class="hl">Grad-CAM</div><div>저장·보고</div></div>
+<p><a class="colab" data-nb="w5_cifar_gradcam.ipynb">Colab에서 노트북 열기</a></p>
+<div class="box note" data-title="이 페이지의 수치"><p>이 페이지의 수치와 그림은 노트북을 처음부터 끝까지 실행한 결과다. 검증 환경에는 GPU가 없어 CPU(bfloat16 혼합 정밀도)로 실행했고, 학습에 {{CPU_TIME}}이 걸렸다. Colab의 T4 GPU(float16)에서는 훨씬 빠르며, 난수와 연산 순서의 차이로 정확도가 0.1~0.2%p 안팎으로 다를 수 있다.</p></div>
+<h3>완료 기준</h3>
+<ul class="checklist" data-id="w5-project">
+  <li>CIFAR-10을 GPU 텐서로 올리고 채널별로 정규화했다.</li>
+  <li>배치 단위 증강(자르기, 뒤집기, 컷아웃)을 구현하고 결과를 눈으로 확인했다.</li>
+  <li>ResNet-9을 구현하고 층별 출력 형상과 파라미터 수를 확인했다.</li>
+  <li>원사이클 학습률, 레이블 스무딩, 혼합 정밀도로 24에폭 학습했다.</li>
+  <li>테스트 정확도 93% 이상을 달성했다.</li>
+  <li>클래스별 정확도와 혼동 행렬로 약점을 찾았다.</li>
+  <li>Grad-CAM을 훅으로 구현하고 맞힌 예와 틀린 예를 해석했다.</li>
+  <li>결과를 다섯 문장 이내의 보고서로 정리했다.</li>
+</ul>
+
+<h2 data-min="20" data-kind="project">1단계: 데이터와 배치 단위 증강</h2>
+<p>CIFAR-10은 32×32 컬러 이미지 6만 장(학습 5만, 테스트 1만), 10클래스(비행기, 자동차, 새, 고양이, 사슴, 개, 개구리, 말, 배, 트럭)다. 채널별 평균 (0.491, 0.482, 0.447), 표준편차 (0.247, 0.244, 0.262)로 정규화한다. 데이터 전체가 150 MB라 GPU에 한 번에 올려 두고, 30일차의 DataLoader 대신 인덱스로 배치를 잘라 쓴다. 이미지를 하나씩 PIL로 변환하는 비용이 없어 GPU가 기다리지 않는다.</p>
+<p>증강도 GPU에서 배치 전체에 한 번에 적용한다.</p>
+<ol class="steps">
+  <li><b>무작위 자르기.</b> 사방 4픽셀 반사 패딩으로 40×40을 만들고 무작위 위치에서 32×32를 자른다. 이미지마다 다른 위치를 고르기 위해 행·열 인덱스 텐서를 만들어 한 번에 꺼낸다(고급 인덱싱).</li>
+  <li><b>좌우 뒤집기.</b> 절반의 확률로 뒤집는다. CIFAR-10의 클래스는 좌우 방향과 무관하다.</li>
+  <li><b>컷아웃</b>(DeVries &amp; Taylor, 2017). 8×8 정사각형 하나를 0(정규화 후의 평균색)으로 지운다. 모델이 물체의 한 부분에만 의존하지 않게 한다.</li>
+</ol>
+<figure class="fig">
+{{IMG:aug}}
+<figcaption>왼쪽 끝이 원본, 나머지가 같은 원본에서 뽑은 증강 결과. 배치마다 새로 뽑으므로 24에폭 동안 같은 이미지가 같은 모습으로 두 번 나올 일은 거의 없다.</figcaption>
+</figure>
+
+<h2 data-min="25" data-kind="project">2단계: ResNet-9</h2>
+<p>합성곱 9층과 잔차 블록 2개로 된 작은 ResNet이다. 33일차의 CIFAR용 ResNet(16~64채널, 깊이 20~56)과 반대로, 얕은 대신 넓다(64~512채널). GPU는 넓은 층을 한꺼번에 계산하는 데 유리하므로 같은 시간에 더 많은 계산을 할 수 있다.</p>
+<table>
+  <thead><tr><th>단계</th><th>구성</th><th>출력 형상</th></tr></thead>
+  <tbody>
+    <tr><td>prep</td><td>3×3 합성곱 3 → 64, BN, ReLU</td><td>64 × 32 × 32</td></tr>
+    <tr><td>layer1</td><td>합성곱 64 → 128, 최대 풀링, 잔차 블록(합성곱 2개)</td><td>128 × 16 × 16</td></tr>
+    <tr><td>layer2</td><td>합성곱 128 → 256, 최대 풀링</td><td>256 × 8 × 8</td></tr>
+    <tr><td>layer3</td><td>합성곱 256 → 512, 최대 풀링, 잔차 블록</td><td>512 × 4 × 4</td></tr>
+    <tr><td>head</td><td>전역 최대 풀링, 선형 512 → 10, × 0.125</td><td>10</td></tr>
+  </tbody>
+</table>
+<p>파라미터는 6,573,120개다. 마지막에 로짓에 0.125를 곱해 처음 로짓을 작게 만든다. 27일차에서 본 "첫 손실은 $\ln 10$ 근처여야 한다"를 구조로 보장하는 장치다. 잔차 블록은 33일차와 같이 해상도와 채널이 바뀌지 않는 곳에만 두어 사영 지름길이 필요 없다.</p>
+<pre><code class="language-python">class Residual(nn.Module):
+    def __init__(self, c):
+        super().__init__()
+        self.block = nn.Sequential(conv_bn(c, c), conv_bn(c, c))
+
+    def forward(self, x):
+        return x + self.block(x)
+
+class ResNet9(nn.Module):
+    def __init__(self, num_classes=10, w=64):
+        super().__init__()
+        self.prep = conv_bn(3, w)
+        self.layer1 = nn.Sequential(conv_bn(w, 2 * w), nn.MaxPool2d(2), Residual(2 * w))
+        self.layer2 = nn.Sequential(conv_bn(2 * w, 4 * w), nn.MaxPool2d(2))
+        self.layer3 = nn.Sequential(conv_bn(4 * w, 8 * w), nn.MaxPool2d(2), Residual(8 * w))
+        self.pool = nn.AdaptiveMaxPool2d(1)
+        self.fc = nn.Linear(8 * w, num_classes, bias=False)
+
+    def forward(self, x):
+        x = self.layer3(self.layer2(self.layer1(self.prep(x))))
+        return self.fc(torch.flatten(self.pool(x), 1)) * 0.125
+</code></pre>
+
+<h2 data-min="20" data-kind="project">3단계: 학습 설정</h2>
+<table>
+  <thead><tr><th>항목</th><th>값</th><th>근거</th></tr></thead>
+  <tbody>
+    <tr><td>옵티마이저</td><td>SGD, 모멘텀 0.9, 네스테로프</td><td>22일차. 이미지 분류 CNN에서 잘 맞춘 SGD는 여전히 강하다</td></tr>
+    <tr><td>가중치 감쇠</td><td>$5\times10^{-4}$</td><td>26일차</td></tr>
+    <tr><td>배치 크기</td><td>512</td><td>GPU를 꽉 채우고, 큰 배치에 맞춰 학습률을 키운다</td></tr>
+    <tr><td>학습률</td><td>5에폭 동안 0 → 0.4 선형 증가, 24에폭까지 0으로 선형 감소</td><td>23일차의 원사이클</td></tr>
+    <tr><td>손실</td><td>교차 엔트로피 + 레이블 스무딩 0.1</td><td>26일차</td></tr>
+    <tr><td>정밀도</td><td>float16 혼합 정밀도 + GradScaler (CPU는 bfloat16)</td><td>30일차</td></tr>
+    <tr><td>증강</td><td>자르기, 뒤집기, 컷아웃 8×8</td><td>1단계</td></tr>
+  </tbody>
+</table>
+<figure class="fig">
+{{FIG:lr}}
+<figcaption>스텝마다 정한 학습률. 배치 512면 한 에폭이 98스텝이고 24에폭은 2,352스텝이다.</figcaption>
+</figure>
+
+<h2 data-min="25" data-kind="project">4단계: 학습</h2>
+{{RES:train}}
+
+<h2 data-min="20" data-kind="project">5단계: 평가</h2>
+{{RES:eval}}
+
+<h2 data-min="35" data-kind="project">6단계: Grad-CAM</h2>
+<p>정확도는 "얼마나 맞히는가"만 알려 준다. 모델이 무엇을 근거로 판단하는지 보려면 입력의 어느 부분이 결정에 중요했는지 시각화한다. <dfn data-t="gradcam">Grad-CAM</dfn>(Selvaraju et al., 2017)은 합성곱 층의 특성 맵과 그에 대한 기울기로 이 지도를 만든다.</p>
+<ol class="steps">
+  <li><b>특성 맵과 기울기.</b> 합성곱 층의 출력 $A^k$(채널 $k$, 크기 $H \times W$)와, 클래스 $c$의 점수(로짓) $y^c$를 그 출력으로 미분한 $\frac{\partial y^c}{\partial A^k}$를 구한다.</li>
+  <li><b>채널 가중치.</b> 기울기를 공간에 대해 평균한다: $\alpha_k^c = \frac{1}{HW}\sum_{i,j}\frac{\partial y^c}{\partial A^k_{ij}}$. 채널 $k$가 "클래스 $c$의 점수를 올리는 데 얼마나 중요한가"다.</li>
+  <li><b>지도.</b> 채널들을 가중합하고 ReLU로 양의 기여만 남긴다: $L^c = \mathrm{ReLU}\left(\sum_k \alpha_k^c A^k\right)$. 크기를 입력 해상도로 키워 이미지 위에 겹친다.</li>
+</ol>
+<p>특성 맵과 기울기는 <b>훅</b>으로 꺼낸다. 순전파 훅(<code>register_forward_hook</code>)은 층의 출력을 저장하고, 그 출력 텐서에 건 텐서 훅(<code>register_hook</code>)은 역전파 때 그 텐서에 대한 기울기를 저장한다. 모델 코드를 고치지 않고 중간값을 꺼내는 표준 방법이다. ResNet-9의 마지막 합성곱 출력은 4×4로 너무 거칠어서, layer3의 첫 합성곱 출력(512 × 8 × 8)을 쓴다.</p>
+<pre><code class="language-python">class GradCAM:
+    def __init__(self, model, layer):
+        self.model, self.acts, self.grads = model, None, None
+        layer.register_forward_hook(self._save)
+
+    def _save(self, module, inputs, output):
+        self.acts = output
+        if output.requires_grad:                       # 평가(no_grad) 중에는 건너뛴다
+            output.register_hook(lambda g: setattr(self, "grads", g))
+
+    def __call__(self, x, cls=None):
+        self.model.eval()
+        x = x.clone().requires_grad_(True)
+        logits = self.model(x)
+        cls = logits.argmax(1) if cls is None else cls
+        self.model.zero_grad()
+        logits.gather(1, cls[:, None]).sum().backward()      # 클래스 점수 y^c로 역전파
+        alpha = self.grads.mean(dim=(2, 3), keepdim=True)    # 채널 가중치
+        cam = F.relu((alpha * self.acts).sum(1, keepdim=True))
+        cam = F.interpolate(cam, size=x.shape[-2:], mode="bilinear", align_corners=False)
+        return cam / (cam.amax(dim=(2, 3), keepdim=True) + 1e-8), logits.softmax(1)
+</code></pre>
+{{RES:gradcam}}
+
+<h2 data-min="15" data-kind="project">7단계: 저장과 보고서</h2>
+<p><code>torch.save(model.state_dict(), ...)</code>로 저장하고 새 모델에 불러와 같은 정확도가 나오는지 확인한다(29일차). 아래 질문에 답하는 다섯 문장 이내의 보고서를 쓴다.</p>
+<ol class="steps">
+  <li>모델과 학습 설정은 무엇이고, 각 설정은 어떤 문제를 겨냥하는가?</li>
+  <li>학습 곡선에서 무엇을 읽을 수 있는가? 32일차의 작은 CNN과 비교하면?</li>
+  <li>최종 테스트 정확도와 가장 약한 클래스는 무엇인가?</li>
+  <li>Grad-CAM은 맞힌 예와 틀린 예에서 각각 무엇을 보여 주었는가?</li>
+  <li>정확도를 더 올리려면 무엇을 하겠는가?</li>
+</ol>
+{{RES:report}}
+
+<h2 data-min="10" data-kind="project">확장 과제</h2>
+<ol class="exercises">
+  <li><b>증강 빼 보기.</b> 컷아웃, 뒤집기, 자르기를 하나씩 끄고 다시 학습해 표로 정리하라. 어느 것이 가장 중요한가?
+    <details class="sol"><summary>풀이</summary><p>직접 실행해 표를 채운다. 학습 데이터에서 5,000장을 검증 세트로 떼어 그 정확도로 비교해야 테스트 세트를 오염시키지 않는다(12일차). 증강을 끄면 학습 정확도는 올라가고 검증 정확도는 내려가, 둘의 간격이 벌어지는지 함께 본다.</p></details></li>
+  <li><b>너비 절반.</b> <code>ResNet9(w=32)</code>는 채널이 절반이라 파라미터와 계산량이 약 4분의 1이다. 정확도와 학습 시간을 비교하라.
+    <details class="sol"><summary>풀이</summary><p>파라미터는 1,646,112개로 약 4분의 1이다(합성곱 가중치가 채널 수의 제곱에 비례). 계산량도 약 4분의 1이지만, 좁은 층은 GPU를 덜 채우므로 시간은 4배까지 줄지 않는다. 정확도가 얼마나 떨어지는지 직접 확인한다.</p></details></li>
+  <li><b>틀린 예의 Grad-CAM.</b> 가장 자신 있게 틀린 이미지 8장을 골라 정답 클래스와 예측 클래스의 Grad-CAM을 나란히 그려라. 모델이 무엇을 근거로 틀렸는가?
+    <details class="sol"><summary>풀이</summary><p>배경(하늘, 물, 풀밭)을 근거로 한 실수가 흔하다. 하늘을 나는 새를 비행기로, 물가의 개를 배와 연결하는 식이다. 데이터에서 클래스와 배경이 함께 나타나는 경향(지름길 학습)을 모델이 배웠다는 뜻이다.</p></details></li>
+</ol>

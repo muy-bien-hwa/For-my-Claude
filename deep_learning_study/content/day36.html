@@ -1,0 +1,272 @@
+<ul class="goals">
+  <li>시퀀스 데이터의 특징과 시퀀스 과제의 유형(다대일, 다대다, 시퀀스-시퀀스)을 구별할 수 있다.</li>
+  <li>순환 신경망의 점화식과 시간에 따른 가중치 공유를 설명하고 NumPy로 순전파를 구현할 수 있다.</li>
+  <li>시간에 따른 역전파(BPTT)를 유도·구현하고 수치 미분으로 검증할 수 있다.</li>
+  <li>장기 의존성 문제(기울기 소실·폭발)가 왜 생기는지 순환 가중치의 크기로 설명할 수 있다.</li>
+  <li>NumPy RNN으로 시계열의 다음 값을 예측하고 단순한 기준선과 비교할 수 있다.</li>
+</ul>
+
+<h2 data-min="15" data-kind="concept">시퀀스 데이터</h2>
+<p>문장, 음성, 주가, 센서 기록처럼 순서가 의미를 가지는 데이터를 <dfn data-t="sequence">시퀀스</dfn>라 한다. 이미지와 다른 점이 두 가지 있다. 길이가 제각각이고("좋다"와 "정말 기대 이상으로 좋았다"), 순서를 바꾸면 의미가 바뀐다("개가 사람을 물었다"와 "사람이 개를 물었다"). 다층 퍼셉트론은 입력 크기가 고정되어 있고, 합성곱은 가까운 이웃만 본다. 시퀀스 전체의 맥락을 순서대로 쌓아 가는 구조가 필요하다.</p>
+<table>
+  <thead><tr><th>유형</th><th>입력 → 출력</th><th>예</th></tr></thead>
+  <tbody>
+    <tr><td>다대일</td><td>시퀀스 → 값 하나</td><td>리뷰 감성 분류(42일차), 문장 주제 분류</td></tr>
+    <tr><td>다대다(정렬)</td><td>시퀀스 → 같은 길이 시퀀스</td><td>다음 값 예측(오늘), 품사 태깅, 언어 모델(40일차)</td></tr>
+    <tr><td>시퀀스-시퀀스</td><td>시퀀스 → 길이가 다른 시퀀스</td><td>번역, 요약, 날짜 형식 변환(41일차)</td></tr>
+    <tr><td>일대다</td><td>값 하나 → 시퀀스</td><td>이미지 설명 생성, 음악 생성</td></tr>
+  </tbody>
+</table>
+
+<h2 data-min="25" data-kind="concept">순환 신경망</h2>
+<p><dfn data-t="rnn">순환 신경망</dfn>(RNN)은 시퀀스를 한 원소씩 읽으며, 지금까지 읽은 내용을 요약한 벡터 $h_t$를 갱신한다. 이 벡터가 <dfn data-t="hidden-state">은닉 상태</dfn>다. 시점 $t$의 입력 $x_t$와 이전 은닉 상태 $h_{t-1}$로 새 은닉 상태를 만들고, 필요하면 출력 $y_t$를 낸다.</p>
+<p>$$h_t = \tanh(x_t W_x + h_{t-1} W_h + b_h), \qquad y_t = h_t W_y + b_y, \qquad h_0 = 0$$</p>
+<p>핵심은 <b>모든 시점에서 같은 가중치</b> $W_x, W_h, W_y$를 쓴다는 것이다. 합성곱이 공간 위치마다 같은 커널을 쓰듯(31일차), RNN은 시점마다 같은 가중치를 쓴다. 그래서 길이가 100이든 1,000이든 파라미터 수가 같고, 3번째 단어를 처리하는 방법을 배우면 30번째 단어에도 그대로 쓴다.</p>
+<div class="viz-mount" data-viz="rnn-unroll"></div>
+<div class="box ex" data-title="은닉 상태 2개짜리 RNN을 손으로"><p>입력이 수 하나, 은닉 상태가 2차원이고 $W_x = [1,\ -1]$, $W_h = \begin{bmatrix}0.5 & 0\\ 0 & 0.5\end{bmatrix}$, $b_h = 0$이라 하자. 입력 시퀀스 $(1, 2)$에 대해</p>
+<ul>
+<li>$h_1 = \tanh([1, -1] + [0, 0]) = [0.762,\ -0.762]$</li>
+<li>$h_2 = \tanh([2, -2] + 0.5 \cdot [0.762, -0.762]) = \tanh([2.381, -2.381]) = [0.983,\ -0.983]$</li>
+</ul>
+<p>$h_2$에는 두 입력이 모두 반영되어 있다. $W_h$가 이전 상태를 얼마나 남길지 정한다. 0이면 RNN은 직전 입력만 보는 다층 퍼셉트론이 된다.</p></div>
+<p>형상은 다음과 같다. 배치 $B$, 길이 $T$, 입력 차원 $D$, 은닉 차원 $H$, 출력 차원 $O$일 때 입력 $(T, B, D)$, 은닉 상태 $(T+1, B, H)$, 출력 $(T, B, O)$이고 $W_x$는 $D \times H$, $W_h$는 $H \times H$, $W_y$는 $H \times O$다.</p>
+
+<h2 data-min="15" data-kind="practice">순전파 구현</h2>
+<pre class="run"><code>import numpy as np
+import matplotlib.pyplot as plt
+import time
+
+def init_rnn(H=32, D=1, O=1, seed=0):
+    r = np.random.default_rng(seed)
+    return {"Wx": r.normal(0, 1.0, (D, H)), "Wh": r.normal(0, 1 / np.sqrt(H), (H, H)),
+            "bh": np.zeros(H), "Wy": r.normal(0, 1 / np.sqrt(H),
+                                              (H, O)), "by": np.zeros(O)}
+
+def rnn_forward(P, xs, h0=None):
+    """xs: (T, B, D) → hs: (T+1, B, H), ys: (T, B, O)"""
+    T, B, _ = xs.shape
+    hs = np.zeros((T + 1, B, P["Wh"].shape[0]))
+    if h0 is not None:
+        hs[0] = h0
+    ys = np.zeros((T, B, P["Wy"].shape[1]))
+    for t in range(T):                                   # 같은 가중치를 시점마다 쓴다
+        hs[t + 1] = np.tanh(xs[t] @ P["Wx"] + hs[t] @ P["Wh"] + P["bh"])
+        ys[t] = hs[t + 1] @ P["Wy"] + P["by"]
+    return hs, ys
+
+# 손 계산 예제 확인
+P_toy = {"Wx": np.array([[1.0, -1.0]]), "Wh": 0.5 * np.eye(2), "bh": np.zeros(2),
+         "Wy": np.zeros((2, 1)), "by": np.zeros(1)}
+hs, _ = rnn_forward(P_toy, np.array([1.0, 2.0]).reshape(2, 1, 1))
+print("h1 =", hs[1, 0].round(3), " h2 =", hs[2, 0].round(3))
+P = init_rnn()
+hs, ys = rnn_forward(P, np.random.default_rng(1).standard_normal((50, 4, 1)))
+print("은닉 상태", hs.shape, " 출력", ys.shape, " 파라미터",
+      sum(v.size for v in P.values()))
+</code></pre>
+
+<h2 data-min="25" data-kind="concept">시간에 따른 역전파</h2>
+<p>RNN을 시간 방향으로 펼치면 층이 $T$개인 깊은 신경망과 같다. 다만 모든 층이 같은 가중치를 쓴다. 이 펼친 그래프에서 역전파하는 것을 <dfn data-t="bptt">BPTT</dfn>(시간에 따른 역전파)라 한다. 18일차의 방법을 그대로 쓰되 두 가지가 다르다.</p>
+<ol class="steps">
+  <li><b>은닉 상태의 기울기는 두 곳에서 온다.</b> $h_t$는 그 시점의 출력 $y_t$와 다음 은닉 상태 $h_{t+1}$에 모두 쓰인다. 그래서 $\frac{\partial L}{\partial h_t} = \frac{\partial L}{\partial y_t}W_y^\top + \frac{\partial L}{\partial z_{t+1}}W_h^\top$이다($z_{t+1}$은 $\tanh$에 들어가기 전의 값). 뒤 시점부터 거꾸로 계산하며 둘째 항을 넘겨준다.</li>
+  <li><b>가중치의 기울기는 모든 시점에 걸쳐 더한다.</b> 같은 $W_h$가 $T$번 쓰였으므로 시점마다의 기여를 모두 더한다(18일차의 기울기 누적, 31일차의 커널 기울기와 같은 원리).</li>
+</ol>
+<p>$\tanh$의 미분은 $1 - \tanh^2$이므로 $\frac{\partial L}{\partial z_t} = \frac{\partial L}{\partial h_t} \odot (1 - h_t^2)$, 그리고 $\frac{\partial L}{\partial W_h} \mathrel{+}= h_{t-1}^\top \frac{\partial L}{\partial z_t}$, $\frac{\partial L}{\partial W_x} \mathrel{+}= x_t^\top \frac{\partial L}{\partial z_t}$다.</p>
+<pre class="run"><code>def rnn_loss_grads(P, xs, ts):
+    """평균제곱오차와 BPTT 기울기"""
+    hs, ys = rnn_forward(P, xs)
+    T = xs.shape[0]
+    err = ys - ts
+    loss = (err ** 2).mean()
+    G = {k: np.zeros_like(v) for k, v in P.items()}
+    dy = 2 * err / err.size
+    # 다음 시점에서 넘어오는 기울기
+    dz_next = np.zeros_like(hs[0])
+    for t in reversed(range(T)):
+        G["Wy"] += hs[t + 1].T @ dy[t]
+        G["by"] += dy[t].sum(0)
+        dh = dy[t] @ P["Wy"].T + dz_next @ P["Wh"].T      # 출력 + 다음 은닉 상태
+        dz = dh * (1 - hs[t + 1] ** 2)                    # tanh 미분
+        G["Wx"] += xs[t].T @ dz                            # 모든 시점에 걸쳐 더한다
+        G["Wh"] += hs[t].T @ dz
+        G["bh"] += dz.sum(0)
+        dz_next = dz
+    return loss, G
+
+# 기울기 검증 (20일차): 작은 RNN, 길이 7, 배치 3
+rng = np.random.default_rng(2)
+P_small = init_rnn(H=5, seed=1)
+xs, ts = rng.standard_normal((7, 3, 1)), rng.standard_normal((7, 3, 1))
+loss, G = rnn_loss_grads(P_small, xs, ts)
+worst = 0.0
+for k in P_small:
+    num = np.zeros_like(P_small[k])
+    for idx in np.ndindex(P_small[k].shape):
+        o = P_small[k][idx]
+        P_small[k][idx] = o + 1e-6
+        lp = rnn_loss_grads(P_small, xs, ts)[0]
+        P_small[k][idx] = o - 1e-6
+        lm = rnn_loss_grads(P_small, xs, ts)[0]
+        P_small[k][idx] = o
+        num[idx] = (lp - lm) / 2e-6
+    worst = max(worst, np.abs(num - G[k]).max() / (np.abs(num).max() + 1e-12))
+print(f"BPTT 기울기의 최대 상대 오차: {worst:.1e}")
+</code></pre>
+
+<h2 data-min="20" data-kind="concept">장기 의존성 문제</h2>
+<p>"이 영화는 처음 30분은 지루했지만 ... (중략) ... 결국 최고였다"처럼, 먼 앞의 정보가 한참 뒤의 판단에 필요한 경우를 <dfn data-t="long-term-dependency">장기 의존성</dfn>이라 한다. 기본 RNN은 이것을 배우기 어렵다. 시점 $t$의 은닉 상태가 $T$에서의 손실에 주는 영향은 연쇄법칙으로</p>
+<p>$$\frac{\partial h_T}{\partial h_t} = \prod_{k=t+1}^{T} \mathrm{diag}(1 - h_k^2)\, W_h^\top$$</p>
+<p>이다. 같은 행렬 $W_h$를 $T - t$번 곱한다. $W_h$의 크기(가장 큰 고윳값의 크기)가 1보다 작으면 이 곱은 거리에 따라 지수적으로 0에 가까워지고(기울기 소실), 1보다 크면 지수적으로 커진다(기울기 폭발). $\tanh$의 미분은 1 이하라 소실 쪽으로 더 기운다. 24일차의 깊은 망에서 본 현상이 시간 방향으로 일어나는 것이다. 다른 점은 같은 행렬을 반복해 곱한다는 것이다. 층마다 다른 행렬이면 운 좋게 서로 상쇄될 수도 있지만, 같은 행렬의 거듭제곱은 고윳값을 그대로 증폭한다.</p>
+<div class="viz-mount" data-viz="bptt"></div>
+<pre class="run"><code>def grad_through_time(scale, T=50, H=32, seed=0):
+    """마지막 은닉 상태에서 시작한 기울기가 시점 t까지 거꾸로 전달될 때의 크기"""
+    r = np.random.default_rng(seed)
+    # scale ≈ W_h의 대표 고윳값 크기
+    Wh = r.normal(0, scale / np.sqrt(H), (H, H))
+    x = 0.5 * r.standard_normal((T, H))
+    hs = [np.zeros(H)]
+    for t in range(T):
+        hs.append(np.tanh(x[t] + hs[-1] @ Wh))
+    g, norms = np.ones(H) / np.sqrt(H), [1.0]
+    for t in reversed(range(T)):
+        g = (g * (1 - hs[t + 1] ** 2)) @ Wh.T
+        norms.append(np.linalg.norm(g))
+    return np.array(norms[::-1])                        # norms[t] = 시점 t에서의 크기
+
+plt.figure(figsize=(6, 3.2))
+for sc in (0.5, 1.0, 2.0, 4.0):
+    n = grad_through_time(sc)
+    plt.semilogy(n, label=f"W_h 배율 {sc}")
+    print(f"배율 {sc}: 시점 0에서 {n[0]:.1e},  시점 25에서 {n[25]:.1e}  (시점 50에서 "
+          f"1)")
+plt.xlabel("시점 t")
+plt.ylabel("‖∂L/∂h_t‖")
+plt.legend(fontsize=8)
+plt.grid(alpha=.3)
+plt.show()
+</code></pre>
+<p>배율 0.5에서는 기울기가 50시점 전에 $10^{-19}$까지 사라지고, 배율 4에서는 $10^9$로 폭발한다. 폭발은 기울기 클리핑(24일차)으로 막을 수 있지만, 소실은 클리핑으로 해결되지 않는다. 기울기를 키울 수는 없기 때문이다. 내일의 LSTM과 GRU가 구조로 이 문제를 푼다.</p>
+
+<h2 data-min="10" data-kind="concept">실무에서의 대처</h2>
+<ul>
+  <li><b>기울기 클리핑.</b> 기울기의 전체 노름이 임계값을 넘으면 줄인다. RNN 학습에서는 거의 항상 쓴다.</li>
+  <li><b>잘린 BPTT.</b> 아주 긴 시퀀스(예: 책 한 권)는 길이 $k$(예: 100) 구간으로 잘라 그 안에서만 역전파한다. 은닉 상태는 구간을 넘어 이어 주되(<code>h.detach()</code>), 기울기는 구간 경계에서 끊는다. 메모리와 시간이 $k$에 비례하게 된다. 대신 $k$보다 먼 의존성은 배우기 어렵다.</li>
+  <li><b>초기화.</b> $W_h$를 직교 행렬이나 항등 행렬에 가깝게 시작하면 초기에 기울기가 덜 사라진다.</li>
+  <li><b>게이트 구조.</b> LSTM, GRU(37일차). 정보와 기울기가 곱셈 대신 덧셈으로 전달되는 길을 만든다. 33일차의 잔차 연결과 같은 발상이다.</li>
+</ul>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>RNN: $h_t = \tanh(x_tW_x + h_{t-1}W_h + b)$. 모든 시점에서 같은 가중치. 은닉 상태 = 지금까지의 요약.</li>
+  <li>BPTT: 펼친 그래프에서 역전파. $\partial L/\partial h_t$는 출력과 다음 시점에서 오고, 가중치 기울기는 시점에 걸쳐 더한다.</li>
+  <li>장기 의존성 문제: 같은 $W_h$의 반복 곱 → 크기가 1보다 작으면 소실, 크면 폭발.</li>
+  <li>대처: 클리핑(폭발), 잘린 BPTT(길이), 초기화, 게이트 구조(소실).</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"영화 리뷰 한 편을 읽고 긍정·부정을 판단하는 과제의 유형은?","o":["일대다","다대일","다대다(정렬)","시퀀스-시퀀스"],"a":1,"e":"시퀀스를 읽고 값 하나를 낸다. 마지막 은닉 상태를 분류기에 넣는다."},
+ {"q":"RNN의 파라미터 수는 입력 시퀀스의 길이에 따라 어떻게 되는가?","o":["길이에 비례한다","길이와 무관하다","길이의 제곱","길이의 로그"],"a":1,"e":"모든 시점에서 같은 가중치를 쓴다."},
+ {"q":"은닉 차원 H = 64, 입력 차원 D = 10인 RNN 셀(출력층 제외)의 파라미터 수는?","o":["640","4,096","4,800","4,736"],"a":2,"e":"W_x 10×64 = 640, W_h 64×64 = 4,096, b 64 → 4,800."},
+ {"q":"BPTT에서 ∂L/∂h_t가 두 항의 합인 이유는?","o":["tanh 때문","h_t가 출력 y_t와 다음 은닉 상태 h_{t+1}에 모두 쓰이기 때문","배치 때문","편향 때문"],"a":1,"e":"여러 곳에 쓰인 변수의 기울기는 더한다."},
+ {"q":"W_h의 가장 큰 고윳값의 크기가 0.5인 RNN에서 50시점 떨어진 의존성을 배우기 어려운 이유는?","o":["기울기가 폭발해서","기울기가 대략 0.5⁵⁰처럼 지수적으로 작아져서","파라미터가 부족해서","학습률이 커서"],"a":1,"e":"기울기 소실."},
+ {"q":"기울기 폭발에는 효과가 있지만 기울기 소실에는 효과가 없는 것은?","o":["LSTM","기울기 클리핑","잔차 연결","직교 초기화"],"a":1,"e":"클리핑은 큰 기울기를 줄일 뿐 작은 기울기를 키우지 못한다."},
+ {"q":"잘린 BPTT에서 구간 경계에서 h.detach()를 하는 이유는?","o":["은닉 상태를 0으로 만들려고","은닉 상태의 값은 이어 주되 기울기 계산은 구간 안에서 끝내려고","속도 때문에 값을 버린다","배치를 섞으려고"],"a":1,"e":"값은 유지, 그래프는 끊는다."},
+ {"q":"RNN의 시간 방향 가중치 공유와 가장 비슷한 것은?","o":["드롭아웃","합성곱의 공간 방향 가중치 공유","배치 정규화","최대 풀링"],"a":1,"e":"합성곱은 위치마다, RNN은 시점마다 같은 가중치를 쓴다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>손 계산 예제에서 $W_h = 0$이면 $h_2$는 얼마인가? 이때 RNN은 어떤 모델과 같아지는가?
+    <details class="sol"><summary>풀이</summary><p>$h_2 = \tanh([2, -2]) = [0.964,\ -0.964]$. 이전 상태를 쓰지 않으므로 시점마다 독립인 1층 신경망(다층 퍼셉트론을 시점마다 적용)과 같다. 순서 정보가 사라진다.</p></details></li>
+  <li>$W_h = 0.9I$(항등 행렬의 0.9배)이고 $\tanh$의 미분이 모두 1에 가깝다면, 100시점 뒤의 기울기는 처음의 몇 배인가? $W_h = 1.1I$라면?
+    <details class="sol"><summary>풀이</summary><p>$0.9^{100} \approx 2.7\times10^{-5}$배로 소실, $1.1^{100} \approx 1.4\times10^{4}$배로 폭발. 1에서 10%만 벗어나도 100시점이면 네 자릿수 이상 달라진다.</p></details></li>
+  <li><code>rnn_loss_grads</code>를 잘린 BPTT로 바꾸려면 무엇을 바꿔야 하는가? 길이 1,000 시퀀스를 길이 50 구간으로 나눠 학습하는 반복문을 쓰라.
+    <details class="sol"><summary>풀이</summary><p><code>rnn_forward</code>가 초기 은닉 상태 <code>h0</code>를 받도록 하고(이미 받는다), 손실·기울기 함수도 <code>h0</code>를 받아 넘기게 한다. 반복문에서 구간마다 이전 구간의 마지막 은닉 상태를 <code>h0</code>로 넘기되, 기울기는 그 구간 안에서만 계산한다(NumPy에서는 자동으로 끊긴다).</p>
+<pre><code>h = np.zeros((1, H))
+for s in range(0, 1000 - 50, 50):
+    xs, ts = seq[s:s + 50, None, None], seq[s + 1:s + 51, None, None]
+    loss, G = rnn_loss_grads_h0(P, xs, ts, h)      # h0를 받는 버전
+    update(P, G)
+    h = rnn_forward(P, xs, h)[0][-1]               # 값만 다음 구간으로
+</code></pre></details></li>
+</ol>
+
+<h2 data-min="45" data-kind="project">미니 프로젝트: NumPy RNN으로 다음 값 예측</h2>
+<section class="project" data-title="두 사인파의 합에 잡음이 섞인 시계열에서 다음 값을 예측하는 RNN을 학습하고 기준선과 비교하기" data-min="45">
+<p class="lead">시계열의 다음 값을 맞히는 RNN을 직접 학습한다. "직전 값을 그대로 쓰기"와 선형 자기회귀 모델을 기준선으로 두고, 학습한 RNN이 예측을 자기 입력으로 다시 받아 계속 생성할 때 무슨 일이 생기는지도 본다.</p>
+<ol class="steps">
+<li><b>데이터.</b> 주기 50과 17인 사인파의 합에 표준편차 0.1의 잡음을 더한 길이 2,000의 시계열이다. 앞 1,500개로 학습하고 뒤 500개로 평가한다. 잡음은 예측할 수 없으므로 어떤 모델도 평균제곱오차 0.01(잡음의 분산) 아래로 내려가기 어렵다.
+<pre class="run"><code>rng = np.random.default_rng(0)
+t_all = np.arange(2000)
+clean = np.sin(2 * np.pi * t_all / 50) + 0.5 * np.sin(2 * np.pi * t_all / 17)
+series = clean + 0.1 * rng.standard_normal(2000)
+train_s, test_s = series[:1500], series[1500:]
+plt.figure(figsize=(8, 2.4))
+plt.plot(series[:300], lw=1)
+plt.xlabel("시점")
+plt.title("앞 300개")
+plt.show()
+
+def sample_batch(s, L=50, B=32):
+    """길이 L 구간 B개: 입력은 s[i:i+L], 목표는 한 칸 뒤 s[i+1:i+L+1]"""
+    idx = rng.integers(0, len(s) - L - 1, B)
+    X = np.stack([s[i:i + L] for i in idx], 1)[..., None]
+    Y = np.stack([s[i + 1:i + L + 1] for i in idx], 1)[..., None]
+    return X, Y
+</code></pre></li>
+<li><b>학습.</b> 은닉 32의 RNN을 Adam(학습률 0.003)으로 1,500스텝 학습한다. 기울기 노름이 1을 넘으면 1로 자른다.
+<pre class="run"><code>P = init_rnn(H=32, seed=0)
+m = {k: np.zeros_like(v) for k, v in P.items()}
+v2 = {k: np.zeros_like(v) for k, v in P.items()}
+t0 = time.perf_counter()
+for step in range(1, 1501):
+    X, Y = sample_batch(train_s)
+    loss, G = rnn_loss_grads(P, X, Y)
+    gnorm = np.sqrt(sum((g ** 2).sum() for g in G.values()))
+    if gnorm &gt; 1:                                        # 기울기 클리핑
+        G = {k: g / gnorm for k, g in G.items()}
+    for k in P:                                          # Adam (22일차)
+        m[k] = 0.9 * m[k] + 0.1 * G[k]
+        v2[k] = 0.999 * v2[k] + 0.001 * G[k] ** 2
+        m_hat, v_hat = m[k] / (1 - 0.9 ** step), v2[k] / (1 - 0.999 ** step)
+        P[k] -= 3e-3 * m_hat / (np.sqrt(v_hat) + 1e-8)
+    if step % 300 == 0:
+        print(f"스텝 {step:4d}  학습 손실 {loss:.4f}  "
+              f"({time.perf_counter() - t0:.1f}초)")
+</code></pre></li>
+<li><b>평가와 기준선.</b> 테스트 구간을 처음부터 읽으며 매 시점 다음 값을 예측한다. 기준선은 (a) 직전 값을 그대로 쓰기, (b) 직전 10개 값의 선형 결합(최소제곱, 8일차)이다.
+<pre class="run"><code>hs, ys = rnn_forward(P, test_s[:-1, None, None])
+mse_rnn = ((ys[:, 0, 0] - test_s[1:]) ** 2).mean()
+mse_last = ((test_s[:-1] - test_s[1:]) ** 2).mean()
+k = 10
+A = np.stack([train_s[i:i + k] for i in range(len(train_s) - k)])
+w_ar = np.linalg.lstsq(np.c_[A, np.ones(len(A))], train_s[k:], rcond=None)[0]
+At = np.stack([test_s[i:i + k] for i in range(len(test_s) - k)])
+mse_ar = ((np.c_[At, np.ones(len(At))] @ w_ar - test_s[k:]) ** 2).mean()
+print(f"한 단계 예측 MSE: RNN {mse_rnn:.4f},  직전 값 {mse_last:.4f},  선형 AR(10) "
+      f"{mse_ar:.4f}  (잡음 분산 0.01)")
+</code></pre></li>
+<li><b>자유 생성.</b> 테스트 구간의 처음 100개로 은닉 상태를 만든 뒤, 그다음부터는 RNN의 예측을 다음 입력으로 넣으며 300개를 생성한다. 잡음 없는 원래 신호와 비교한다.
+<pre class="run"><code>hs, ys = rnn_forward(P, test_s[:100, None, None])
+h, x = hs[-1], ys[-1]
+gen = []
+for _ in range(300):
+    h = np.tanh(x @ P["Wx"] + h @ P["Wh"] + P["bh"])
+    x = h @ P["Wy"] + P["by"]
+    gen.append(x[0, 0])
+gen = np.array(gen)
+truth = clean[1600:1900]
+for a, b in [(0, 100), (100, 200), (200, 300)]:
+    print(f"자유 생성 {a + 1:3d}~{b}번째 값의 MSE: "
+          f"{((gen[a:b] - truth[a:b]) ** 2).mean():.4f}")
+print(f"표준편차(진폭): 생성 {gen.std():.3f},  원래 신호 {truth.std():.3f}")
+plt.figure(figsize=(9, 2.6))
+plt.plot(range(100), test_s[:100], lw=1, label="관측(입력)")
+plt.plot(range(100, 400), truth, "k--", lw=1, label="잡음 없는 신호")
+plt.plot(range(100, 400), gen, lw=1.6, label="RNN 자유 생성")
+plt.legend(fontsize=8); plt.xlabel("테스트 구간의 시점"); plt.show()
+</code></pre></li>
+</ol>
+<details class="sol"><summary>결과 해석</summary><p>한 단계 예측에서 RNN의 오차(0.0168)는 직전 값 기준선(0.0466)의 약 3분의 1이고 선형 AR(10)(0.0291)보다도 작다. 잡음의 분산 0.01에 가까워, 예측할 수 있는 부분은 대부분 맞힌다.</p><p>자유 생성의 처음 100개는 잡음 없는 신호와의 오차가 0.0091로, 잡음 섞인 관측값(오차 0.01)보다도 원래 신호에 가깝다. RNN이 잡음이 아니라 신호의 규칙(두 진동의 합)을 배웠다는 뜻이다. 그러나 101~200번째는 0.0377, 201~300번째는 0.1494로 오차가 커진다. 진폭(표준편차 0.81 대 0.79)은 유지되지만 위상이 조금씩 어긋나기 때문이다. 학습 때는 항상 진짜 이전 값을 입력으로 받았는데(41일차의 교사 강요), 생성할 때는 자기의 예측을 받으므로 작은 오차가 누적된다. 언어 모델의 문장 생성(40일차)에서도 같은 일이 생긴다.</p></details>
+</section>

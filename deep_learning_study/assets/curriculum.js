@@ -81,4 +81,4 @@ window.CURRICULUM = {
   ]
 };
 /* 집필이 끝난 날짜. 나머지는 '준비 중'으로 표시된다. */
-window.CURRICULUM.ready = Array.from({ length: 31 }, (_, i) => i + 1);
+window.CURRICULUM.ready = Array.from({ length: 36 }, (_, i) => i + 1);

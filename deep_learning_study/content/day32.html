@@ -1,0 +1,272 @@
+<ul class="goals">
+  <li>합성곱 블록과 풀링을 쌓아 합성곱 신경망을 설계하고, 층마다 출력 형상·파라미터·연산량을 계산할 수 있다.</li>
+  <li>층이 깊어질수록 특징이 단순한 무늬에서 물체의 부분으로 바뀌는 특징의 계층을 설명할 수 있다.</li>
+  <li>수용 영역을 계산하고 커널 크기, 스트라이드, 풀링이 수용 영역에 주는 영향을 설명할 수 있다.</li>
+  <li>LeNet, AlexNet, VGG의 핵심 아이디어와 1×1 합성곱, 전역 평균 풀링의 쓰임을 설명할 수 있다.</li>
+  <li>PyTorch로 CNN을 만들어 MNIST 99%를 넘기고, CIFAR-10에서 다층 퍼셉트론과 비교할 수 있다.</li>
+</ul>
+
+<h2 data-min="15" data-kind="concept">합성곱 신경망의 구성</h2>
+<p><dfn data-t="cnn">합성곱 신경망</dfn>(CNN)은 31일차의 합성곱 층을 여러 개 쌓은 신경망이다. 대부분의 CNN은 같은 틀을 따른다.</p>
+<ol class="steps">
+  <li><b>합성곱 블록.</b> 3×3 합성곱 → 배치 정규화 → ReLU. 같은 해상도에서 두세 번 반복한다.</li>
+  <li><b>해상도 줄이기.</b> 2×2 최대 풀링(또는 스트라이드 2 합성곱)으로 가로세로를 절반으로 줄이고, 그만큼 채널을 두 배로 늘린다. 공간 정보를 채널(특징의 종류)로 바꿔 가는 셈이다. 해상도가 절반이면 칸 수는 4분의 1이므로 채널을 두 배로 늘려도 층의 계산량은 비슷하게 유지된다.</li>
+  <li><b>분류기.</b> 마지막 특성 맵을 전역 평균 풀링으로 채널마다 값 하나로 줄이고, 선형층으로 클래스 점수를 낸다.</li>
+</ol>
+<figure class="fig">
+<svg viewBox="0 0 640 220" width="640" role="img" aria-label="작은 CNN에서 특성 맵의 크기와 채널 수의 변화">
+  <g font-size="11.5">
+  <path d="M53.0 60.0 l9 -9 h4.9 v104.0 l-9 9 z" class="s-f" stroke-width="1" opacity=".5"/>
+  <rect x="53.0" y="60.0" width="4.9" height="104.0" class="s-f" stroke-width="1"/>
+  <text x="60.0" y="184" text-anchor="middle" class="s-tx" font-size="11">3×32×32</text>
+  <text x="60.0" y="201" text-anchor="middle" class="s-txm" font-size="11">입력</text>
+  <path d="M86.0 112 h28" class="s-mu" stroke-width="1.2"/>
+  <path d="M128.7 60.0 l9 -9 h13.6 v104.0 l-9 9 z" class="s-acs" stroke-width="1" opacity=".5"/>
+  <rect x="128.7" y="60.0" width="13.6" height="104.0" class="s-acs" stroke-width="1"/>
+  <text x="140.0" y="184" text-anchor="middle" class="s-tx" font-size="11">32×32×32</text>
+  <text x="140.0" y="201" text-anchor="middle" class="s-txm" font-size="11">블록 ×2</text>
+  <path d="M166.0 112 h28" class="s-mu" stroke-width="1.2"/>
+  <path d="M208.7 84.0 l9 -9 h13.6 v56.0 l-9 9 z" class="s-f2" stroke-width="1" opacity=".5"/>
+  <rect x="208.7" y="84.0" width="13.6" height="56.0" class="s-f2" stroke-width="1"/>
+  <text x="220.0" y="184" text-anchor="middle" class="s-tx" font-size="11">32×16×16</text>
+  <text x="220.0" y="201" text-anchor="middle" class="s-txm" font-size="11">풀링</text>
+  <path d="M246.0 112 h28" class="s-mu" stroke-width="1.2"/>
+  <path d="M283.9 84.0 l9 -9 h23.2 v56.0 l-9 9 z" class="s-acs" stroke-width="1" opacity=".5"/>
+  <rect x="283.9" y="84.0" width="23.2" height="56.0" class="s-acs" stroke-width="1"/>
+  <text x="300.0" y="184" text-anchor="middle" class="s-tx" font-size="11">64×16×16</text>
+  <text x="300.0" y="201" text-anchor="middle" class="s-txm" font-size="11">블록 ×2</text>
+  <path d="M326.0 112 h28" class="s-mu" stroke-width="1.2"/>
+  <path d="M363.9 96.0 l9 -9 h23.2 v32.0 l-9 9 z" class="s-f2" stroke-width="1" opacity=".5"/>
+  <rect x="363.9" y="96.0" width="23.2" height="32.0" class="s-f2" stroke-width="1"/>
+  <text x="380.0" y="184" text-anchor="middle" class="s-tx" font-size="11">64×8×8</text>
+  <text x="380.0" y="201" text-anchor="middle" class="s-txm" font-size="11">풀링</text>
+  <path d="M406.0 112 h28" class="s-mu" stroke-width="1.2"/>
+  <path d="M434.3 96.0 l9 -9 h42.4 v32.0 l-9 9 z" class="s-acs" stroke-width="1" opacity=".5"/>
+  <rect x="434.3" y="96.0" width="42.4" height="32.0" class="s-acs" stroke-width="1"/>
+  <text x="460.0" y="184" text-anchor="middle" class="s-tx" font-size="11">128×8×8</text>
+  <text x="460.0" y="201" text-anchor="middle" class="s-txm" font-size="11">블록 ×2</text>
+  <path d="M486.0 112 h28" class="s-mu" stroke-width="1.2"/>
+  <path d="M514.3 106.5 l9 -9 h42.4 v11.0 l-9 9 z" class="s-f2" stroke-width="1" opacity=".5"/>
+  <rect x="514.3" y="106.5" width="42.4" height="11.0" class="s-f2" stroke-width="1"/>
+  <text x="540.0" y="184" text-anchor="middle" class="s-tx" font-size="11">128</text>
+  <text x="540.0" y="201" text-anchor="middle" class="s-txm" font-size="11">전역 평균</text>
+  <path d="M566.0 112 h28" class="s-mu" stroke-width="1.2"/>
+  <rect x="609.5" y="77.0" width="12.0" height="70.0" class="s-orgf" stroke-width="1" opacity=".85"/>
+  <text x="620.0" y="184" text-anchor="middle" class="s-tx" font-size="11">10</text>
+  <text x="620.0" y="201" text-anchor="middle" class="s-txm" font-size="11">선형</text>
+  <text x="320" y="20" text-anchor="middle" class="s-txm">높이: 공간 크기(32 → 16 → 8 → 1), 두께: 채널 수(3 → 32 → 64 → 128)</text>
+  </g>
+</svg>
+<figcaption>오늘 실습의 CNN이 CIFAR-10 이미지를 처리할 때의 특성 맵 크기. 공간 크기는 32 → 16 → 8로 줄고 채널은 32 → 64 → 128로 는다.</figcaption>
+</figure>
+<p>합성곱 뒤에 배치 정규화가 오면 합성곱의 편향은 쓸모가 없다. 배치 정규화가 평균을 빼면서 편향을 지우고, 대신 자기의 $\beta$로 이동을 학습하기 때문이다. 그래서 <code>nn.Conv2d(..., bias=False)</code>로 둔다. CNN의 배치 정규화(<code>nn.BatchNorm2d</code>)는 채널마다 하나의 평균·분산을 배치와 모든 위치($N, H, W$)에 걸쳐 구한다(25일차).</p>
+
+<h2 data-min="15" data-kind="concept">특징의 계층</h2>
+<p>층이 쌓이면 뒤쪽 층은 앞쪽 층이 찾은 특징들의 조합을 찾는다. ImageNet으로 학습한 CNN을 들여다보면(Zeiler &amp; Fergus, 2014) 대략 다음 순서가 보인다.</p>
+<table>
+  <thead><tr><th>층</th><th>반응하는 것</th><th>보는 범위</th></tr></thead>
+  <tbody>
+    <tr><td>첫 층</td><td>방향별 경계, 색 대비</td><td>3×3 ~ 11×11 픽셀</td></tr>
+    <tr><td>중간 층</td><td>질감, 모서리, 원, 격자 무늬</td><td>수십 픽셀</td></tr>
+    <tr><td>깊은 층</td><td>눈, 바퀴, 털 같은 물체의 부분</td><td>이미지의 상당 부분</td></tr>
+    <tr><td>마지막 층</td><td>클래스와 직결된 조합(개 얼굴, 자동차 앞부분)</td><td>이미지 전체</td></tr>
+  </tbody>
+</table>
+<p>이 계층은 사람이 설계한 것이 아니라 분류 손실을 줄이는 과정에서 저절로 생긴다. 31일차의 미니 프로젝트에서 소벨 커널을 학습으로 되찾은 것처럼, 첫 층은 경계 검출기에 가까운 커널을 배운다. 미니 프로젝트 4단계에서 직접 학습한 CNN의 특성 맵을 본다.</p>
+
+<h2 data-min="20" data-kind="concept">수용 영역</h2>
+<p>어떤 층의 한 칸의 값에 영향을 주는 입력 픽셀의 범위를 그 칸의 <dfn data-t="receptive-field">수용 영역</dfn>이라 한다. 3×3 합성곱 한 층의 한 칸은 입력 3×3을 보지만, 그 위에 3×3 합성곱을 한 번 더 쌓으면 위층의 한 칸은 아래층 3×3을 보고, 그 각각이 입력 3×3을 보므로 입력 5×5를 본다. 층 $l$의 수용 영역 $r_l$과 점프 $j_l$(위층의 이웃한 두 칸이 입력에서 몇 픽셀 떨어져 있는가)은 다음과 같이 늘어난다.</p>
+<p>$$r_l = r_{l-1} + (k_l - 1)\,j_{l-1}, \qquad j_l = j_{l-1}\,s_l, \qquad r_0 = j_0 = 1$$</p>
+<p>스트라이드나 풀링이 점프를 키우면 그 뒤의 층은 같은 커널로도 수용 영역을 더 빨리 넓힌다.</p>
+<div class="viz-mount" data-viz="receptive-field"></div>
+<div class="box ex" data-title="오늘 실습 CNN의 수용 영역"><p>3×3 합성곱 2 → 풀링 → 3×3 합성곱 2 → 풀링 → 3×3 합성곱 2.</p>
+<table>
+  <thead><tr><th>층</th><th>3×3</th><th>3×3</th><th>풀링 2</th><th>3×3</th><th>3×3</th><th>풀링 2</th><th>3×3</th><th>3×3</th></tr></thead>
+  <tbody>
+    <tr><td>점프 $j$</td><td>1</td><td>1</td><td>2</td><td>2</td><td>2</td><td>4</td><td>4</td><td>4</td></tr>
+    <tr><td>수용 영역 $r$</td><td>3</td><td>5</td><td>6</td><td>10</td><td>14</td><td>16</td><td>24</td><td>32</td></tr>
+  </tbody>
+</table>
+<p>마지막 합성곱 층의 한 칸은 입력 32×32, 즉 CIFAR-10 이미지 전체를 본다. 마지막 층의 수용 영역이 물체 크기보다 작으면 어떤 칸도 물체 전체를 보지 못한다.</p></div>
+<p>계산상의 수용 영역은 "영향을 줄 수 있는" 범위다. 실제로는 가운데 픽셀이 훨씬 큰 영향을 주고 가장자리로 갈수록 영향이 빠르게 줄어, 유효한 수용 영역은 계산값보다 작다(Luo et al., 2016).</p>
+
+<h2 data-min="25" data-kind="concept">대표 구조</h2>
+<p>ImageNet 대회(ILSVRC, 1000클래스 120만 장)의 결과가 CNN 구조의 발전을 이끌었다. 지표는 상위 5개 예측에 정답이 없는 비율(top-5 오류)이다.</p>
+<table>
+  <thead><tr><th>구조</th><th>연도</th><th>깊이</th><th>파라미터</th><th>ImageNet top-5 오류</th><th>새로운 점</th></tr></thead>
+  <tbody>
+    <tr><td>LeNet-5</td><td>1998</td><td>5</td><td>약 6만</td><td>(손글씨 숫자용)</td><td>합성곱 + 풀링 + 완전연결의 기본 틀</td></tr>
+    <tr><td>AlexNet</td><td>2012</td><td>8</td><td>약 6천만</td><td>15.3% (2위 26.2%)</td><td>ReLU, 드롭아웃, 데이터 증강, GPU 두 대로 학습</td></tr>
+    <tr><td>VGG-16</td><td>2014</td><td>16</td><td>1억 3,800만</td><td>7.3%</td><td>3×3 합성곱만 깊게 쌓기</td></tr>
+    <tr><td>GoogLeNet</td><td>2014</td><td>22</td><td>약 700만</td><td>6.7%</td><td>여러 크기 커널을 병렬로(인셉션), 1×1 합성곱으로 채널 줄이기</td></tr>
+    <tr><td>ResNet-152</td><td>2015</td><td>152</td><td>약 6천만</td><td>3.6%</td><td>잔차 연결 (33일차)</td></tr>
+  </tbody>
+</table>
+<p><b>LeNet-5</b>(LeCun et al., 1998)는 손글씨 우편번호와 수표 인식에 쓰였다. 5×5 합성곱과 풀링을 두 번 반복한 뒤 완전연결층으로 분류하는 틀은 지금도 그대로다. <b>AlexNet</b>(Krizhevsky et al., 2012)은 같은 틀을 크게 키우고 ReLU, 드롭아웃, 증강을 써서 ImageNet 오류를 단번에 10%p 넘게 줄였다. 딥러닝이 컴퓨터 비전의 주류가 된 계기다.</p>
+<p><dfn data-t="vgg">VGG</dfn>(Simonyan &amp; Zisserman, 2014)는 큰 커널 대신 3×3 합성곱만 쌓았다. 3×3 두 층은 5×5 한 층과 수용 영역이 같으면서 파라미터가 $18C^2$ 대 $25C^2$로 적고, 사이에 비선형 활성화가 하나 더 들어간다. 단순하고 규칙적인 구조라 지금도 특징 추출과 교육용으로 많이 쓰인다. 다만 VGG 논문에서도 19층을 넘기면 성능이 더 오르지 않았다. 층을 더 깊이 쌓는 문제를 푼 것이 내일의 ResNet이다.</p>
+
+<h2 data-min="10" data-kind="concept">1×1 합성곱</h2>
+<p><dfn data-t="conv1x1">1×1 합성곱</dfn>은 공간 방향으로는 한 칸만 보고 채널 방향으로만 가중합을 한다. 픽셀마다 같은 선형층(채널 $C_{\text{in}} \to C_{\text{out}}$)을 적용하는 것과 같다. 두 가지로 쓴다.</p>
+<ul>
+  <li><b>채널 줄이기.</b> 비싼 3×3 합성곱 앞에서 채널을 줄인다. 56×56, 256채널 입력에 3×3 합성곱(256 → 256)은 곱셈-덧셈이 18.5억 회지만, 1×1로 64채널로 줄인 뒤 3×3(64 → 64)을 하고 1×1로 다시 256채널로 늘리면 2.2억 회다(33일차의 병목 블록).</li>
+  <li><b>채널 섞기.</b> 공간 크기를 바꾸지 않고 채널 사이의 조합만 새로 만든다. 활성화 함수와 함께 쓰면 픽셀마다 작은 다층 퍼셉트론이 된다(Network in Network, Lin et al., 2013).</li>
+</ul>
+
+<h2 data-min="10" data-kind="concept">전역 평균 풀링</h2>
+<p><dfn data-t="gap">전역 평균 풀링</dfn>은 특성 맵 한 장 전체의 평균을 구해 채널마다 값 하나를 만든다. $C \times H \times W$가 길이 $C$ 벡터가 된다. 펼치기(flatten) + 큰 완전연결층 대신 쓴다.</p>
+<div class="box ex" data-title="VGG-16의 파라미터는 어디에 있나"><p>VGG-16의 마지막 특성 맵은 512 × 7 × 7이다. 이것을 펼쳐 4096개짜리 완전연결층에 넣으면 그 층의 가중치만 $25088 \times 4096 \approx 1.03$억 개로, 전체 1억 3,800만 개의 4분의 3이다. 합성곱 13층의 가중치를 다 합쳐도 1,470만 개다. 전역 평균 풀링으로 512개 값을 만들어 바로 1000클래스로 보내면 이 부분이 $512 \times 1000 \approx 51$만 개로 줄어든다.</p></div>
+<p>전역 평균 풀링은 파라미터를 줄이는 것 말고도 두 가지 장점이 있다. 특징이 어디에 있든 평균에 똑같이 기여하므로 이동 불변성을 더하고(31일차), 입력 이미지의 크기가 달라도 같은 모델을 쓸 수 있다. GoogLeNet 이후 대부분의 CNN이 이 방식을 쓴다.</p>
+
+<h2 data-min="10" data-kind="concept">층별 크기 계산</h2>
+<p>노트북의 <code>layer_table</code> 함수는 순전파 훅(29일차)으로 층마다 출력 형상, 파라미터 수, 곱셈-덧셈 횟수를 모은다. 오늘 실습의 CNN을 MNIST(1 × 28 × 28) 입력으로 재면 다음과 같다(배치 정규화, ReLU, 풀링 줄은 일부 생략).</p>
+<pre class="out"><code class="language-plaintext">Conv2d             (32, 28, 28)       파라미터       288   곱셈-덧셈      225,792
+Conv2d             (32, 28, 28)       파라미터     9,216   곱셈-덧셈    7,225,344
+MaxPool2d          (32, 14, 14)       파라미터         0   곱셈-덧셈            0
+Conv2d             (64, 14, 14)       파라미터    18,432   곱셈-덧셈    3,612,672
+Conv2d             (64, 14, 14)       파라미터    36,864   곱셈-덧셈    7,225,344
+MaxPool2d          (64, 7, 7)         파라미터         0   곱셈-덧셈            0
+Conv2d             (128, 7, 7)        파라미터    73,728   곱셈-덧셈    3,612,672
+Conv2d             (128, 7, 7)        파라미터   147,456   곱셈-덧셈    7,225,344
+AdaptiveAvgPool2d  (128, 1, 1)        파라미터         0   곱셈-덧셈            0
+Linear             (10,)              파라미터     1,290   곱셈-덧셈        1,280
+합계                                    파라미터   288,170   곱셈-덧셈   29,128,448</code></pre>
+<p>세 가지를 확인한다. (1) 파라미터는 뒤쪽 층에 몰려 있다(마지막 합성곱 하나가 전체의 절반). 채널 수의 제곱에 비례하기 때문이다. (2) 곱셈-덧셈은 각 단계의 둘째 합성곱이 모두 722만 회로 같다. 해상도가 절반이 되며 칸이 4분의 1로 줄고 채널이 두 배로 늘어 $C_{\text{in}}C_{\text{out}}$이 4배가 되기 때문이다. (3) 28일차의 다층 퍼셉트론(파라미터 53만 개)보다 파라미터는 적고 계산은 훨씬 많다. CNN은 같은 가중치를 많은 위치에서 다시 쓴다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>CNN의 틀: [3×3 합성곱 → BN → ReLU] × 2~3 → 해상도 절반·채널 두 배 → … → 전역 평균 풀링 → 선형층.</li>
+  <li>층이 깊어질수록 경계·색 → 질감 → 부분 → 물체의 순서로 특징이 조합된다.</li>
+  <li>수용 영역 $r_l = r_{l-1} + (k_l - 1)j_{l-1}$, 점프 $j_l = j_{l-1}s_l$. 풀링과 스트라이드가 수용 영역을 빨리 키운다.</li>
+  <li>LeNet(기본 틀) → AlexNet(ReLU·드롭아웃·GPU) → VGG(3×3 쌓기) → GoogLeNet(1×1, 인셉션) → ResNet(잔차).</li>
+  <li>1×1 합성곱: 채널 줄이기·섞기. 전역 평균 풀링: 완전연결층의 파라미터를 없애고 불변성을 더한다.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"합성곱 뒤에 배치 정규화가 오면 합성곱에 bias=False를 주는 이유는?","o":["속도를 위해","배치 정규화가 평균을 빼며 편향의 효과를 지우고 자신의 β로 이동을 학습하므로 편향이 쓸모없다","과적합을 막으려고","정확도가 오르므로"],"a":1,"e":"있어도 틀리지는 않지만 학습되지 않는 파라미터가 된다."},
+ {"q":"3×3 합성곱(스트라이드 1)을 4층 쌓았다. 마지막 층 한 칸의 수용 영역은?","o":["4","7","9","12"],"a":2,"e":"3 → 5 → 7 → 9. 한 층마다 2씩 는다."},
+ {"q":"2×2 풀링(스트라이드 2) 뒤의 3×3 합성곱은 수용 영역을 얼마나 늘리는가? (풀링 전의 점프는 1)","o":["2","4","6","8"],"a":1,"e":"풀링 뒤 점프가 2이므로 (3 − 1) × 2 = 4."},
+ {"q":"3×3 합성곱 두 층이 5×5 합성곱 한 층보다 나은 점이 아닌 것은?","o":["파라미터가 적다","비선형 활성화가 하나 더 들어간다","수용 영역이 같다","연산이 반드시 2배 빠르다"],"a":3,"e":"파라미터와 연산은 18C² 대 25C²로 약 28% 적을 뿐이다."},
+ {"q":"1×1 합성곱이 하는 일은?","o":["공간 방향 경계 검출","픽셀마다 채널을 선형 결합(채널 수 변경)","해상도 절반","아무 일도 하지 않는다"],"a":1,"e":"픽셀마다 같은 선형층을 적용하는 것과 같다."},
+ {"q":"512×7×7 특성 맵에 전역 평균 풀링을 적용하면 출력 형상은?","o":["512×1×1 (길이 512 벡터)","1×7×7","25088","512×3×3"],"a":0,"e":"채널마다 평균 하나."},
+ {"q":"VGG-16의 파라미터 대부분은 어디에 있는가?","o":["첫 합성곱 층","마지막 합성곱 층들","펼친 특성 맵에 연결된 완전연결층","배치 정규화"],"a":2,"e":"25088 × 4096 ≈ 1억 개. VGG-16에는 배치 정규화가 없다."},
+ {"q":"해상도를 절반으로 줄이며 채널을 두 배로 늘리면 그 단계 합성곱의 곱셈-덧셈 횟수는 대략?","o":["4배","2배","비슷하다","절반"],"a":2,"e":"칸 수는 1/4, C_in·C_out은 4배."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>LeNet-5의 구조는 입력 1 × 32 × 32 → 5×5 합성곱 6개 → 2×2 풀링 → 5×5 합성곱 16개 → 2×2 풀링 → 완전연결 120 → 84 → 10이다(패딩 없음). 각 층의 출력 형상과 전체 파라미터 수(편향 포함)를 구하라.
+    <details class="sol"><summary>풀이</summary><p>6 × 28 × 28 (파라미터 $6 \times 26 = 156$) → 6 × 14 × 14 → 16 × 10 × 10 ($16 \times (6 \cdot 25 + 1) = 2{,}416$) → 16 × 5 × 5 = 400 → 120 ($400 \cdot 120 + 120 = 48{,}120$) → 84 ($10{,}164$) → 10 ($850$). 합계 61,706개. 원래 논문의 C3 층은 입력 채널의 일부만 연결해 조금 적다(약 6만 개).</p>
+<pre><code>lenet = nn.Sequential(nn.Conv2d(1, 6, 5), nn.ReLU(), nn.MaxPool2d(2), nn.Conv2d(6, 16, 5), nn.ReLU(),
+                      nn.MaxPool2d(2), nn.Flatten(), nn.Linear(400, 120), nn.ReLU(),
+                      nn.Linear(120, 84), nn.ReLU(), nn.Linear(84, 10))
+print(sum(p.numel() for p in lenet.parameters()))   # 61706
+</code></pre></details></li>
+  <li>입력 224 × 224에 3×3 합성곱(패딩 1) 2층 + 2×2 풀링을 다섯 번 반복하는 VGG식 구조에서, 마지막 합성곱 층의 수용 영역을 구하라.
+    <details class="sol"><summary>풀이</summary><p>각 단계에서 3×3 두 층이 $2 \times 2j$만큼, 풀링이 $j$만큼 늘린다($j$는 그 단계의 점프). 단계 1($j=1$): 1 → 5, 풀링 후 6, $j = 2$. 단계 2: 6 + 8 = 14, 풀링 16, $j = 4$. 단계 3: 16 + 16 = 32, 풀링 36, $j = 8$. 단계 4: 36 + 32 = 68, 풀링 76, $j = 16$. 단계 5: 76 + 64 = 140. 마지막 합성곱 층의 수용 영역은 140 × 140이다. VGG-16은 단계 3~5에 합성곱이 3층씩이라 마지막 합성곱 층이 196, 마지막 풀링 뒤가 212다.</p></details></li>
+  <li>30일차의 Fashion-MNIST 다층 퍼셉트론(테스트 89.85%)을 오늘의 CNN으로 바꾸면 얼마나 좋아지는지 노트북 5절에서 확인하라. 가장 많이 틀리던 셔츠 클래스의 정확도도 비교하라.
+    <details class="sol"><summary>풀이</summary><p>CNN을 10에폭 학습하면 테스트 정확도가 93.74%로, 30일차의 다층 퍼셉트론(89.85%)보다 3.9%p 높다. 학습 정확도는 98.49%라 여기서도 간격이 있다. 셔츠 클래스의 정확도는 30일차의 클래스별 코드를 그대로 써서 직접 비교해 본다.</p></details></li>
+</ol>
+
+<h2 data-min="45" data-kind="project">미니 프로젝트: 첫 CNN으로 CIFAR-10 분류</h2>
+<section class="project" data-title="MNIST에서 99%를 넘는 CNN을 만들고, CIFAR-10에서 다층 퍼셉트론과 비교하기" data-min="45">
+<p class="lead">합성곱 블록 여섯 개와 전역 평균 풀링으로 된 작은 CNN을 만든다. 손글씨 숫자로 동작을 확인한 뒤, 훨씬 어려운 컬러 사진(CIFAR-10)에서 다층 퍼셉트론과 비교하고, 학습된 특성 맵을 들여다본다.</p>
+<p><a class="colab" data-nb="d32_first_cnn.ipynb">Colab에서 노트북 열기</a></p>
+<ol class="steps">
+<li><b>모델.</b> 합성곱 블록 두 개마다 최대 풀링으로 해상도를 줄이고 채널을 두 배로 늘린다.
+<pre><code class="language-python">def conv_block(c_in, c_out):
+    return nn.Sequential(nn.Conv2d(c_in, c_out, 3, padding=1, bias=False),
+                         nn.BatchNorm2d(c_out), nn.ReLU(inplace=True))
+
+def small_cnn(c_in=1, w=32, num_classes=10):
+    return nn.Sequential(
+        conv_block(c_in, w), conv_block(w, w), nn.MaxPool2d(2),
+        conv_block(w, 2 * w), conv_block(2 * w, 2 * w), nn.MaxPool2d(2),
+        conv_block(2 * w, 4 * w), conv_block(4 * w, 4 * w),
+        nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(4 * w, num_classes))
+</code></pre></li>
+<li><b>MNIST.</b> AdamW(최대 학습률 $2\times10^{-3}$, 원사이클), 배치 128로 3에폭 학습한다.
+<pre class="out"><code class="language-plaintext">에폭  1  학습 손실 0.3856  학습 정확도 0.9190  평가 정확도 0.9610
+에폭  2  학습 손실 0.0308  학습 정확도 0.9913  평가 정확도 0.9905
+에폭  3  학습 손실 0.0137  학습 정확도 0.9963  평가 정확도 0.9958
+MNIST CNN 테스트 정확도 0.9958</code></pre>
+파라미터 28만 8천 개로 3에폭 만에 99.58%다. 28일차의 다층 퍼셉트론은 파라미터 53만 개, 15에폭, 이동 증강으로 98.76%였다. 테스트 오류가 124장에서 42장으로 3분의 1이 된다. 이 노트북은 하이퍼파라미터를 고르지 않으므로 검증 세트 없이 테스트 세트로 과정을 본다.</li>
+<li><b>CIFAR-10: 다층 퍼셉트론 대 CNN.</b> 같은 학습 설정(15에폭, 증강 없음)으로 비교한다.
+<pre class="out"><code class="language-plaintext">다층 퍼셉트론 파라미터 1,707,274개,  CNN 파라미터 288,746개
+다층 퍼셉트론: 학습 정확도 0.6976, 테스트 정확도 0.5718
+CNN: 학습 정확도 0.9949, 테스트 정확도 0.8583</code></pre>
+<figure class="fig">
+<svg viewBox="0 0 640 260" width="640" role="img" aria-label="CIFAR-10에서 CNN과 다층 퍼셉트론의 정확도">
+  <g font-size="12">
+  <line x1="62" y1="214.0" x2="624" y2="214.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="218.0" text-anchor="end" class="s-txm" font-size="11">40</text>
+  <line x1="62" y1="180.7" x2="624" y2="180.7" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="184.7" text-anchor="end" class="s-txm" font-size="11">50</text>
+  <line x1="62" y1="147.3" x2="624" y2="147.3" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="151.3" text-anchor="end" class="s-txm" font-size="11">60</text>
+  <line x1="62" y1="114.0" x2="624" y2="114.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="118.0" text-anchor="end" class="s-txm" font-size="11">70</text>
+  <line x1="62" y1="80.7" x2="624" y2="80.7" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="84.7" text-anchor="end" class="s-txm" font-size="11">80</text>
+  <line x1="62" y1="47.3" x2="624" y2="47.3" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="51.3" text-anchor="end" class="s-txm" font-size="11">90</text>
+  <line x1="62" y1="14.0" x2="624" y2="14.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="18.0" text-anchor="end" class="s-txm" font-size="11">100</text>
+  <line x1="62.0" y1="14" x2="62.0" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="62.0" y="230" text-anchor="middle" class="s-txm" font-size="11">1</text>
+  <line x1="102.1" y1="14" x2="102.1" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="102.1" y="230" text-anchor="middle" class="s-txm" font-size="11">2</text>
+  <line x1="142.3" y1="14" x2="142.3" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="142.3" y="230" text-anchor="middle" class="s-txm" font-size="11">3</text>
+  <line x1="182.4" y1="14" x2="182.4" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="182.4" y="230" text-anchor="middle" class="s-txm" font-size="11">4</text>
+  <line x1="222.6" y1="14" x2="222.6" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="222.6" y="230" text-anchor="middle" class="s-txm" font-size="11">5</text>
+  <line x1="262.7" y1="14" x2="262.7" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="262.7" y="230" text-anchor="middle" class="s-txm" font-size="11">6</text>
+  <line x1="302.9" y1="14" x2="302.9" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="302.9" y="230" text-anchor="middle" class="s-txm" font-size="11">7</text>
+  <line x1="343.0" y1="14" x2="343.0" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="343.0" y="230" text-anchor="middle" class="s-txm" font-size="11">8</text>
+  <line x1="383.1" y1="14" x2="383.1" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="383.1" y="230" text-anchor="middle" class="s-txm" font-size="11">9</text>
+  <line x1="423.3" y1="14" x2="423.3" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="423.3" y="230" text-anchor="middle" class="s-txm" font-size="11">10</text>
+  <line x1="463.4" y1="14" x2="463.4" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="463.4" y="230" text-anchor="middle" class="s-txm" font-size="11">11</text>
+  <line x1="503.6" y1="14" x2="503.6" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="503.6" y="230" text-anchor="middle" class="s-txm" font-size="11">12</text>
+  <line x1="543.7" y1="14" x2="543.7" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="543.7" y="230" text-anchor="middle" class="s-txm" font-size="11">13</text>
+  <line x1="583.9" y1="14" x2="583.9" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="583.9" y="230" text-anchor="middle" class="s-txm" font-size="11">14</text>
+  <line x1="624.0" y1="14" x2="624.0" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="624.0" y="230" text-anchor="middle" class="s-txm" font-size="11">15</text>
+  <rect x="62" y="14" width="562" height="200" fill="none" class="s-mu" stroke-width="1"/>
+  <line x1="62" y1="114.8" x2="624" y2="114.8" class="s-red" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="620" y="109.8" text-anchor="end" class="s-txm" font-size="11">다층 퍼셉트론 학습 69.8% (15에폭 뒤)</text>
+  <line x1="62" y1="156.7" x2="624" y2="156.7" class="s-red" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="620" y="151.7" text-anchor="end" class="s-txm" font-size="11">다층 퍼셉트론 테스트 57.2%</text>
+  <polyline points="62.0,197.7 102.1,134.3 142.3,105.8 182.4,87.1 222.6,75.7 262.7,65.9 302.9,59.4 343.0,51.2 383.1,44.9 423.3,37.2 463.4,29.3 503.6,23.0 543.7,18.6 583.9,16.5 624.0,15.7" class="s-ac" stroke-width="2" fill="none" stroke-dasharray="5 4"/>
+  <g class="s-acf"><circle cx="62.0" cy="197.7" r="2.6"/><circle cx="102.1" cy="134.3" r="2.6"/><circle cx="142.3" cy="105.8" r="2.6"/><circle cx="182.4" cy="87.1" r="2.6"/><circle cx="222.6" cy="75.7" r="2.6"/><circle cx="262.7" cy="65.9" r="2.6"/><circle cx="302.9" cy="59.4" r="2.6"/><circle cx="343.0" cy="51.2" r="2.6"/><circle cx="383.1" cy="44.9" r="2.6"/><circle cx="423.3" cy="37.2" r="2.6"/><circle cx="463.4" cy="29.3" r="2.6"/><circle cx="503.6" cy="23.0" r="2.6"/><circle cx="543.7" cy="18.6" r="2.6"/><circle cx="583.9" cy="16.5" r="2.6"/><circle cx="624.0" cy="15.7" r="2.6"/></g>
+  <polyline points="62.0,167.7 102.1,139.7 142.3,132.4 182.4,96.6 222.6,112.4 262.7,89.4 302.9,82.5 343.0,81.9 383.1,76.1 423.3,67.9 463.4,69.0 503.6,63.1 543.7,61.1 583.9,61.5 624.0,61.2" class="s-ac" stroke-width="2.4" fill="none"/>
+  <g class="s-acf"><circle cx="62.0" cy="167.7" r="2.6"/><circle cx="102.1" cy="139.7" r="2.6"/><circle cx="142.3" cy="132.4" r="2.6"/><circle cx="182.4" cy="96.6" r="2.6"/><circle cx="222.6" cy="112.4" r="2.6"/><circle cx="262.7" cy="89.4" r="2.6"/><circle cx="302.9" cy="82.5" r="2.6"/><circle cx="343.0" cy="81.9" r="2.6"/><circle cx="383.1" cy="76.1" r="2.6"/><circle cx="423.3" cy="67.9" r="2.6"/><circle cx="463.4" cy="69.0" r="2.6"/><circle cx="503.6" cy="63.1" r="2.6"/><circle cx="543.7" cy="61.1" r="2.6"/><circle cx="583.9" cy="61.5" r="2.6"/><circle cx="624.0" cy="61.2" r="2.6"/></g>
+  <rect x="521" y="168" width="89" height="42" class="s-bg" stroke-width="0.8" opacity=".92"/>
+  <line x1="527" y1="180" x2="551" y2="180" class="s-ac" stroke-width="2" stroke-dasharray="5 4"/>
+  <text x="557" y="184" class="s-tx" font-size="11">CNN 학습</text>
+  <line x1="527" y1="198" x2="551" y2="198" class="s-ac" stroke-width="2.4"/>
+  <text x="557" y="202" class="s-tx" font-size="11">CNN 테스트</text>
+  <text x="343" y="252" text-anchor="middle" class="s-txm">에폭</text>
+  <text x="14" y="114" text-anchor="middle" class="s-txm" transform="rotate(-90 14 114)">정확도 (%)</text>
+  </g>
+</svg>
+<figcaption>CIFAR-10에서의 정확도. CNN의 테스트 정확도(실선)는 15에폭 뒤 85.8%로 다층 퍼셉트론(57.2%)보다 28.6%p 높다. 그러나 학습 정확도(점선)가 99.5%까지 올라가 테스트와 13.7%p 벌어졌다.</figcaption>
+</figure>
+<p>CNN은 파라미터가 다층 퍼셉트론의 6분의 1인데 테스트 정확도가 훨씬 높다. 지역 연결과 가중치 공유라는 구조적 가정이 이미지에 잘 맞기 때문이다. 하지만 학습 정확도와의 간격이 크다. 증강 없이 같은 5만 장을 15번 보면서 외웠다. 34일차의 증강과 35일차의 더 큰 ResNet으로 이 간격을 줄여 93%를 넘긴다.</p></li>
+<li><b>특성 맵.</b> 말 이미지 한 장을 넣고 합성곱 블록 1, 4, 6의 출력 채널 몇 개를 그린다.
+<figure class="fig"><img src="assets/img/day32_feature_maps.png" alt="말 이미지가 CNN의 블록 1, 4, 6을 지날 때의 특성 맵" width="960" loading="lazy">
+<figcaption>왼쪽 위가 입력(말), 각 줄이 블록 1(32 × 32), 블록 4(16 × 16), 블록 6(8 × 8)의 출력 채널 6개다. 밝을수록 큰 값. 블록 1은 말의 윤곽과 경계를 그대로 따라가고, 깊은 블록으로 갈수록 해상도가 줄며 반응이 몇 군데로 모인다. 깊은 층의 채널은 "이 위치에 이런 부분이 있다"는 추상적인 신호다.</figcaption>
+</figure>
+첫 층의 커널(3 × 3 × 3) 32개도 노트북에서 그려 볼 수 있지만, 3 × 3은 너무 작아 무늬보다는 색 조합으로만 보인다. 큰 커널(AlexNet의 11 × 11)을 쓰는 모델에서는 방향별 경계와 색 대비 검출기가 뚜렷하게 보인다.</li>
+</ol>
+</section>

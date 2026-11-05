@@ -216,6 +216,7 @@ table caption { caption-side: top; text-align: left; font-size: 13.5px; color: v
 
 /* 그림 */
 figure.fig { margin: 32px 0; padding: 24px 20px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); text-align: center; }
+figure.fig img { max-width: 100%; height: auto; border-radius: 6px; background: #ffffff; }   /* 노트북에서 만든 그림은 흰 바탕 */
 figure.fig svg { max-width: 100%; height: auto; display: block; margin: 0 auto; overflow: visible; }
 figure.fig figcaption { font-size: 13.5px; color: var(--muted); margin-top: 14px; line-height: 1.6; text-align: center; }
 figure.fig figcaption b.fno { color: var(--text-2); margin-right: 6px; }
