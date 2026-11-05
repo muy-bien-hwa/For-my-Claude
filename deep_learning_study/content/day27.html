@@ -1,0 +1,368 @@
+<ul class="goals">
+  <li>"실행은 되지만 학습이 안 되는" 신경망을 체계적인 절차로 디버깅할 수 있다.</li>
+  <li>손실 곡선과 지표의 증상으로 원인을 좁힐 수 있다.</li>
+  <li>학습 중 기록해야 할 값(손실, 기울기 노름, 갱신 비율)을 정하고 계산할 수 있다.</li>
+  <li>무작위 탐색으로 하이퍼파라미터를 고르고 결과를 여러 시드로 보고할 수 있다.</li>
+  <li>재현 가능한 실험을 위해 시드와 설정을 관리할 수 있다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="concept">학습이 안 될 때</h2>
+<p>일반 프로그램의 버그는 대개 오류 메시지를 낸다. 신경망 학습 코드의 버그는 그렇지 않다. 레이블이 섞여도, 기울기가 틀려도, 정규화를 빠뜨려도 코드는 끝까지 실행되고 손실은 "조금" 줄어든다. 그래서 결과가 나쁠 때 원인이 데이터인지, 모델인지, 학습 설정인지, 단순한 코드 실수인지 알기 어렵다. 오늘은 경험 많은 연구자들이 쓰는 점검 절차를 정리하고, 버그가 여러 개 숨은 학습 코드를 실제로 고친다.</p>
+
+<h2 data-min="25" data-kind="concept">디버깅 절차</h2>
+<p>순서가 중요하다. 앞 단계가 통과해야 뒤 단계의 결과를 믿을 수 있다.</p>
+<div class="flow v"><div>1. 데이터를 눈으로 본다</div><div>2. 첫 손실을 확인한다</div><div>3. 기울기를 검증한다</div><div class="hl">4. 작은 배치를 외우게 한다</div><div>5. 학습률을 탐색한다</div><div>6. 전체 학습을 기록하며 돌린다</div><div>7. 단순한 기준선과 비교한다</div></div>
+<ol class="steps">
+<li><b>데이터를 본다.</b> 입력의 형상, 자료형, 값의 범위(정규화되었는가), 레이블의 분포를 출력하고, 표본 몇 개를 레이블과 함께 그린다. 모델에 들어가기 직전의 배치를 보는 것이 가장 확실하다(증강·정규화 후). 레이블이 입력과 어긋난 버그는 이 단계에서만 잡힌다.</li>
+<li><b>첫 손실.</b> 무작위 초기화 직후의 손실이 이론값($K$클래스 분류면 $\ln K$, 이진이면 $\ln 2$) 근처인지 본다. 훨씬 크면 초기 로짓이 너무 크다(초기화나 입력 스케일 문제).</li>
+<li><b>기울기 검증.</b> 직접 쓴 역전파는 수치 미분과 비교한다(20일차). 프레임워크의 자동 미분을 쓰면 생략할 수 있지만, 직접 만든 손실이나 층이 있다면 그 부분을 검증한다.</li>
+<li><b>작은 배치 외우기.</b> 표본 몇~수십 개만으로 수백 스텝 학습해 손실이 0 근처까지 가는지 본다. 모델은 이 정도는 반드시 외울 수 있어야 한다. 실패하면 모델, 손실, 갱신 중 어딘가에 버그가 있다. 가장 강력한 시험이다.</li>
+<li><b>학습률 탐색.</b> 범위 테스트(23일차)로 최대 학습률의 범위를 정한다.</li>
+<li><b>기록하며 학습.</b> 학습·검증 손실과 지표, 학습률, 기울기 노름을 기록한다(다음 절).</li>
+<li><b>기준선과 비교.</b> 로지스틱 회귀, 최빈 클래스 같은 단순한 모델보다 나은지 확인한다. 복잡한 모델이 단순한 모델보다 못하면 무언가 잘못된 것이다.</li>
+</ol>
+
+<h2 data-min="15" data-kind="concept">증상별 진단표</h2>
+<table>
+  <thead><tr><th>증상</th><th>흔한 원인</th><th>먼저 볼 것</th></tr></thead>
+  <tbody>
+    <tr><td>손실이 NaN 또는 inf</td><td>학습률 과대, 넘침(소프트맥스·로그의 안정화 누락), 0으로 나누기</td><td>첫 손실, 로짓 크기, 기울기 노름</td></tr>
+    <tr><td>손실이 $\ln K$에서 움직이지 않음</td><td>기울기가 0(초기화, 죽은 ReLU), 갱신이 적용 안 됨(제자리 연산 누락), 학습률 과소</td><td>파라미터가 실제로 바뀌는지, 층별 기울기 노름</td></tr>
+    <tr><td>정확도가 최빈 클래스 비율에 고정</td><td>모델이 한 클래스만 예측, 레이블 오류</td><td>예측의 분포, 데이터 시각화</td></tr>
+    <tr><td>학습은 되는데 검증이 찍기 수준</td><td>레이블이 입력과 어긋남, 검증 전처리가 학습과 다름</td><td>검증 배치 시각화, 전처리 코드</td></tr>
+    <tr><td>학습 손실이 크게 요동</td><td>학습률 과대, 배치가 너무 작음, 데이터가 섞이지 않음</td><td>학습률 ↓, 셔플 확인</td></tr>
+    <tr><td>학습은 좋고 검증은 나쁨</td><td>과적합, 학습 데이터와 검증 데이터의 분포 차이</td><td>규제(26일차), 분포 비교</td></tr>
+    <tr><td>검증이 학습보다 좋음</td><td>드롭아웃·증강이 학습 때만 켜짐(정상인 경우가 많다), 검증이 너무 쉬움</td><td>학습 모드/추론 모드 확인</td></tr>
+    <tr><td>테스트 성능이 믿기 어려울 만큼 좋음</td><td>데이터 누수(12일차), 학습 데이터로 평가</td><td>분할 코드, 중복 표본</td></tr>
+  </tbody>
+</table>
+
+<h2 data-min="12" data-kind="concept">무엇을 기록할까</h2>
+<p>학습 중 기록하는 값이 곧 디버깅의 단서다.</p>
+<ul>
+<li><b>손실과 지표</b>: 학습(에폭 평균 또는 이동 평균)과 검증. 20일차의 학습 곡선.</li>
+<li><b>학습률</b>: 스케줄을 쓸 때 실제 적용된 값.</li>
+<li><b>기울기 노름</b>: 전체와 층별. 갑자기 커지면 폭발, 앞쪽 층만 아주 작으면 소실(24일차).</li>
+<li><b>갱신 비율</b>: 층마다 $\|\Delta W\|/\|W\| = \eta\|\nabla W\|/\|W\|$. $10^{-3}$ 안팎이 적당하다는 경험칙이 있다(자릿수 수준의 기준). $10^{-1}$ 이상이면 가중치가 한 스텝에 크게 바뀌어 불안정하고, $10^{-6}$이면 사실상 학습되지 않는다.</li>
+<li><b>활성값 통계</b>: 층별 평균, 표준편차, 0인 비율(죽은 ReLU).</li>
+</ul>
+<p>실무에서는 TensorBoard나 Weights &amp; Biases 같은 도구로 이 값들을 그래프로 본다. 원리는 같다. 값을 리스트에 모아 그리면 된다.</p>
+
+<h2 data-min="15" data-kind="concept">하이퍼파라미터 탐색</h2>
+<p>하이퍼파라미터가 여러 개면 조합이 많아진다. 격자 탐색은 각 축에서 값 몇 개를 골라 모든 조합을 시험한다. <dfn data-t="random-search">무작위 탐색</dfn>(Bergstra &amp; Bengio, 2012)은 각 축에서 값을 무작위로 뽑는다. 같은 시도 횟수라면 무작위 탐색이 거의 항상 낫다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 290" width="640" role="img" aria-label="격자 탐색과 무작위 탐색의 비교">
+  <g font-size="13">
+  <g transform="translate(60,34)">
+    <text x="100" y="-14" text-anchor="middle" class="s-tx" font-weight="700">격자 탐색 9번</text>
+    <rect x="0" y="0" width="200" height="150" class="s-bg" stroke-width="1"/>
+    <line x1="0" y1="224" x2="200" y2="224" class="s-mu" stroke-width="1"/>
+    <path d="M0,224.0 L4,224.0 L8,224.0 L12,224.0 L16,224.0 L20,224.0 L24,224.0 L28,224.0 L32,224.0 L36,224.0 L40,224.0 L44,224.0 L48,224.0 L52,224.0 L56,223.9 L60,223.8 L64,223.6 L68,223.3 L72,222.8 L76,222.0 L80,220.6 L84,218.7 L88,215.9 L92,212.1 L96,207.3 L100,201.5 L104,194.8 L108,187.6 L112,180.4 L116,173.9 L120,168.6 L124,165.2 L128,164.0 L132,165.2 L136,168.6 L140,173.9 L144,180.4 L148,187.6 L152,194.8 L156,201.5 L160,207.3 L164,212.1 L168,215.9 L172,218.7 L176,220.6 L180,222.0 L184,222.8 L188,223.3 L192,223.6 L196,223.8 L200,223.9" class="s-org" stroke-width="2"/>
+    <g class="s-mu" stroke-width="1" stroke-dasharray="3 3"><line x1="33" y1="150" x2="33" y2="224.0"/><line x1="100" y1="150" x2="100" y2="201.5"/><line x1="167" y1="150" x2="167" y2="215.0"/></g>
+    <g class="s-acf"><circle cx="33" cy="25" r="5"/><circle cx="100" cy="25" r="5"/><circle cx="167" cy="25" r="5"/><circle cx="33" cy="75" r="5"/><circle cx="100" cy="75" r="5"/><circle cx="167" cy="75" r="5"/><circle cx="33" cy="125" r="5"/><circle cx="100" cy="125" r="5"/><circle cx="167" cy="125" r="5"/></g>
+    <g class="s-acf"><circle cx="33" cy="224.0" r="3"/><circle cx="167" cy="215.0" r="3"/></g>
+    <circle cx="100" cy="201.5" r="5.5" class="s-orgf"/>
+    <text x="100" y="244" text-anchor="middle" class="s-txm">시험한 가로축 값: 3개</text>
+  </g>
+  <g transform="translate(380,34)">
+    <text x="100" y="-14" text-anchor="middle" class="s-tx" font-weight="700">무작위 탐색 9번</text>
+    <rect x="0" y="0" width="200" height="150" class="s-bg" stroke-width="1"/>
+    <line x1="0" y1="224" x2="200" y2="224" class="s-mu" stroke-width="1"/>
+    <path d="M0,224.0 L4,224.0 L8,224.0 L12,224.0 L16,224.0 L20,224.0 L24,224.0 L28,224.0 L32,224.0 L36,224.0 L40,224.0 L44,224.0 L48,224.0 L52,224.0 L56,223.9 L60,223.8 L64,223.6 L68,223.3 L72,222.8 L76,222.0 L80,220.6 L84,218.7 L88,215.9 L92,212.1 L96,207.3 L100,201.5 L104,194.8 L108,187.6 L112,180.4 L116,173.9 L120,168.6 L124,165.2 L128,164.0 L132,165.2 L136,168.6 L140,173.9 L144,180.4 L148,187.6 L152,194.8 L156,201.5 L160,207.3 L164,212.1 L168,215.9 L172,218.7 L176,220.6 L180,222.0 L184,222.8 L188,223.3 L192,223.6 L196,223.8 L200,223.9" class="s-org" stroke-width="2"/>
+    <g class="s-mu" stroke-width="1" stroke-dasharray="3 3"><line x1="12" y1="150" x2="12" y2="224.0"/><line x1="41" y1="150" x2="41" y2="224.0"/><line x1="63" y1="150" x2="63" y2="223.7"/><line x1="86" y1="150" x2="86" y2="217.4"/><line x1="109" y1="150" x2="109" y2="185.8"/><line x1="131" y1="150" x2="131" y2="164.7"/><line x1="149" y1="150" x2="149" y2="189.4"/><line x1="172" y1="150" x2="172" y2="218.7"/><line x1="191" y1="150" x2="191" y2="223.6"/></g>
+    <g class="s-acf"><circle cx="12" cy="96" r="5"/><circle cx="41" cy="30" r="5"/><circle cx="63" cy="128" r="5"/><circle cx="86" cy="62" r="5"/><circle cx="109" cy="18" r="5"/><circle cx="131" cy="108" r="5"/><circle cx="149" cy="47" r="5"/><circle cx="172" cy="136" r="5"/><circle cx="191" cy="80" r="5"/></g>
+    <g class="s-acf"><circle cx="12" cy="224.0" r="3"/><circle cx="41" cy="224.0" r="3"/><circle cx="63" cy="223.7" r="3"/><circle cx="86" cy="217.4" r="3"/><circle cx="109" cy="185.8" r="3"/><circle cx="149" cy="189.4" r="3"/><circle cx="172" cy="218.7" r="3"/><circle cx="191" cy="223.6" r="3"/></g>
+    <circle cx="131" cy="164.7" r="5.5" class="s-orgf"/>
+    <text x="100" y="244" text-anchor="middle" class="s-txm">시험한 가로축 값: 9개</text>
+  </g>
+  <text x="50" y="109" text-anchor="middle" class="s-txm" transform="rotate(-90 50 109)">덜 중요한 하이퍼파라미터</text>
+  </g>
+</svg>
+<figcaption>가로축은 성능을 크게 좌우하는 하이퍼파라미터(예: 학습률), 세로축은 성능에 거의 영향이 없는 하이퍼파라미터다. 아래 주황 곡선은 가로축 값에 따른 성능, 큰 주황 점은 9번 중 가장 좋은 시도다. 격자 탐색은 가로축을 3개 값으로만 시험해 봉우리를 놓치고, 같은 열의 3번은 사실상 같은 시도를 반복한다. 무작위 탐색은 같은 9번으로 가로축 값 9개를 시험해 봉우리 근처에 닿는다.</figcaption>
+</figure>
+<div class="box key" data-title="탐색 요령"><ul>
+<li>학습률, 가중치 감쇠처럼 규모가 넓은 값은 로그 눈금에서 뽑는다: $\eta = 10^{u}$, $u \sim \mathrm{U}(-4, -1)$.</li>
+<li>넓게 몇 번 → 좋은 영역으로 좁혀 다시(거친 탐색에서 세밀한 탐색으로).</li>
+<li>중요한 순서: 학습률 &gt; 규제 강도·배치 크기 &gt; 모델 크기 &gt; 나머지. 학습률부터 맞춘다.</li>
+<li>탐색은 검증 세트로 한다. 테스트 세트는 마지막에 한 번(12일차).</li>
+</ul></div>
+
+<h2 data-min="12" data-kind="concept">재현성</h2>
+<p>같은 코드·데이터·설정으로 같은 결과를 다시 얻을 수 있는 성질을 <dfn data-t="reproducibility">재현성</dfn>이라 한다. 신경망 학습에는 무작위성이 많다: 초기화, 데이터 섞기, 드롭아웃, 증강, 일부 GPU 연산의 순서. 난수 생성기의 시작값인 <dfn data-t="seed">시드</dfn>를 고정하면 대부분을 재현할 수 있다.</p>
+<pre><code class="language-python">import random, numpy as np, torch       # PyTorch 예 (29일차)
+def seed_everything(seed):
+    random.seed(seed); np.random.seed(seed)
+    torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True     # 느려질 수 있다
+    torch.backends.cudnn.benchmark = False
+</code></pre>
+<p>시드를 고정하는 것과 결과를 하나의 시드로만 보고하는 것은 다른 문제다. 시드에 따른 성능의 흔들림이 비교하려는 차이보다 클 수 있다. 중요한 결론은 시드 3~5개의 평균과 표준편차로 보고한다. 그리고 실험마다 설정(하이퍼파라미터, 데이터 버전, 코드 버전, 라이브러리 버전)을 함께 기록한다.</p>
+
+<h2 data-min="20" data-kind="practice">코드 실습: 갱신 비율과 무작위 탐색</h2>
+<p>손글씨 MLP를 학습하며 층별 갱신 비율 $\eta\|\nabla W\|/\|W\|$를 기록한다. 학습률에 따라 이 값이 어떻게 달라지는지 본다.</p>
+<pre class="run"><code>import numpy as np
+import math
+import matplotlib.pyplot as plt
+d = load_data("digits"); X, y = d["X"].astype(float) / 16, d["y"]
+rng = np.random.default_rng(0); tr, te = [], []
+for k in range(10):
+    idx = rng.permutation(np.where(y == k)[0])
+    cut = int(0.8 * len(idx))
+    tr += list(idx[:cut])
+    te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+r2 = np.random.default_rng(1); trn, val = [], []
+for k in range(10):
+    idx = r2.permutation(tr[y[tr] == k])
+    cut = int(0.8 * len(idx))
+    trn += list(idx[:cut])
+    val += list(idx[cut:])
+trn, val = np.array(trn), np.array(val)
+
+def fb(params, xb, yb, wd=0.0):
+    W1, b1, W2, b2 = params
+    a = xb @ W1 + b1; h = np.maximum(0, a); z = h @ W2 + b2
+    z = z - z.max(1, keepdims=True); p = np.exp(z) / np.exp(z).sum(1, keepdims=True)
+    loss = -np.log(p[np.arange(len(yb)), yb]).mean()
+    g = p.copy(); g[np.arange(len(yb)), yb] -= 1; g /= len(yb)
+    dW2 = h.T @ g + wd * W2; dh = g @ W2.T; dh[a &lt;= 0] = 0
+    return loss, [xb.T @ dh + wd * W1, dh.sum(0), dW2, g.sum(0)]
+
+def train(lr, wd=0.0, epochs=10, seed=1, log=False, idx_tr=trn):
+    r = np.random.default_rng(seed)
+    params = [r.normal(0, math.sqrt(2 / 64), (64, 64)), np.zeros(64),
+              r.normal(0, math.sqrt(2 / 64), (64, 10)), np.zeros(10)]
+    ratios = []
+    for ep in range(epochs):
+        order = r.permutation(idx_tr)
+        for s in range(0, len(order), 32):
+            i = order[s:s + 32]; loss, grads = fb(params, X[i], y[i], wd)
+            if log:
+                norm = np.linalg.norm
+                ratios.append([lr * norm(grads[k]) / norm(params[k]) for k in (0, 2)])
+            for p_, g_ in zip(params, grads): p_ -= lr * g_
+    return params, np.array(ratios)
+def accuracy(params, idx):
+    W1, b1, W2, b2 = params
+    return ((np.maximum(0, X[idx] @ W1 + b1) @ W2 + b2).argmax(1) == y[idx]).mean()
+
+plt.figure(figsize=(6, 3.2))
+for lr in [0.001, 0.1, 3.0]:
+    params, ratios = train(lr, epochs=3, log=True)
+    W1, b1 = params[0], params[1]
+    # 모든 검증 입력에서 0인 유닛
+    dead = (np.maximum(0, X[val] @ W1 + b1) == 0).all(0).mean()
+    plt.semilogy(ratios[:, 0], label=f"η = {lr} (W1)")
+    print(f"η = {lr}: W1 갱신 비율 중앙값 {np.median(ratios[:, 0]):.1e}, 최댓값 "
+          f"{ratios[:, 0].max():.1e}")
+    print(f"    죽은 은닉 유닛 {dead:.0%},  검증 정확도 {accuracy(params, val):.3f}")
+plt.axhline(1e-3, color="gray", ls=":")
+plt.xlabel("스텝")
+plt.ylabel("‖ΔW‖ / ‖W‖")
+plt.legend(fontsize=8)
+plt.grid(alpha=.3)
+plt.show()
+</code></pre>
+<p>η = 0.001은 갱신 비율이 $10^{-4}$ 안팎이다(중앙값 6.4e-05). 3에폭 동안 가중치가 거의 바뀌지 않아 검증 정확도가 찍기 수준(0.083)이다. η = 0.1은 비율이 $5\times10^{-3}$ 근처를 유지하며 정상적으로 학습된다. η = 3.0은 처음 몇 스텝의 비율이 1 안팎이다. 한 스텝에 가중치가 자기 크기만큼 바뀐다는 뜻이다. 그 사이 은닉 유닛 64개 중 62개가 죽고(모든 검증 입력에서 출력 0), 이후로는 살아남은 몇 개만 갱신되어 비율이 오히려 작아진다. 그래서 중앙값(4.1e-03)만 보면 η = 0.1과 비슷해 보인다. 요약값 하나가 아니라 곡선 전체를 봐야 하는 이유다. 비율이 작아진 것이 "안정되었다"는 뜻이 아닐 수 있다.</p>
+<p>이번에는 학습률과 가중치 감쇠를 로그 눈금에서 무작위로 12번 뽑아 검증 정확도를 비교한다.</p>
+<pre class="run"><code>search = np.random.default_rng(42); trials = []
+for t in range(12):
+    lr = 10 ** search.uniform(-3, 0.3); wd = 10 ** search.uniform(-6, -1)
+    with np.errstate(all="ignore"):
+        params, _ = train(lr, wd, epochs=6)
+    trials.append((accuracy(params, val), lr, wd))
+trials.sort(reverse=True)
+for acc_, lr, wd in trials[:5]:
+    print(f"검증 정확도 {acc_:.3f}  η = {lr:.3g}, λ = {wd:.1e}")
+plt.figure(figsize=(5, 3.4))
+plt.scatter([t[1] for t in trials], [t[2] for t in trials], c=[t[0] for t in trials],
+            cmap="viridis", s=60)
+plt.xscale("log")
+plt.yscale("log")
+plt.colorbar(label="검증 정확도")
+plt.xlabel("학습률")
+plt.ylabel("가중치 감쇠")
+plt.show()
+</code></pre>
+<p>상위 5개는 모두 η가 0.13~0.54 사이이고, λ는 $6\times10^{-5}$부터 $10^{-2}$까지 흩어져 있다. 이 설정(6에폭)에서는 성능을 학습률이 거의 결정하고, 가중치 감쇠는 이 범위에서 큰 차이를 만들지 않는다. η가 0.03보다 작은 시도는 6에폭 안에 충분히 학습되지 못했고(0.85 이하), η = 1.6은 발산해 찍기 수준(0.100)이다. 다음 단계라면 η를 0.1~0.6으로 좁혀 다시 탐색하고, 상위 설정 몇 개를 여러 시드로 비교한다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>순서: 데이터 보기 → 첫 손실($\ln K$) → 기울기 검증 → 작은 배치 외우기 → 학습률 탐색 → 기록하며 학습 → 기준선 비교.</li>
+  <li>증상으로 원인을 좁힌다: NaN(넘침·학습률), $\ln K$ 정체(기울기·갱신), 찍기 수준 검증(레이블·전처리).</li>
+  <li>기록: 손실·지표, 학습률, 기울기 노름, 갱신 비율(약 $10^{-3}$), 활성값 통계.</li>
+  <li>무작위 탐색 + 로그 눈금 + 거친 탐색에서 세밀한 탐색으로. 학습률부터.</li>
+  <li>재현성: 시드 고정, 설정 기록, 결론은 여러 시드의 평균 ± 표준편차로.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"10클래스 분류 신경망의 초기 손실이 35였다. 가장 먼저 의심할 것은?","o":["학습률이 작다","초기 로짓이 너무 크다(초기화나 입력 스케일)","데이터가 부족하다","과적합"],"a":1,"e":"정상이라면 ln 10 ≈ 2.3 근처여야 한다."},
+ {"q":"표본 16개를 500스텝 학습해도 손실이 줄지 않는다. 의미는?","o":["데이터가 부족하다","모델·손실·갱신 어딘가에 버그가 있다","과적합이다","정상이다"],"a":1,"e":"작은 배치는 반드시 외울 수 있어야 한다."},
+ {"q":"학습 정확도는 99%인데 검증 정확도가 10%(찍기 수준)다. 가장 그럴듯한 원인은?","o":["과적합","검증 데이터의 레이블이나 전처리가 학습과 다름","학습률 과대","배치 크기"],"a":1,"e":"단순 과적합이면 검증이 찍기 수준까지 떨어지지는 않는다."},
+ {"q":"층의 갱신 비율 ‖ΔW‖/‖W‖가 10⁻⁶ 수준이다. 의미는?","o":["적당하다","그 층이 사실상 학습되지 않는다","발산한다","과적합이다"],"a":1,"e":"경험적으로 10⁻³ 근처가 적당하다."},
+ {"q":"하이퍼파라미터 2개를 9번 시도할 때 무작위 탐색이 격자 탐색보다 나은 이유는?","o":["계산이 적어서","중요한 축의 서로 다른 값을 더 많이 시험해서","항상 최적을 찾아서","재현성이 좋아서"],"a":1,"e":"격자는 축마다 3개 값뿐이지만 무작위는 9개 값이다."},
+ {"q":"학습률을 탐색할 때 적절한 샘플링은?","o":["0과 1 사이 균등","로그 눈금에서 균등 (예: 10^U(−4, −1))","0.001 간격","정규분포"],"a":1,"e":"규모가 여러 자릿수에 걸치므로 로그 눈금이 맞다."},
+ {"q":"검증 손실이 학습 손실보다 낮다. 가능한 정상 원인은?","o":["데이터 누수","드롭아웃·증강이 학습 때만 켜져 학습 손실이 높게 측정됨","버그","과적합"],"a":1,"e":"학습 손실은 규제가 켜진 상태로, 검증은 꺼진 상태로 잰다."},
+ {"q":"두 설정의 정확도 차이가 0.3%p인데 시드에 따른 표준편차가 0.5%p다. 결론은?","o":["더 좋은 쪽을 채택","차이가 잡음 수준이라 결론을 내리기 어렵다. 시드를 늘린다","시드를 고정하면 해결","테스트 세트로 정한다"],"a":1,"e":"여러 시드의 평균과 표준편차로 비교한다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>"손실이 처음 몇 에폭은 잘 줄다가 갑자기 NaN이 된다." 가능한 원인 세 가지와 확인 방법을 쓰라.
+    <details class="sol"><summary>풀이</summary><p>(1) 학습률이 커서 어느 순간 발산: 기울기 노름 기록, 학습률을 줄여 재현되는지. (2) 로그나 나눗셈의 안정화 누락: 확률이 0이 되는 순간 $\ln 0$. 로짓 형태 손실(10, 11일차)로 바꾼다. (3) 기울기 폭발: 클리핑(24일차)을 넣고 노름을 기록한다.</p></details></li>
+  <li>시드 5개로 두 모델의 테스트 정확도가 A: 97.1, 97.4, 96.9, 97.3, 97.0, B: 97.5, 97.2, 97.6, 97.4, 97.3이다. 평균과 표준편차를 구하고 B가 낫다고 말할 수 있는지 판단하라.
+    <details class="sol"><summary>풀이</summary><p>A: 평균 97.14, 표준편차 약 0.18. B: 평균 97.40, 약 0.14. 차이 0.26은 표준편차보다 크고 B의 최솟값(97.2)이 A의 평균보다 높아 B가 나을 가능성이 높다. 엄밀하게는 통계 검정이나 더 많은 시드로 확인한다.</p>
+<pre><code>A = np.array([97.1, 97.4, 96.9, 97.3, 97.0]); B = np.array([97.5, 97.2, 97.6, 97.4, 97.3])
+print(A.mean(), A.std(ddof=1), B.mean(), B.std(ddof=1))
+</code></pre></details></li>
+  <li>층별 활성값에서 "0인 비율"을 기록했더니 3번째 층이 99%였다. 무엇을 의심하고 어떻게 고치는가?
+    <details class="sol"><summary>풀이</summary><p>죽은 ReLU(16일차). 큰 학습률이나 나쁜 초기화로 대부분의 뉴런이 음수 영역에 빠졌다. 학습률을 줄이거나, He 초기화를 확인하거나, Leaky ReLU·정규화 층을 쓴다.</p></details></li>
+</ol>
+
+<h2 data-min="45" data-kind="project">미니 프로젝트: 버그가 숨은 학습 코드 고치기</h2>
+<section class="project" data-title="오류 없이 실행되지만 학습되지 않는 코드에서 버그 7개를 절차대로 찾아 고치기" data-min="45">
+<p class="lead">아래 학습 코드는 오류 없이 끝까지 실행되지만 결과가 엉망이다. 버그가 7개 숨어 있다. 코드를 읽어서 찾기보다, 디버깅 절차를 하나씩 적용해 증상에서 원인으로 좁혀 간다. 각 단계에서 무엇이 잘못되었는지 적고, 고친 코드를 직접 작성한 뒤 참고 답안과 비교하라.</p>
+<ol class="steps">
+<li><b>문제의 코드.</b> 실행하고 결과를 본다.
+<pre class="run"><code>def load():
+    d = load_data("digits"); X, y = d["X"].astype(float), d["y"]
+    rng = np.random.default_rng(0); idx = rng.permutation(len(X))
+    tr, te = idx[:1400], idx[1400:]
+    return X[tr], y[rng.permutation(tr)], X[te], y[te]
+def init_params(rng):
+    return [rng.normal(0, 1.0, (64, 64)), np.zeros(64), rng.normal(0, 1.0, (64, 10)),
+            np.zeros(10)]
+def forward_backward(params, xb, yb):
+    W1, b1, W2, b2 = params
+    h = np.maximum(0, xb @ W1 + b1); z = h @ W2 + b2
+    p = np.exp(z) / np.exp(z).sum(1, keepdims=True)
+    loss = -np.log(p[np.arange(len(yb)), yb]).mean()
+    g = p.copy(); g[np.arange(len(yb)), yb] -= 1
+    dW2 = h.T @ g; db2 = g.sum(0)
+    dh = g @ W2.T; dh[h &lt; 0] = 0
+    dW1 = xb.T @ dh; db1 = dh.sum(0)
+    return loss, [dW1, db1, dW2, db2]
+def predict(params, Xq):
+    W1, b1, W2, b2 = params
+    return (np.maximum(0, Xq @ W1 + b1) @ W2 + b2).argmax(1)
+def run_buggy(lr=0.1, epochs=20):
+    Xtr, ytr, Xte, yte = load()
+    params = init_params(np.random.default_rng(1))
+    hist = []
+    for ep in range(epochs):
+        tot = 0.0
+        for s in range(0, len(Xtr), 32):
+            loss, grads = forward_backward(params, Xtr[s:s + 32], ytr[s:s + 32])
+            for p_, g_ in zip(params, grads): p_ -= lr * g_
+            tot += loss
+        hist.append(tot / math.ceil(len(Xtr) / 32))
+    print("에폭별 손실:", np.round(hist[:5], 3), "...")
+    print("정확도:", (predict(params, Xtr) == ytr).mean())
+with np.errstate(all="ignore"):
+    run_buggy()
+</code></pre></li>
+<li><b>데이터 보기.</b> 학습 데이터의 값 범위와 레이블 분포를 출력하고, 표본 12개를 레이블과 함께 그린다. 이상한 점 두 가지를 찾아라.
+<pre class="run"><code>Xtr, ytr, Xte, yte = load()
+print("X 범위:", Xtr.min(), "~", Xtr.max(), "  레이블 분포:", np.bincount(ytr))
+fig, axs = plt.subplots(1, 12, figsize=(10, 1.4))
+for ax, i in zip(axs, range(12)):
+    ax.imshow(Xtr[i].reshape(8, 8), cmap="gray_r")
+    ax.set_title(str(ytr[i]))
+    ax.axis("off")
+plt.show()
+</code></pre></li>
+<li><b>첫 손실.</b> 초기화 직후 배치 하나의 손실과 로짓의 크기를 본다(입력을 16으로 나눈 경우와 비교).
+<pre class="run"><code>params = init_params(np.random.default_rng(1))
+with np.errstate(all="ignore"):
+    for name, xb in [("원래 입력", Xtr[:32]), ("16으로 나눈 입력", Xtr[:32] / 16)]:
+        W1, b1, W2, b2 = params; z = np.maximum(0, xb @ W1 + b1) @ W2 + b2
+        loss, _ = forward_backward(params, xb, ytr[:32])
+        print(f"{name}: 로짓 최대 |z| = {np.abs(z).max():.1f},  첫 손실 = {loss:.3f} "
+              f" (기대값 ln 10 = 2.303)")
+</code></pre></li>
+<li><b>기울기 검증.</b> 정규화한 입력과 작은 초기화로 <code>forward_backward</code>의 기울기를 수치 미분과 비교한다. 어느 파라미터에서 어떤 비율로 틀리는지 보고 원인을 추론하라.
+<pre class="run"><code>def grad_check(fb, params, xb, yb, n_each=40, seed=0):
+    loss, grads = fb(params, xb, yb); r = np.random.default_rng(seed); out = []
+    for P, G in zip(params, grads):
+        worst, ratios = 0.0, []
+        for _ in range(n_each):
+            idx = tuple(r.integers(0, s) for s in P.shape); o = P[idx]
+            P[idx] = o + 1e-5
+            lp = fb(params, xb, yb)[0]
+            P[idx] = o - 1e-5
+            lm = fb(params, xb, yb)[0]
+            P[idx] = o
+            num = (lp - lm) / 2e-5
+            if abs(num) &gt; 1e-8: ratios.append(G[idx] / num)
+            worst = max(worst, abs(num - G[idx]) / max(abs(num), abs(G[idx]), 1e-12))
+        out.append((worst, np.median(ratios) if ratios else np.nan))
+    return out
+small = [np.random.default_rng(3).normal(0, 0.18, (64, 64)), np.zeros(64),
+         np.random.default_rng(4).normal(0, 0.18, (64, 10)), np.zeros(10)]
+for name, (w, ratio) in zip(["W1", "b1", "W2", "b2"],
+                            grad_check(forward_backward, small, Xtr[:8] / 16,
+                                       ytr[:8])):
+    print(f"{name}: 최대 상대 오차 {w:.3f},  역전파/수치 비율의 중앙값 {ratio:.2f}")
+</code></pre></li>
+<li><b>고치고 다시 학습.</b> 지금까지 찾은 원인을 고친 <code>load_fixed</code>, <code>init_fixed</code>, <code>forward_backward_fixed</code>, <code>run_fixed</code>를 직접 작성한다. 표본 32개 외우기 시험을 먼저 통과시킨 뒤 전체를 학습하고, <b>테스트 세트</b>로 평가하라. 마지막 버그는 평가 부분에 있다.</li>
+</ol>
+<details class="sol"><summary>참고 답안: 버그 7개와 고친 코드</summary>
+<ol>
+<li><b>레이블 섞기</b>(<code>load</code>): <code>y[rng.permutation(tr)]</code>가 입력과 다른 순서로 레이블을 뽑는다. 2단계 그림에서 숫자와 레이블이 맞지 않는다. <code>y[tr]</code>로 고친다.</li>
+<li><b>입력 정규화 누락</b>: 값이 0~16이다. 16으로 나눈다.</li>
+<li><b>초기화가 너무 큼</b>: 표준편차 1.0이면 정규화하지 않은 입력에서 로짓이 973까지 커진다. 입력을 16으로 나눠도 로짓이 60을 넘고 첫 손실이 17.9로, 기대값 2.303과 거리가 멀다(3단계). He 초기화 $\sqrt{2/64}$로 바꾼다.</li>
+<li><b>소프트맥스 안정화 누락</b>: 큰 로짓에서 <code>exp</code>가 넘쳐 NaN이 된다. 행마다 최댓값을 뺀다.</li>
+<li><b>기울기를 N으로 나누지 않음</b>: 손실은 평균인데 기울기는 합이다. 4단계에서 W2, b2의 비율 중앙값이 정확히 배치 크기 8이고, 최대 상대 오차도 $7/8 = 0.875$다. 모든 원소가 똑같이 8배라는 뜻이다. <code>g /= len(yb)</code>로 고친다.</li>
+<li><b>ReLU 마스크 오류</b>: <code>h</code>는 ReLU 출력이라 음수가 없으므로 <code>dh[h &lt; 0] = 0</code>은 아무것도 막지 못한다. 활성화 이전 값으로 <code>dh[a &lt;= 0] = 0</code>. 4단계에서 W1, b1은 양상이 다르다. 최대 상대 오차가 0.875를 넘고(1.163, 1.000), b1의 비율 중앙값도 8이 아니다(10.58). 8배 말고 다른 오류가 하나 더 있다는 신호다. 꺼진 유닛으로 기울기가 새어 들어가 수치 미분이 0인 곳에서도 역전파 값이 0이 아니다.</li>
+<li><b>학습 데이터로 평가</b>: 정확도를 <code>Xtr</code>로 계산한다. 테스트 세트로 평가한다. 덧붙여 에폭마다 데이터를 섞지 않던 것도 섞도록 고친다.</li>
+</ol>
+<pre class="run"><code>def load_fixed():
+    # 2. 정규화
+    d = load_data("digits"); X_, y_ = d["X"].astype(float) / 16, d["y"]
+    rng = np.random.default_rng(0); idx = rng.permutation(len(X_))
+    tr_, te_ = idx[:1400], idx[1400:]
+    # 1. 같은 순서
+    return X_[tr_], y_[tr_], X_[te_], y_[te_]
+def init_fixed(rng):
+    # 3. He 초기화
+    s = math.sqrt(2 / 64)
+    return [rng.normal(0, s, (64, 64)), np.zeros(64), rng.normal(0, s, (64, 10)),
+            np.zeros(10)]
+def forward_backward_fixed(params, xb, yb):
+    W1, b1, W2, b2 = params
+    a = xb @ W1 + b1; h = np.maximum(0, a); z = h @ W2 + b2
+    # 4. 안정화
+    z = z - z.max(1, keepdims=True)
+    p = np.exp(z) / np.exp(z).sum(1, keepdims=True)
+    loss = -np.log(p[np.arange(len(yb)), yb]).mean()
+    # 5. 평균의 기울기
+    g = p.copy(); g[np.arange(len(yb)), yb] -= 1; g /= len(yb)
+    dW2 = h.T @ g; db2 = g.sum(0)
+    # 6. 활성화 이전 값으로
+    dh = g @ W2.T; dh[a &lt;= 0] = 0
+    return loss, [xb.T @ dh, dh.sum(0), dW2, db2]
+Xtr_f, ytr_f, Xte_f, yte_f = load_fixed()
+errs = grad_check(forward_backward_fixed, init_fixed(np.random.default_rng(3)),
+                  Xtr_f[:8], ytr_f[:8])
+print("기울기 검증, 최대 상대 오차:", ", ".join(f"{w:.1e}" for w, _ in errs))
+p_small = init_fixed(np.random.default_rng(1))
+for it in range(300):
+    loss, grads = forward_backward_fixed(p_small, Xtr_f[:32], ytr_f[:32])
+    for p_, g_ in zip(p_small, grads): p_ -= 0.5 * g_
+print(f"32개 외우기: 손실 {loss:.4f}")
+def run_fixed(lr=0.1, epochs=20):
+    params = init_fixed(np.random.default_rng(1)); r = np.random.default_rng(2)
+    for ep in range(epochs):
+        # 에폭마다 섞기
+        order = r.permutation(len(Xtr_f))
+        for s in range(0, len(order), 32):
+            i = order[s:s + 32]
+            loss, grads = forward_backward_fixed(params, Xtr_f[i], ytr_f[i])
+            for p_, g_ in zip(params, grads): p_ -= lr * g_
+    # 7. 테스트로 평가
+    return (predict(params, Xte_f) == yte_f).mean()
+print(f"고친 코드의 테스트 정확도: {run_fixed():.3f}")
+</code></pre>
+<p>버그 하나하나는 사소하지만, 여러 개가 겹치면 증상이 서로를 가린다. 예를 들어 레이블 섞기 버그가 있으면 다른 버그를 모두 고쳐도 정확도가 찍기 수준이라, 무엇을 고쳤는지 효과를 볼 수 없다. 절차의 앞 단계(데이터 보기)를 먼저 하는 이유다.</p></details>
+</section>

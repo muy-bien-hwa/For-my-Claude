@@ -138,7 +138,8 @@ print("해석적:", np.array([2 * p[0] * p[1], p[0] ** 2 + 3]))
 print("수치적:", num_grad(f, p).round(6))
 sig = lambda z: 1 / (1 + np.exp(-z))
 for z0 in [-3.0, 0.0, 2.0]:
-    print(f"σ'({z0}) 해석적 {sig(z0) * (1 - sig(z0)):.6f}  수치적 {num_grad(lambda v: sig(v[0]), [z0])[0]:.6f}")
+    print(f"σ'({z0}) 해석적 {sig(z0) * (1 - sig(z0)):.6f}  수치적 "
+          f"{num_grad(lambda v: sig(v[0]), [z0])[0]:.6f}")
 </code></pre>
 <p>$h$를 무작정 작게 하면 좋을까? 너무 작으면 컴퓨터의 반올림 오차가 커진다. $h$에 따른 오차를 그려 본다.</p>
 <pre class="run"><code>hs = np.logspace(-14, 0, 60)

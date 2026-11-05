@@ -1,0 +1,271 @@
+<ul class="goals">
+  <li>학습률 범위 테스트로 적절한 최대 학습률을 찾을 수 있다.</li>
+  <li>잡음 섞인 SGD에서 학습률을 줄여야 하는 이유를 설명할 수 있다.</li>
+  <li>계단 감쇠, 코사인 감쇠, 워밍업, 원사이클 스케줄을 식으로 쓰고 구현할 수 있다.</li>
+  <li>배치 크기를 바꿀 때 학습률을 어떻게 조정하는지 설명할 수 있다.</li>
+  <li>같은 예산에서 여러 스케줄을 비교하는 실험을 설계할 수 있다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="concept">가장 중요한 하이퍼파라미터</h2>
+<p>하이퍼파라미터를 하나만 조정할 수 있다면 학습률을 고른다. 너무 작으면 학습이 느리고(9일차), 너무 크면 발산하며, 그 사이에서도 값에 따라 최종 성능이 크게 달라진다. 22일차에서 본 대로 옵티마이저가 바뀌면 좋은 학습률의 범위도 완전히 바뀐다. 오늘은 학습률을 정하는 두 가지 질문에 답한다. 처음에 얼마로 시작할 것인가(범위 테스트)와 학습하는 동안 어떻게 바꿀 것인가(스케줄)다.</p>
+
+<h2 data-min="18" data-kind="concept">학습률 범위 테스트</h2>
+<p>학습률을 아주 작은 값부터 매 스텝 지수적으로 키우며 한 번 학습하고, 학습률에 따른 손실을 기록하는 방법이 <dfn data-t="lr-range-test">학습률 범위 테스트</dfn>다(Smith, 2015). 몇백 스텝이면 끝나므로 본 학습 전에 싸게 할 수 있다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 250" width="640" role="img" aria-label="학습률 범위 테스트의 전형적인 곡선">
+  <g font-size="12">
+  <line x1="70" y1="210" x2="560" y2="210" class="s-mu" stroke-width="1.2"/>
+  <line x1="70" y1="210" x2="70" y2="20" class="s-mu" stroke-width="1.2"/>
+  <g class="s-txm" text-anchor="middle"><text x="70" y="228">10⁻⁴</text><text x="190" y="228">10⁻³</text><text x="310" y="228">10⁻²</text><text x="430" y="228">10⁻¹</text><text x="550" y="228">10⁰</text></g>
+  <text x="315" y="246" text-anchor="middle" class="s-txm">학습률 (로그 눈금)</text>
+  <text x="40" y="115" text-anchor="middle" class="s-txm" transform="rotate(-90 40 115)">손실</text>
+  <path d="M75 50 C 200 52, 250 60, 300 95 C 350 135, 400 170, 445 172 C 470 172, 490 150, 510 80 L 525 30" class="s-ac" stroke-width="2.6" fill="none"/>
+  <text x="135" y="40" text-anchor="middle" class="s-tx">① 너무 작음: 거의 그대로</text>
+  <text x="300" y="150" text-anchor="end" class="s-tx">② 가장 가파르게 내려감</text>
+  <line x1="350" y1="20" x2="350" y2="210" class="s-grn" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="356" y="34" class="s-grnf" font-weight="700">선택 구간</text>
+  <circle cx="445" cy="172" r="5" class="s-orgf"/><text x="445" y="194" text-anchor="middle" class="s-tx">③ 최저점</text>
+  <text x="520" y="110" text-anchor="start" class="s-redf" font-weight="700">④ 발산</text>
+  </g>
+</svg>
+<figcaption>학습률 범위 테스트의 전형적인 모양. 최대 학습률은 손실이 가장 가파르게 내려가는 구간부터 최저점의 몇 분의 1 사이에서 고른다. 최저점 바로 근처는 이미 불안정하다.</figcaption>
+</figure>
+<ol class="steps">
+<li>학습률을 $10^{-5}$~$10^{-4}$에서 시작해 매 스텝 일정 비율로 키운다(예: 200스텝에 걸쳐 10까지).</li>
+<li>손실의 지수 이동 평균(22일차)을 기록한다. 미니배치 잡음을 걸러 내기 위해서다.</li>
+<li>손실이 최저치의 몇 배를 넘으면 멈춘다.</li>
+<li>최저점 학습률의 1/10~1/3 근처, 또는 손실이 가장 가파르게 내려가는 학습률을 최대 학습률로 고른다.</li>
+</ol>
+<p>이 테스트는 학습 초반의 동작만 보므로 정답을 주지는 않는다. 그러나 "0.001과 1 사이 어디쯤"이라는 막막한 질문을 몇 배 범위로 좁혀 준다.</p>
+
+<h2 data-min="15" data-kind="concept">왜 학습률을 줄이는가</h2>
+<p>미니배치 그래디언트는 잡음이 섞인 추정치다(9일차). 손실의 바닥 근처에서는 진짜 그래디언트가 작아지지만 잡음은 그대로라, 일정한 학습률로는 파라미터가 바닥 주변을 계속 떠돈다. 떠도는 범위는 학습률에 비례한다. 학습률을 줄이면 이 떨림이 줄어 더 낮은 손실에 닿는다.</p>
+<div class="viz-mount" data-viz="lr-schedule"></div>
+<p>그래서 대부분의 학습은 "처음에는 크게, 나중에는 작게"를 따른다. 큰 학습률은 빠르게 이동하며 넓고 평평한 지역을 찾는 데 유리하고, 작은 학습률은 그 안에서 정밀하게 바닥을 찾는다. 학습 진행에 따라 학습률을 바꾸는 계획을 <dfn data-t="lr-schedule">학습률 스케줄</dfn>이라 한다.</p>
+
+<h2 data-min="20" data-kind="concept">스케줄의 종류</h2>
+<p>전체 스텝 수를 $T$, 최대 학습률을 $\eta_{\max}$라 한다.</p>
+<table>
+  <thead><tr><th>스케줄</th><th>식</th><th>특징</th></tr></thead>
+  <tbody>
+    <tr><td><dfn data-t="step-decay">계단 감쇠</dfn></td><td>정해진 시점마다 $\eta \leftarrow 0.1\eta$</td><td>ResNet 같은 고전 CNN 학습. 감쇠 시점을 정해야 한다.</td></tr>
+    <tr><td><dfn data-t="cosine-decay">코사인 감쇠</dfn></td><td>$\eta_t = \eta_{\min} + \frac12(\eta_{\max} - \eta_{\min})\left(1 + \cos\frac{\pi t}{T}\right)$</td><td>부드럽게 0 근처까지. 하이퍼파라미터가 거의 없어 현재 가장 흔하다.</td></tr>
+    <tr><td>선형 감쇠</td><td>$\eta_t = \eta_{\max}(1 - t/T)$</td><td>사전학습 모델 미세조정에서 흔하다.</td></tr>
+    <tr><td><dfn data-t="one-cycle">원사이클</dfn></td><td>약 30% 지점까지 $\eta_{\max}/25$에서 $\eta_{\max}$로 올린 뒤 끝까지 내림</td><td>짧은 학습에서 강하다(Smith, 2018).</td></tr>
+  </tbody>
+</table>
+<div class="box ex" data-title="코사인 감쇠의 값"><p>$\eta_{\max} = 0.1$, $\eta_{\min} = 0$, $T = 1000$. $t = 0$에서 0.1, $t = 250$에서 $0.05(1 + \cos45°) = 0.0854$, $t = 500$에서 0.05, $t = 750$에서 0.0146, $t = 1000$에서 0. 처음과 끝에서는 천천히, 가운데서는 빠르게 줄어든다.</p></div>
+
+<h2 data-min="12" data-kind="concept">워밍업</h2>
+<p>학습 초반 몇백~몇천 스텝 동안 학습률을 0 근처에서 목표값까지 선형으로 올리는 것을 <dfn data-t="warmup">워밍업</dfn>이라 한다. 큰 학습률을 처음부터 쓰면 생기는 문제를 막는다.</p>
+<ul>
+<li>무작위 초기 상태에서는 그래디언트가 크고 방향이 들쭉날쭉하다. 큰 첫 걸음이 파라미터를 나쁜 지역으로 던질 수 있다.</li>
+<li>Adam의 2차 모멘트 추정치 $\hat{\mathbf v}$는 처음 몇 스텝 동안 표본이 적어 부정확하다. 작은 학습률로 시작하면 이 기간의 위험이 줄어든다.</li>
+<li>배치 정규화(25일차)의 이동 평균 통계가 아직 자리 잡지 않았다.</li>
+</ul>
+<p>트랜스포머 학습은 거의 항상 "워밍업 + 코사인(또는 선형) 감쇠"를 쓴다. 워밍업 길이는 보통 전체의 1~10%다.</p>
+
+<h2 data-min="12" data-kind="concept">배치 크기와 학습률</h2>
+<p>배치를 $k$배 키우면 그래디언트 잡음의 분산이 $1/k$로 준다. 같은 에폭 수에서 스텝 수는 $1/k$가 되므로, 학습률을 $k$배로 키워 한 스텝에 더 멀리 가게 하는 것이 자연스럽다. 이를 선형 스케일링 규칙이라 한다(Goyal 등, 2017). 이 논문은 배치 8192, 학습률을 32배로 키우고 워밍업을 써서 ResNet-50을 1시간에 학습했다.</p>
+<div class="box warn"><ul>
+<li>선형 규칙은 어느 크기(임계 배치 크기)까지만 통한다. 그보다 크면 학습률을 더 키워도 불안정해지기만 한다.</li>
+<li>Adam 계열에서는 학습률을 $\sqrt k$배로 키우는 규칙이 더 잘 맞는 경우가 많다.</li>
+<li>배치를 바꾸면 학습률을 다시 탐색하는 것이 가장 확실하다.</li>
+</ul></div>
+
+<h2 data-min="28" data-kind="practice">코드 실습: 스케줄 함수와 범위 테스트</h2>
+<p>스케줄을 "스텝 번호 → 학습률" 함수로 만든다. 모든 스케줄이 같은 인터페이스를 가지면 학습 루프에서 쉽게 바꿔 끼울 수 있다.</p>
+<pre class="run"><code>import numpy as np
+import math
+import matplotlib.pyplot as plt
+def make_schedule(kind, T, lr_max, warmup=0, lr_min=0.0):
+    def f(t):
+        if kind == "일정": return lr_max
+        if kind == "계단": return lr_max * 0.1 ** math.floor(t / (T / 3))
+        if kind == "코사인":
+            return lr_min + 0.5 * (lr_max - lr_min) * (1 + math.cos(math.pi * t / T))
+        if kind == "워밍업+코사인":
+            if t &lt; warmup: return lr_max * (t + 1) / warmup
+            prog = (t - warmup) / (T - warmup)                  # 0 → 1
+            return lr_min + 0.5 * (lr_max - lr_min) * (1 + math.cos(math.pi * prog))
+        if kind == "원사이클":
+            up = int(0.3 * T)
+            if t &lt; up: return lr_max / 25 + (lr_max - lr_max / 25) * t / up
+            prog = (t - up) / (T - up)
+            return lr_max * 0.5 * (1 + math.cos(math.pi * prog)) + lr_max * 1e-4
+    return f
+T = 360
+plt.figure(figsize=(6, 3.2))
+for kind in ["일정", "계단", "코사인", "워밍업+코사인", "원사이클"]:
+    f = make_schedule(kind, T, 0.1, warmup=36)
+    plt.plot([f(t) for t in range(T)], label=kind)
+plt.xlabel("스텝")
+plt.ylabel("학습률")
+plt.legend(fontsize=8)
+plt.grid(alpha=.3)
+plt.show()
+print("코사인 t = 0, 90, 180, 270:",
+      [round(make_schedule("코사인", T, 0.1)(t), 4) for t in (0, 90, 180, 270)])
+</code></pre>
+<p>다음은 손글씨 MLP(64 → 128 → 128 → 10, 모멘텀 SGD)에서 학습률 범위 테스트를 한다. 22일차 프로젝트와 같은 층과 옵티마이저를 쓴다.</p>
+<pre class="run"><code>class Linear:
+    def __init__(self, d_in, d_out, rng):
+        self.W = rng.normal(0, np.sqrt(2 / d_in), (d_in, d_out))
+        self.b = np.zeros(d_out)
+        self.dW = np.zeros_like(self.W); self.db = np.zeros_like(self.b)
+    def forward(self, X):
+        self.X = X; return X @ self.W + self.b
+    def backward(self, G):
+        self.dW[...] = self.X.T @ G; self.db[...] = G.sum(0); return G @ self.W.T
+    def params(self): return [(self.W, self.dW), (self.b, self.db)]
+class ReLU:
+    def forward(self, X):
+        self.m = X &gt; 0; return X * self.m
+    def backward(self, G): return G * self.m
+    def params(self): return []
+class Net:
+    def __init__(self, seed=1):
+        r = np.random.default_rng(seed)
+        self.layers = [Linear(64, 128, r), ReLU(), Linear(128, 128, r), ReLU(),
+                       Linear(128, 10, r)]
+    def forward(self, X):
+        for l in self.layers: X = l.forward(X)
+        return X
+    def backward(self, G):
+        for l in reversed(self.layers): G = l.backward(G)
+    def params(self): return [pg for l in self.layers for pg in l.params()]
+class Momentum:
+    def __init__(self, params, lr, beta=0.9):
+        self.params, self.lr, self.beta = params, lr, beta
+        self.v = [np.zeros_like(p) for p, _ in params]
+    def zero_grad(self):
+        for _, g in self.params: g[...] = 0
+    def step(self):
+        for (p, g), v in zip(self.params, self.v):
+            v *= self.beta; v += g; p -= self.lr * v
+def ce(Z, y):
+    Z = Z - Z.max(1, keepdims=True); P = np.exp(Z) / np.exp(Z).sum(1, keepdims=True)
+    G = P.copy(); G[np.arange(len(y)), y] -= 1
+    return -np.log(P[np.arange(len(y)), y] + 1e-12).mean(), G / len(y)
+d = load_data("digits"); X, y = d["X"].astype(float) / 16, d["y"]
+rng = np.random.default_rng(0); tr, te = [], []
+for k in range(10):
+    idx = rng.permutation(np.where(y == k)[0])
+    cut = int(0.8 * len(idx))
+    tr += list(idx[:cut])
+    te += list(idx[cut:])
+tr, te = np.array(tr), np.array(te)
+
+def lr_range_test(lo=1e-4, hi=10.0, steps=200, seed=1):
+    net = Net(seed); opt = Momentum(net.params(), lo); r = np.random.default_rng(seed)
+    order = np.concatenate([r.permutation(len(tr)) for _ in range(6)])
+    lrs, losses, avg, best = [], [], None, np.inf
+    for s in range(steps):
+        lr = lo * (hi / lo) ** (s / (steps - 1)); opt.lr = lr       # 지수적으로 증가
+        i = tr[order[s * 32:(s + 1) * 32]]
+        with np.errstate(all="ignore"):
+            L, G = ce(net.forward(X[i]), y[i])
+            opt.zero_grad()
+            net.backward(G)
+            opt.step()
+        avg = L if avg is None else 0.9 * avg + 0.1 * L                # 손실의 EMA
+        lrs.append(lr); losses.append(avg); best = min(best, avg)
+        if not np.isfinite(avg) or avg &gt; 4 * best: break               # 발산하면 멈춤
+    return np.array(lrs), np.array(losses)
+
+lrs, losses = lr_range_test()
+plt.figure(figsize=(6, 3.2)); plt.semilogx(lrs, losses)
+plt.xlabel("학습률"); plt.ylabel("손실 (EMA)"); plt.grid(alpha=.3); plt.show()
+print(f"최저점 학습률 {lrs[np.argmin(losses)]:.3f}, 멈춘 학습률 {lrs[-1]:.3f}")
+</code></pre>
+<p>손실은 학습률 0.01 근처부터 빠르게 내려가고, 약 0.16에서 최저, 0.5 근처에서 폭증한다. 최대 학습률로 0.05~0.1을 고르면 적당하다.</p>
+
+<h2 data-min="5" data-kind="review">정리</h2>
+<div class="box key"><ul>
+  <li>학습률 범위 테스트: 학습률을 지수적으로 키우며 손실 EMA 기록. 최저점의 1/10~1/3, 또는 가장 가파른 구간을 고른다.</li>
+  <li>잡음 섞인 SGD는 일정한 학습률로는 바닥 주변을 떠돈다. 학습률을 줄여야 더 낮은 손실에 닿는다.</li>
+  <li>계단 감쇠, 코사인 감쇠(가장 흔함), 선형 감쇠, 원사이클.</li>
+  <li>워밍업: 초반 불안정(큰 그래디언트, 부정확한 Adam 통계)을 막는다. 트랜스포머는 워밍업 + 감쇠가 표준.</li>
+  <li>배치 $k$배 → 학습률 $k$배(선형 규칙, SGD), Adam은 $\sqrt k$배 근처. 한계가 있으니 다시 탐색이 확실.</li>
+</ul></div>
+
+<h2 data-min="8" data-kind="review">확인 문제</h2>
+<script type="application/json" class="quiz">[
+ {"q":"학습률 범위 테스트에서 손실이 최저인 학습률이 0.3이었다. 최대 학습률로 적당한 것은?","o":["3","0.3","0.03~0.1","0.0001"],"a":2,"e":"최저점은 이미 불안정 직전이므로 그 1/10~1/3을 고른다."},
+ {"q":"일정한 학습률의 SGD가 어느 손실 아래로 내려가지 못하는 주된 이유는?","o":["기울기 소실","미니배치 그래디언트의 잡음 때문에 바닥 주변을 학습률에 비례하는 범위로 떠돌아서","과적합","초기화"],"a":1,"e":"학습률을 줄이면 떨림의 범위가 줄어든다."},
+ {"q":"η_max = 0.2, η_min = 0, T = 100인 코사인 감쇠에서 t = 50의 학습률은?","o":["0.2","0.1","0.05","0"],"a":1,"e":"$0.1(1 + \\cos 90°) = 0.1$."},
+ {"q":"워밍업이 해결하는 문제가 아닌 것은?","o":["초반의 큰 그래디언트로 인한 불안정","Adam 2차 모멘트 추정의 초기 부정확함","과적합","배치 정규화 통계가 자리 잡지 않음"],"a":2,"e":"과적합은 규제의 문제다."},
+ {"q":"SGD에서 배치를 256에서 1024로 키울 때 선형 스케일링 규칙에 따른 학습률 조정은?","o":["그대로","2배","4배","1/4"],"a":2,"e":"배치 k배 → 학습률 k배."},
+ {"q":"원사이클 스케줄의 모양은?","o":["계속 증가","계속 감소","초반에 올렸다가 끝까지 내린다","주기적으로 반복"],"a":2,"e":"약 30% 지점까지 올린 뒤 내린다."},
+ {"q":"학습률 범위 테스트에서 손실 대신 손실의 EMA를 기록하는 이유는?","o":["계산을 줄이려고","미니배치 잡음으로 곡선이 들쭉날쭉해 추세를 보기 어려워서","발산을 막으려고","편향 보정 때문에"],"a":1,"e":"22일차의 지수 이동 평균으로 잡음을 거른다."},
+ {"q":"총 10에폭 학습에서 계단 감쇠를 쓰려면 정해야 할 것은?","o":["감쇠 시점과 비율","워밍업 길이만","코사인 주기","아무것도 없다"],"a":0,"e":"코사인에 비해 하이퍼파라미터가 많다."}
+]</script>
+
+<h2 data-min="7" data-kind="review">연습 문제</h2>
+<ol class="exercises">
+  <li>스텝 1000번 중 처음 100스텝은 0에서 0.001까지 선형 워밍업, 그 뒤는 0까지 선형 감쇠하는 스케줄 함수를 작성하라. 스텝 50, 100, 550, 1000의 학습률은?
+    <details class="sol"><summary>풀이</summary><pre><code>def warmup_linear(t, T=1000, W=100, lr=1e-3):
+    return lr * t / W if t &lt; W else lr * (T - t) / (T - W)
+print([warmup_linear(t) for t in (50, 100, 550, 1000)])
+</code></pre><p>0.0005, 0.001, 0.0005, 0. 사전학습 모델 미세조정에서 흔히 쓰는 스케줄이다.</p></details></li>
+  <li>배치 크기 32, 학습률 0.05로 잘 되던 SGD 학습을 배치 512로 바꿨다. 선형 규칙에 따른 학습률과 함께 고려해야 할 점은?
+    <details class="sol"><summary>풀이</summary><p>16배이므로 0.8. 이렇게 큰 학습률은 초반에 발산하기 쉬우므로 워밍업을 붙이고, 실제로 잘 되는지 범위 테스트로 확인한다. 같은 에폭 수에서 스텝 수가 1/16이 되므로 에폭을 조금 늘려야 할 수도 있다.</p></details></li>
+  <li>지수 감쇠 $\eta_t = \eta_0\gamma^t$에서 1000스텝 동안 학습률을 1/100로 줄이려면 $\gamma$는 얼마여야 하는가?
+    <details class="sol"><summary>풀이</summary><p>$\gamma^{1000} = 0.01$, $\gamma = 0.01^{1/1000} = e^{\ln 0.01/1000} \approx 0.99540$. 아주 작은 차이가 1000번 곱해져 100배가 된다.</p></details></li>
+</ol>
+
+<h2 data-min="45" data-kind="project">미니 프로젝트: 범위 테스트로 정한 학습률과 스케줄 비교</h2>
+<section class="project" data-title="같은 8에폭 예산에서 다섯 가지 학습률 스케줄을 비교하기" data-min="45">
+<p class="lead">코드 실습에서 범위 테스트로 고른 최대 학습률 0.1로, 다섯 가지 스케줄을 같은 8에폭(약 360스텝) 동안 적용해 학습 손실과 테스트 정확도를 비교한다. 이어서 최대 학습률을 지나치게 크게(0.3) 잡았을 때 스케줄이 어떤 차이를 만드는지 본다. 학습을 10번 하므로 브라우저에서 수십 초 걸린다.</p>
+<ol class="steps">
+<li><b>스케줄을 받는 학습 함수.</b> 매 스텝 전에 스케줄 함수로 학습률을 바꾼다.
+<pre class="run"><code>def train_with_schedule(kind, lr_max, epochs=8, seed=1):
+    net = Net(seed)
+    opt = Momentum(net.params(), lr_max)
+    r = np.random.default_rng(seed)
+    steps_per_epoch = math.ceil(len(tr) / 32); T = epochs * steps_per_epoch
+    sched = make_schedule(kind, T, lr_max, warmup=int(0.1 * T)); t = 0; curve = []
+    for ep in range(epochs):
+        order = r.permutation(len(tr)); tot = 0.0
+        for s in range(0, len(order), 32):
+            # TODO 확인: 스텝마다 학습률 갱신
+            opt.lr = sched(t); t += 1
+            i = tr[order[s:s + 32]]
+            with np.errstate(all="ignore"):
+                L, G = ce(net.forward(X[i]), y[i])
+                opt.zero_grad()
+                net.backward(G)
+                opt.step()
+            tot += L * len(i)
+        curve.append(tot / len(tr))
+    acc = (net.forward(X[te]).argmax(1) == y[te]).mean()
+    return np.array(curve), acc
+print("준비 완료")
+</code></pre></li>
+<li><b>최대 학습률 0.1에서 비교.</b> 다섯 스케줄의 에폭별 학습 손실을 한 그래프에 그리고, 최종 학습 손실과 테스트 정확도를 표로 출력한다.
+<pre class="run"><code>kinds = ["일정", "계단", "코사인", "워밍업+코사인", "원사이클"]
+plt.figure(figsize=(6, 3.4))
+for kind in kinds:
+    curve, acc = train_with_schedule(kind, 0.1)
+    plt.semilogy(range(1, 9), curve, "o-", ms=3, label=kind)
+    print(f"{kind:8s} 마지막 에폭 학습 손실 {curve[-1]:.4f},  "
+          f"테스트 정확도 {acc:.3f}")
+plt.xlabel("에폭")
+plt.ylabel("학습 손실 (로그)")
+plt.legend(fontsize=8)
+plt.grid(alpha=.3)
+plt.show()
+</code></pre></li>
+<li><b>최대 학습률을 너무 크게 잡으면.</b> 같은 실험을 최대 학습률 0.3(범위 테스트의 최저점 근처)으로 반복한다.
+<pre class="run"><code>for kind in kinds:
+    curve, acc = train_with_schedule(kind, 0.3)
+    print(f"{kind:8s} 학습 손실 {curve[-1]:.4f},  테스트 정확도 {acc:.3f}")
+</code></pre></li>
+</ol>
+<details class="sol"><summary>참고 답안과 해설</summary>
+<ul>
+<li>2단계: 학습률이 끝까지 줄어드는 코사인, 워밍업+코사인, 원사이클의 마지막 에폭 학습 손실이 약 0.01로 가장 낮다. 일정한 학습률은 약 0.06, 계단 감쇠는 약 0.03이다. 테스트 정확도는 98.1~98.6%로 차이가 작다. 테스트 364개에서 0.5%p는 2개 정도라, 이 정도 차이는 시드를 바꾸면 순위가 뒤바뀔 수 있다. 결론은 손실 곡선과 여러 시드의 평균으로 내야 한다.</li>
+<li>3단계: 최대 학습률 0.3에서는 일정한 학습률이 학습에 실패한다(정확도가 10~50%). 학습률을 줄이는 스케줄은 후반에 회복해 93~96%에 닿지만, 0.1로 시작한 경우보다 나쁘다. 스케줄은 좋은 최대 학습률을 대신하지 못한다. 범위 테스트로 최대 학습률을 먼저 고르는 이유다.</li>
+<li>워밍업은 이 작은 MLP에서는 효과가 거의 없다. 깊은 망, 큰 배치, Adam과 트랜스포머처럼 초반이 불안정한 경우에 효과가 크다.</li>
+</ul></details>
+</section>

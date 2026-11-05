@@ -24,7 +24,7 @@
 ## 기능
 
 - **진도 관리**: 날짜별 완료, 절마다 책갈피, 읽은 절 자동 표시("강의 흐름" 막대), 스크롤 위치 복원, 학습 노트, 확인 문제 기록, JSON 내보내기·가져오기.
-- **용어 사전**: 357개 용어. 한글·영문·초성 검색, 짧은 정의, 처음 설명한 강의 위치로 이동, 등장 강의 목록, 단어장과 카드 복습. 모든 페이지에서 `/` 키로 연다.
+- **용어 사전**: 358개 용어. 한글·영문·초성 검색, 짧은 정의, 처음 설명한 강의 위치로 이동, 등장 강의 목록, 단어장과 카드 복습. 모든 페이지에서 `/` 키로 연다.
 - **브라우저 Python**: 1~4주차 코드 칸을 페이지 안에서 실행(Pyodide). 실제 데이터 `load_data("digits" | "iris" | "breast_cancer" | "wine")` 내장.
 - **인터랙티브 시각화**: 등고선·3D 곡면·그래디언트, 선형변환, SVD, 확률분포 등. 실험실 페이지에 모아 둠.
 - 밝은 회색·어두운 테마, 모바일 레이아웃, 인쇄용 스타일.
@@ -47,11 +47,13 @@ deep_learning_study/
 │   ├── vendor/                KaTeX (MIT), highlight.js (BSD-3)
 │   └── style.css
 ├── content/dayNN.html         강의 본문
-├── notebooks/*.ipynb          Colab 노트북 (tools/로 생성)
+├── notebooks/*.ipynb          Colab 노트북 (생성됨)
+├── notebooks/src/*.py         노트북 원본 (퍼센트 형식 스크립트)
 └── tools/
     ├── AUTHORING.md           집필 규칙 (문체, 마크업 컴포넌트)
     ├── check.py               실행 셀·퀴즈·문체·마크업 검사
-    └── build_index.py         용어 색인 생성
+    ├── build_index.py         용어 색인 생성
+    └── make_notebooks.py      notebooks/src/*.py → notebooks/*.ipynb
 ```
 
 ## 로컬에서 보기와 검사
@@ -68,6 +70,10 @@ python3 deep_learning_study/tools/check.py
 python3 deep_learning_study/tools/build_index.py
 ```
 
+```bash
+python3 deep_learning_study/tools/make_notebooks.py
+```
+
 ## 배포
 
 `main` 브랜치의 `deep_learning_study/`가 바뀌면 GitHub Actions(`.github/workflows/deploy-deep-learning-study.yml`)가 `gh-pages` 브랜치로 배포한다. 저장소 **Settings → Pages → Source: Deploy from a branch → Branch: `gh-pages` / `(root)`** 설정이 필요하다.
@@ -75,3 +81,5 @@ python3 deep_learning_study/tools/build_index.py
 ## 데이터 출처
 
 UCI Machine Learning Repository (CC BY 4.0): Iris (Fisher), Optical Recognition of Handwritten Digits (Alpaydin & Kaynak), Breast Cancer Wisconsin Diagnostic (Wolberg et al.), Wine. scikit-learn 동봉본을 JSON으로 변환했다. 유방암 데이터는 scikit-learn과 달리 y=1이 악성이다.
+
+MNIST (LeCun, Cortes, Burges): 저장소에 포함하지 않고, 노트북을 실행할 때 Keras 배포본(`mnist.npz`)을 내려받아 SHA-256 해시로 확인한다.

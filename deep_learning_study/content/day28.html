@@ -1,0 +1,745 @@
+<ul class="goals">
+  <li>6만 장 규모의 실제 이미지 데이터로 학습 파이프라인 전체(데이터 준비 → 점검 → 학습률 선택 → 학습 → 개선 → 최종 평가 → 저장)를 직접 구성한다.</li>
+  <li>4주차의 기법(He 초기화, AdamW, 워밍업·코사인 스케줄, 드롭아웃, 가중치 감쇠, 데이터 증강)을 하나의 학습 코드로 통합한다.</li>
+  <li>검증 세트로만 설정을 고르고 테스트 세트는 한 번만 쓰는 실험 규율을 지킨다.</li>
+  <li>혼동 행렬과 틀린 이미지로 남은 오류의 성격을 분석한다.</li>
+</ul>
+
+<h2 data-min="10" data-kind="review">프로젝트 개요</h2>
+<p>지금까지 쓴 손글씨 데이터는 8×8 픽셀 이미지 1,797장이었다. 이번에는 딥러닝의 표준 입문 데이터셋인 <dfn data-t="mnist">MNIST</dfn>를 쓴다. 28×28 픽셀 이미지 7만 장으로, 입력 차원은 약 12배(64 → 784), 데이터 수는 약 39배다. PyTorch 없이 3주차의 NumPy 프레임워크에 4주차의 학습 기법을 더해 <b>테스트 정확도 98% 이상</b>에 도달하는 것이 목표다.</p>
+<div class="flow"><div>데이터</div><div>모델과<br>학습 코드</div><div>점검</div><div>학습률<br>탐색</div><div>기준 모델</div><div class="hl">개선 실험</div><div>최종 평가</div><div>저장·보고</div></div>
+<h3>실습 환경</h3>
+<p>데이터가 커서 브라우저 대신 Google Colab에서 실습한다. 아래 버튼으로 노트북을 열고 위에서부터 셀을 차례로 실행한다(Shift + Enter). NumPy만 쓰므로 런타임은 기본 CPU로 충분하다. 노트북의 단계 번호는 이 페이지의 단계 번호와 같다.</p>
+<p><a class="colab" data-nb="w4_numpy_mnist.ipynb">Colab에서 노트북 열기</a></p>
+<div class="box note" data-title="이 페이지의 수치"><p>이 페이지의 수치와 그림은 노트북을 처음부터 끝까지 한 번 실행한 결과다. 시드를 고정해도 CPU와 수치 라이브러리가 다르면 부동소수점 연산의 순서가 달라져 정확도가 0.1%p 안팎으로 다를 수 있다. 실행 시간도 환경에 따라 다르며, Colab 무료 CPU에서 전체 실행에 10분 안팎이 걸릴 것으로 예상한다.</p></div>
+<h3>완료 기준</h3>
+<ul class="checklist" data-id="w4-project">
+  <li>MNIST를 내려받아 해시를 확인하고 학습 5만, 검증 1만, 테스트 1만으로 나눴다.</li>
+  <li>첫 손실, 기울기 검증, 64장 외우기의 세 점검을 통과했다.</li>
+  <li>학습률 범위 테스트로 최대 학습률을 정했다.</li>
+  <li>기준 모델의 학습 곡선에서 과적합의 신호를 찾았다.</li>
+  <li>드롭아웃, 이동 증강, 모델 크기, 가중치 감쇠를 바꾸며 검증 정확도로 비교했다.</li>
+  <li>고른 설정으로 테스트 정확도 98% 이상을 달성했다(테스트 평가는 한 번).</li>
+  <li>혼동 행렬과 틀린 이미지로 오류를 분석했다.</li>
+  <li>가중치를 저장하고 불러와 같은 결과가 나오는 것을 확인했다.</li>
+  <li>결과를 다섯 문장 이내의 보고서로 정리했다.</li>
+</ul>
+
+<h2 data-min="20" data-kind="project">1단계: 데이터</h2>
+<figure class="fig">
+<svg viewBox="0 0 640 96" width="640" role="img" aria-label="MNIST 숫자 0부터 9까지의 표본">
+  <g font-size="12">
+  <rect x="7" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M38 12h2v2h-2zM46 12h2v2h-2zM36 14h2v2h-2zM34 16h2v2h-2zM48 16h2v2h-2zM32 18h2v2h-2zM44 18h2v2h-2zM44 20h2v2h-2zM28 22h2v2h-2zM44 22h4v2h-4zM26 24h2v2h-2zM38 24h2v2h-2zM52 24h2v2h-2zM24 26h2v2h-2zM34 26h2v2h-2zM30 28h2v2h-2zM22 30h2v2h-2zM28 30h2v2h-2zM20 34h2v2h-2zM20 36h2v2h-2zM20 38h2v2h-2zM50 38h2v2h-2zM20 40h2v2h-2zM40 40h2v2h-2zM20 42h2v2h-2zM20 44h2v2h-2zM28 44h2v2h-2zM32 44h2v2h-2zM44 44h2v2h-2zM20 46h2v2h-2zM34 50h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M40 12h2v2h-2zM44 12h2v2h-2zM50 18h2v2h-2zM30 20h2v2h-2zM38 22h2v2h-2zM40 24h2v2h-2zM26 26h2v2h-2zM52 26h2v2h-2zM26 34h2v2h-2zM52 34h2v2h-2zM46 36h2v2h-2zM44 38h2v2h-2zM24 40h2v2h-2zM42 40h2v2h-2zM38 42h2v2h-2zM44 42h2v2h-2zM26 44h2v2h-2zM40 46h2v2h-2zM36 48h2v2h-2zM24 50h2v2h-2zM32 50h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M34 18h2v2h-2zM42 18h2v2h-2zM46 20h2v2h-2zM50 20h2v2h-2zM36 22h2v2h-2zM50 22h2v2h-2zM34 24h2v2h-2zM32 26h2v2h-2zM24 28h2v2h-2zM52 28h2v2h-2zM52 30h2v2h-2zM22 32h2v2h-2zM26 32h2v2h-2zM52 32h2v2h-2zM50 36h2v2h-2zM24 38h2v2h-2zM46 40h2v2h-2zM34 44h2v2h-2zM40 44h4v2h-4zM30 46h2v2h-2zM38 46h2v2h-2zM22 48h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M42 12h2v2h-2zM38 14h10v2h-10zM36 16h12v2h-12zM36 18h6v2h-6zM46 18h4v2h-4zM32 20h12v2h-12zM48 20h2v2h-2zM30 22h6v2h-6zM40 22h4v2h-4zM48 22h2v2h-2zM28 24h6v2h-6zM48 24h4v2h-4zM28 26h4v2h-4zM48 26h4v2h-4zM26 28h4v2h-4zM48 28h4v2h-4zM24 30h4v2h-4zM48 30h4v2h-4zM24 32h2v2h-2zM48 32h4v2h-4zM22 34h4v2h-4zM48 34h4v2h-4zM22 36h4v2h-4zM48 36h2v2h-2zM22 38h2v2h-2zM46 38h4v2h-4zM22 40h2v2h-2zM44 40h2v2h-2zM22 42h4v2h-4zM40 42h4v2h-4zM22 44h4v2h-4zM36 44h4v2h-4zM22 46h8v2h-8zM32 46h6v2h-6zM24 48h12v2h-12zM26 50h6v2h-6z" class="s-tx" opacity="1"/>
+  <text x="36" y="82" text-anchor="middle" class="s-txm">레이블 0</text>
+  <rect x="70" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M113 14h2v2h-2zM105 16h2v2h-2zM113 16h2v2h-2zM113 18h2v2h-2zM103 20h2v2h-2zM111 20h2v2h-2zM101 22h2v2h-2zM109 22h2v2h-2zM107 26h2v2h-2zM97 28h2v2h-2zM95 32h2v2h-2zM93 34h2v2h-2zM101 36h2v2h-2zM91 38h2v2h-2zM97 42h2v2h-2zM97 44h2v2h-2zM87 46h2v2h-2zM87 48h2v2h-2zM87 50h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M107 14h2v2h-2zM105 18h2v2h-2zM101 24h2v2h-2zM105 28h2v2h-2zM97 30h2v2h-2zM101 34h2v2h-2zM93 36h2v2h-2zM89 44h2v2h-2zM95 46h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M109 20h2v2h-2zM107 24h2v2h-2zM99 28h2v2h-2zM103 30h2v2h-2zM101 32h2v2h-2zM93 38h2v2h-2zM99 38h2v2h-2zM97 40h2v2h-2zM93 48h2v2h-2zM93 50h2v2h-2zM89 52h2v2h-2zM93 52h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M109 14h4v2h-4zM107 16h6v2h-6zM107 18h6v2h-6zM105 20h4v2h-4zM103 22h6v2h-6zM103 24h4v2h-4zM101 26h6v2h-6zM101 28h4v2h-4zM99 30h4v2h-4zM97 32h4v2h-4zM95 34h6v2h-6zM95 36h6v2h-6zM95 38h4v2h-4zM91 40h6v2h-6zM91 42h6v2h-6zM91 44h6v2h-6zM89 46h6v2h-6zM89 48h4v2h-4zM89 50h4v2h-4zM91 52h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="99" y="82" text-anchor="middle" class="s-txm">레이블 1</text>
+  <rect x="133" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M168 14h2v2h-2zM160 16h2v2h-2zM156 18h2v2h-2zM174 18h2v2h-2zM166 20h4v2h-4zM174 20h2v2h-2zM152 22h2v2h-2zM168 22h2v2h-2zM174 22h2v2h-2zM168 24h2v2h-2zM174 24h2v2h-2zM156 26h2v2h-2zM168 26h2v2h-2zM174 26h2v2h-2zM174 28h2v2h-2zM156 32h2v2h-2zM172 32h2v2h-2zM152 34h2v2h-2zM150 36h2v2h-2zM158 36h2v2h-2zM174 36h2v2h-2zM178 38h6v2h-6zM158 40h2v2h-2zM166 40h2v2h-2zM172 40h2v2h-2zM150 42h2v2h-2zM154 42h2v2h-2zM176 42h2v2h-2zM182 42h2v2h-2zM158 46h2v2h-2zM146 48h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M170 14h2v2h-2zM162 16h2v2h-2zM172 16h2v2h-2zM158 18h2v2h-2zM154 20h2v2h-2zM154 26h2v2h-2zM168 28h2v2h-2zM160 30h8v2h-8zM172 34h2v2h-2zM156 36h2v2h-2zM148 38h2v2h-2zM168 38h2v2h-2zM146 40h2v2h-2zM152 40h2v2h-2zM174 40h2v2h-2zM144 42h2v2h-2zM162 42h2v2h-2zM160 44h2v2h-2zM156 46h2v2h-2zM148 48h4v2h-4z" class="s-tx" opacity="0.5"/><path d="M164 16h2v2h-2zM166 18h4v2h-4zM164 20h2v2h-2zM162 22h2v2h-2zM152 24h2v2h-2zM158 24h4v2h-4zM168 30h2v2h-2zM172 30h2v2h-2zM158 32h2v2h-2zM162 34h2v2h-2zM164 36h2v2h-2zM154 38h2v2h-2zM162 38h2v2h-2zM170 38h2v2h-2zM176 38h2v2h-2zM160 40h2v2h-2zM164 40h2v2h-2zM182 40h2v2h-2zM156 42h2v2h-2zM178 42h4v2h-4zM150 44h4v2h-4zM144 46h2v2h-2zM154 46h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M166 16h6v2h-6zM160 18h6v2h-6zM170 18h4v2h-4zM156 20h8v2h-8zM170 20h4v2h-4zM154 22h8v2h-8zM170 22h4v2h-4zM154 24h4v2h-4zM170 24h4v2h-4zM170 26h4v2h-4zM170 28h4v2h-4zM170 30h2v2h-2zM160 32h12v2h-12zM154 34h8v2h-8zM164 34h8v2h-8zM152 36h4v2h-4zM166 36h8v2h-8zM150 38h4v2h-4zM164 38h4v2h-4zM172 38h4v2h-4zM148 40h4v2h-4zM162 40h2v2h-2zM176 40h6v2h-6zM146 42h4v2h-4zM158 42h4v2h-4zM144 44h6v2h-6zM154 44h6v2h-6zM146 46h8v2h-8z" class="s-tx" opacity="1"/>
+  <text x="162" y="82" text-anchor="middle" class="s-txm">레이블 2</text>
+  <rect x="196" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M219 14h4v2h-4zM215 16h2v2h-2zM241 18h2v2h-2zM241 20h2v2h-2zM231 24h2v2h-2zM229 26h2v2h-2zM225 28h2v2h-2zM215 30h2v2h-2zM213 32h2v2h-2zM213 34h2v2h-2zM235 34h2v2h-2zM215 36h2v2h-2zM219 36h10v2h-10zM235 36h2v2h-2zM235 38h2v2h-2zM229 40h2v2h-2zM235 40h2v2h-2zM211 42h2v2h-2zM227 42h2v2h-2zM235 42h2v2h-2zM207 44h2v2h-2zM225 44h2v2h-2zM235 44h2v2h-2zM233 46h2v2h-2zM207 50h2v2h-2zM227 50h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M223 14h2v2h-2zM217 16h2v2h-2zM239 16h2v2h-2zM215 20h2v2h-2zM223 20h8v2h-8zM239 24h2v2h-2zM217 30h2v2h-2zM235 30h2v2h-2zM217 36h2v2h-2zM229 36h2v2h-2zM213 46h10v2h-10zM229 48h2v2h-2zM209 50h2v2h-2zM225 50h2v2h-2zM211 52h2v2h-2zM219 52h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M237 14h2v2h-2zM219 16h2v2h-2zM215 18h2v2h-2zM231 20h2v2h-2zM239 22h2v2h-2zM231 26h2v2h-2zM227 28h2v2h-2zM237 28h2v2h-2zM219 30h6v2h-6zM215 32h2v2h-2zM233 32h2v2h-2zM215 34h2v2h-2zM209 44h2v2h-2zM207 46h2v2h-2zM223 46h2v2h-2zM231 46h2v2h-2zM207 48h2v2h-2zM221 50h4v2h-4zM217 52h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M225 14h12v2h-12zM221 16h18v2h-18zM217 18h24v2h-24zM217 20h6v2h-6zM233 20h8v2h-8zM233 22h6v2h-6zM233 24h6v2h-6zM233 26h6v2h-6zM229 28h8v2h-8zM225 30h10v2h-10zM217 32h16v2h-16zM217 34h18v2h-18zM231 36h4v2h-4zM231 38h4v2h-4zM231 40h4v2h-4zM229 42h6v2h-6zM211 44h2v2h-2zM227 44h8v2h-8zM209 46h4v2h-4zM225 46h6v2h-6zM209 48h20v2h-20zM211 50h10v2h-10zM213 52h4v2h-4z" class="s-tx" opacity="1"/>
+  <text x="225" y="82" text-anchor="middle" class="s-txm">레이블 3</text>
+  <rect x="259" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M300 14h2v2h-2zM304 14h2v2h-2zM268 16h4v2h-4zM304 16h2v2h-2zM304 18h2v2h-2zM266 24h2v2h-2zM302 24h2v2h-2zM270 30h2v2h-2zM292 30h2v2h-2zM300 30h2v2h-2zM270 32h2v2h-2zM278 32h4v2h-4zM300 32h2v2h-2zM290 34h2v2h-2zM280 36h4v2h-4zM298 40h2v2h-2zM298 42h2v2h-2zM298 44h2v2h-2zM298 46h2v2h-2zM294 52h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M300 16h2v2h-2zM268 18h4v2h-4zM300 18h2v2h-2zM270 20h2v2h-2zM302 20h2v2h-2zM270 22h2v2h-2zM302 22h2v2h-2zM270 24h2v2h-2zM266 26h2v2h-2zM270 26h2v2h-2zM266 28h2v2h-2zM270 28h2v2h-2zM296 28h2v2h-2zM266 30h2v2h-2zM266 32h2v2h-2zM282 32h6v2h-6zM266 34h2v2h-2zM288 34h2v2h-2zM268 36h2v2h-2zM294 36h2v2h-2zM298 38h2v2h-2zM298 48h2v2h-2zM298 50h2v2h-2zM298 52h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M302 16h2v2h-2zM302 18h2v2h-2zM268 20h2v2h-2zM268 22h2v2h-2zM298 22h2v2h-2zM298 24h2v2h-2zM300 28h2v2h-2zM294 30h2v2h-2zM294 32h2v2h-2zM272 34h6v2h-6zM286 34h2v2h-2zM270 36h10v2h-10zM298 36h2v2h-2zM294 38h2v2h-2zM294 40h2v2h-2zM294 42h2v2h-2zM294 44h2v2h-2zM294 46h2v2h-2zM294 48h2v2h-2zM294 50h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M302 14h2v2h-2zM300 20h2v2h-2zM300 22h2v2h-2zM268 24h2v2h-2zM300 24h2v2h-2zM268 26h2v2h-2zM298 26h4v2h-4zM268 28h2v2h-2zM298 28h2v2h-2zM268 30h2v2h-2zM296 30h4v2h-4zM268 32h2v2h-2zM288 32h6v2h-6zM296 32h4v2h-4zM268 34h4v2h-4zM278 34h8v2h-8zM296 34h4v2h-4zM296 36h2v2h-2zM296 38h2v2h-2zM296 40h2v2h-2zM296 42h2v2h-2zM296 44h2v2h-2zM296 46h2v2h-2zM296 48h2v2h-2zM296 50h2v2h-2zM296 52h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="288" y="82" text-anchor="middle" class="s-txm">레이블 4</text>
+  <rect x="322" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M341 16h4v2h-4zM369 16h2v2h-2zM337 18h2v2h-2zM359 18h10v2h-10zM339 22h2v2h-2zM355 22h2v2h-2zM349 24h2v2h-2zM351 28h2v2h-2zM347 30h2v2h-2zM349 32h2v2h-2zM351 34h2v2h-2zM355 36h2v2h-2zM363 38h2v2h-2zM351 40h2v2h-2zM347 42h2v2h-2zM359 44h2v2h-2zM341 46h2v2h-2zM355 46h2v2h-2zM351 48h2v2h-2zM331 50h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M355 14h4v2h-4zM369 14h2v2h-2zM345 16h2v2h-2zM341 22h4v2h-4zM357 22h2v2h-2zM345 24h2v2h-2zM345 26h2v2h-2zM353 30h4v2h-4zM357 32h2v2h-2zM359 34h2v2h-2zM353 40h2v2h-2zM349 42h2v2h-2zM345 44h2v2h-2zM347 50h2v2h-2zM331 52h2v2h-2zM341 52h4v2h-4z" class="s-tx" opacity="0.5"/><path d="M359 14h2v2h-2zM363 14h2v2h-2zM347 16h2v2h-2zM361 16h2v2h-2zM367 16h2v2h-2zM339 20h2v2h-2zM351 20h4v2h-4zM349 22h2v2h-2zM349 26h2v2h-2zM347 28h2v2h-2zM353 34h2v2h-2zM361 36h2v2h-2zM355 40h2v2h-2zM361 40h2v2h-2zM361 42h2v2h-2zM347 44h2v2h-2zM357 44h2v2h-2zM343 46h2v2h-2zM353 46h2v2h-2zM337 48h4v2h-4zM349 48h2v2h-2zM333 50h2v2h-2zM339 52h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M365 14h4v2h-4zM349 16h12v2h-12zM363 16h4v2h-4zM339 18h20v2h-20zM341 20h10v2h-10zM355 20h4v2h-4zM345 22h4v2h-4zM347 24h2v2h-2zM347 26h2v2h-2zM349 28h2v2h-2zM349 30h4v2h-4zM351 32h6v2h-6zM355 34h4v2h-4zM357 36h4v2h-4zM357 38h6v2h-6zM357 40h4v2h-4zM351 42h10v2h-10zM349 44h8v2h-8zM345 46h8v2h-8zM341 48h8v2h-8zM335 50h12v2h-12zM333 52h6v2h-6z" class="s-tx" opacity="1"/>
+  <text x="351" y="82" text-anchor="middle" class="s-txm">레이블 5</text>
+  <rect x="385" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M418 8h2v2h-2zM410 14h2v2h-2zM420 14h2v2h-2zM410 16h2v2h-2zM418 16h2v2h-2zM408 18h2v2h-2zM416 18h2v2h-2zM412 22h2v2h-2zM404 24h2v2h-2zM410 28h2v2h-2zM402 30h2v2h-2zM410 30h2v2h-2zM414 30h2v2h-2zM430 30h2v2h-2zM412 32h2v2h-2zM422 32h4v2h-4zM430 32h2v2h-2zM400 34h2v2h-2zM422 34h2v2h-2zM416 36h2v2h-2zM420 36h2v2h-2zM408 38h2v2h-2zM418 38h2v2h-2zM408 40h2v2h-2zM400 42h2v2h-2zM406 42h2v2h-2zM420 42h2v2h-2zM400 44h2v2h-2zM402 46h2v2h-2zM416 46h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M416 10h2v2h-2zM418 14h2v2h-2zM408 20h2v2h-2zM410 24h2v2h-2zM404 26h2v2h-2zM410 26h2v2h-2zM420 26h6v2h-6zM416 28h4v2h-4zM402 32h2v2h-2zM408 32h2v2h-2zM414 32h2v2h-2zM420 32h2v2h-2zM406 34h2v2h-2zM418 34h2v2h-2zM428 34h2v2h-2zM400 36h2v2h-2zM426 36h2v2h-2zM400 38h2v2h-2zM414 38h2v2h-2zM424 38h2v2h-2zM400 40h2v2h-2zM414 40h2v2h-2zM408 42h2v2h-2zM418 44h2v2h-2zM412 46h4v2h-4z" class="s-tx" opacity="0.5"/><path d="M420 8h2v2h-2zM422 10h2v2h-2zM414 12h2v2h-2zM420 12h2v2h-2zM412 14h2v2h-2zM410 18h2v2h-2zM412 20h2v2h-2zM406 22h2v2h-2zM410 22h2v2h-2zM404 28h2v2h-2zM420 28h2v2h-2zM408 30h2v2h-2zM416 30h2v2h-2zM424 30h2v2h-2zM428 30h2v2h-2zM428 32h2v2h-2zM412 34h2v2h-2zM424 34h2v2h-2zM410 36h2v2h-2zM404 38h2v2h-2zM420 38h2v2h-2zM404 40h2v2h-2zM420 40h2v2h-2zM404 46h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M422 8h2v2h-2zM418 10h4v2h-4zM416 12h4v2h-4zM414 14h4v2h-4zM412 16h6v2h-6zM412 18h4v2h-4zM410 20h2v2h-2zM408 22h2v2h-2zM406 24h4v2h-4zM406 26h4v2h-4zM406 28h4v2h-4zM422 28h6v2h-6zM404 30h4v2h-4zM418 30h6v2h-6zM426 30h2v2h-2zM404 32h4v2h-4zM416 32h4v2h-4zM426 32h2v2h-2zM402 34h4v2h-4zM414 34h4v2h-4zM426 34h2v2h-2zM402 36h4v2h-4zM412 36h4v2h-4zM422 36h4v2h-4zM402 38h2v2h-2zM410 38h4v2h-4zM422 38h2v2h-2zM402 40h2v2h-2zM410 40h4v2h-4zM416 40h4v2h-4zM402 42h4v2h-4zM410 42h10v2h-10zM402 44h16v2h-16zM406 46h6v2h-6z" class="s-tx" opacity="1"/>
+  <text x="414" y="82" text-anchor="middle" class="s-txm">레이블 6</text>
+  <rect x="448" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M473 20h2v2h-2zM463 24h2v2h-2zM477 24h2v2h-2zM481 24h4v2h-4zM475 26h2v2h-2zM461 28h2v2h-2zM471 28h2v2h-2zM469 30h2v2h-2zM481 30h2v2h-2zM489 30h2v2h-2zM461 32h2v2h-2zM477 34h2v2h-2zM483 38h2v2h-2zM469 46h2v2h-2zM467 48h2v2h-2zM475 48h2v2h-2zM465 52h2v2h-2zM473 52h2v2h-2zM471 54h2v2h-2zM465 56h2v2h-2zM469 56h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M479 18h6v2h-6zM475 20h2v2h-2zM473 26h2v2h-2zM483 26h2v2h-2zM489 28h2v2h-2zM479 32h2v2h-2zM485 34h2v2h-2zM483 36h2v2h-2zM475 38h2v2h-2zM481 40h2v2h-2zM473 42h2v2h-2zM479 42h2v2h-2zM477 44h2v2h-2zM469 48h2v2h-2zM467 50h2v2h-2zM473 50h2v2h-2zM471 52h2v2h-2zM465 54h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M489 18h2v2h-2zM477 20h2v2h-2zM491 20h2v2h-2zM467 22h2v2h-2zM479 22h2v2h-2zM465 24h2v2h-2zM485 24h2v2h-2zM491 24h2v2h-2zM463 26h2v2h-2zM489 26h2v2h-2zM469 28h2v2h-2zM483 28h2v2h-2zM461 30h2v2h-2zM467 30h2v2h-2zM487 30h2v2h-2zM463 32h4v2h-4zM485 32h2v2h-2zM475 40h2v2h-2zM471 44h2v2h-2zM475 46h2v2h-2zM473 48h2v2h-2zM467 52h2v2h-2zM469 54h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M485 18h4v2h-4zM479 20h12v2h-12zM469 22h10v2h-10zM481 22h12v2h-12zM467 24h10v2h-10zM487 24h4v2h-4zM465 26h8v2h-8zM485 26h4v2h-4zM463 28h6v2h-6zM485 28h4v2h-4zM463 30h4v2h-4zM483 30h4v2h-4zM481 32h4v2h-4zM479 34h6v2h-6zM477 36h6v2h-6zM477 38h6v2h-6zM477 40h4v2h-4zM475 42h4v2h-4zM473 44h4v2h-4zM471 46h4v2h-4zM471 48h2v2h-2zM469 50h4v2h-4zM469 52h2v2h-2zM467 54h2v2h-2zM467 56h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="477" y="82" text-anchor="middle" class="s-txm">레이블 7</text>
+  <rect x="511" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M556 14h2v2h-2zM544 16h4v2h-4zM550 16h2v2h-2zM534 18h2v2h-2zM554 20h2v2h-2zM546 22h2v2h-2zM544 24h2v2h-2zM532 26h2v2h-2zM540 28h2v2h-2zM546 32h2v2h-2zM528 40h2v2h-2zM538 40h2v2h-2zM526 42h2v2h-2zM532 42h2v2h-2zM536 42h2v2h-2zM534 46h2v2h-2zM538 48h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M536 18h2v2h-2zM548 18h2v2h-2zM534 20h2v2h-2zM544 20h2v2h-2zM532 22h2v2h-2zM538 22h4v2h-4zM532 24h2v2h-2zM552 24h2v2h-2zM538 26h2v2h-2zM550 26h2v2h-2zM534 28h2v2h-2zM548 28h2v2h-2zM534 30h2v2h-2zM546 30h2v2h-2zM534 32h2v2h-2zM530 38h2v2h-2zM538 38h2v2h-2zM534 40h2v2h-2zM542 40h2v2h-2zM542 42h2v2h-2zM526 44h2v2h-2zM536 44h2v2h-2zM542 44h2v2h-2zM526 46h2v2h-2zM540 46h2v2h-2zM526 48h2v2h-2zM526 50h2v2h-2zM536 50h2v2h-2zM528 52h2v2h-2zM534 52h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M552 14h2v2h-2zM554 16h2v2h-2zM538 18h6v2h-6zM550 18h2v2h-2zM554 18h2v2h-2zM536 24h2v2h-2zM546 24h2v2h-2zM534 26h2v2h-2zM544 26h2v2h-2zM542 28h2v2h-2zM544 32h2v2h-2zM534 34h2v2h-2zM542 34h2v2h-2zM532 36h2v2h-2zM542 36h2v2h-2zM536 38h2v2h-2zM542 38h2v2h-2zM538 42h2v2h-2zM530 44h2v2h-2zM530 46h2v2h-2zM530 48h4v2h-4zM532 52h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M554 14h2v2h-2zM552 16h2v2h-2zM544 18h4v2h-4zM552 18h2v2h-2zM536 20h8v2h-8zM546 20h8v2h-8zM534 22h4v2h-4zM548 22h6v2h-6zM534 24h2v2h-2zM548 24h4v2h-4zM536 26h2v2h-2zM546 26h4v2h-4zM536 28h4v2h-4zM544 28h4v2h-4zM536 30h10v2h-10zM536 32h8v2h-8zM536 34h6v2h-6zM534 36h8v2h-8zM532 38h4v2h-4zM540 38h2v2h-2zM530 40h4v2h-4zM540 40h2v2h-2zM528 42h4v2h-4zM540 42h2v2h-2zM528 44h2v2h-2zM538 44h4v2h-4zM528 46h2v2h-2zM536 46h4v2h-4zM528 48h2v2h-2zM534 48h4v2h-4zM528 50h8v2h-8zM530 52h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="540" y="82" text-anchor="middle" class="s-txm">레이블 8</text>
+  <rect x="574" y="3" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M599 18h2v2h-2zM611 18h2v2h-2zM615 18h2v2h-2zM597 20h2v2h-2zM595 22h2v2h-2zM603 22h2v2h-2zM593 24h2v2h-2zM607 24h2v2h-2zM613 26h2v2h-2zM605 28h2v2h-2zM601 30h2v2h-2zM609 32h2v2h-2zM589 36h2v2h-2zM599 36h2v2h-2zM601 38h2v2h-2zM601 40h2v2h-2zM601 44h2v2h-2zM601 48h2v2h-2zM607 50h2v2h-2zM603 52h2v2h-2zM609 52h2v2h-2zM611 56h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M601 18h2v2h-2zM609 18h2v2h-2zM613 18h2v2h-2zM615 22h2v2h-2zM591 26h2v2h-2zM597 26h2v2h-2zM589 28h2v2h-2zM611 28h2v2h-2zM597 32h2v2h-2zM597 36h2v2h-2zM607 36h2v2h-2zM607 38h2v2h-2zM601 46h2v2h-2zM607 56h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M603 18h2v2h-2zM605 20h4v2h-4zM615 20h2v2h-2zM601 22h2v2h-2zM609 22h2v2h-2zM599 24h2v2h-2zM607 26h2v2h-2zM595 28h2v2h-2zM593 30h2v2h-2zM603 30h2v2h-2zM609 30h2v2h-2zM599 32h2v2h-2zM595 36h2v2h-2zM603 36h2v2h-2zM603 50h2v2h-2zM607 52h2v2h-2zM605 54h2v2h-2zM609 54h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M605 18h4v2h-4zM599 20h6v2h-6zM609 20h6v2h-6zM597 22h4v2h-4zM611 22h4v2h-4zM595 24h4v2h-4zM609 24h6v2h-6zM593 26h4v2h-4zM609 26h4v2h-4zM591 28h4v2h-4zM607 28h4v2h-4zM589 30h4v2h-4zM605 30h4v2h-4zM589 32h4v2h-4zM601 32h8v2h-8zM589 34h20v2h-20zM591 36h4v2h-4zM605 36h2v2h-2zM603 38h4v2h-4zM603 40h4v2h-4zM603 42h4v2h-4zM603 44h4v2h-4zM603 46h4v2h-4zM603 48h4v2h-4zM605 50h2v2h-2zM605 52h2v2h-2zM607 54h2v2h-2zM609 56h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="603" y="82" text-anchor="middle" class="s-txm">레이블 9</text>
+  </g>
+</svg>
+<figcaption>MNIST의 숫자별 첫 표본. 28×28 픽셀, 값은 0(배경)부터 255(획)까지다.</figcaption>
+</figure>
+<table>
+  <thead><tr><th></th><th>지금까지의 손글씨 데이터</th><th>MNIST</th></tr></thead>
+  <tbody>
+    <tr><td>이미지 크기</td><td>8×8</td><td>28×28</td></tr>
+    <tr><td>입력 차원</td><td>64</td><td>784</td></tr>
+    <tr><td>이미지 수</td><td>1,797</td><td>70,000 (학습 60,000 + 테스트 10,000)</td></tr>
+    <tr><td>픽셀 값</td><td>0~16</td><td>0~255</td></tr>
+    <tr><td>실습 환경</td><td>브라우저</td><td>Colab</td></tr>
+  </tbody>
+</table>
+<p>Keras가 배포하는 <code>mnist.npz</code>(11 MB)를 내려받고, 파일의 SHA-256 해시를 알려진 값과 비교해 내려받기가 온전한지 확인한다. 클래스별 개수는 5,421장(숫자 5)부터 6,742장(숫자 1)까지로 크게 치우치지 않았다.</p>
+<pre><code class="language-python">URL = "https://storage.googleapis.com/tensorflow/tf-keras-datasets/mnist.npz"
+SHA256 = "731c5ac602752760c8e48fbffcf8c3b850d9dc2a2aedcf2cc48468fc17b673d1"
+if not os.path.exists("mnist.npz"):
+    urllib.request.urlretrieve(URL, "mnist.npz")
+with open("mnist.npz", "rb") as f:
+    ok = hashlib.sha256(f.read()).hexdigest() == SHA256
+assert ok, "파일이 손상되었다. mnist.npz를 지우고 다시 실행한다."
+</code></pre>
+<h3>분할</h3>
+<figure class="fig">
+<svg viewBox="0 0 640 150" width="640" role="img" aria-label="MNIST 데이터의 학습, 검증, 테스트 분할">
+  <g font-size="12">
+  <text x="250" y="18" text-anchor="middle" class="s-txm">mnist.npz의 학습 데이터 60,000장</text>
+  <path d="M40 30 V24 H460 V30" class="s-mu" stroke-width="1"/>
+  <text x="550" y="18" text-anchor="middle" class="s-txm">테스트 데이터 10,000장</text>
+  <path d="M515 30 V24 H585 V30" class="s-mu" stroke-width="1"/>
+  <rect x="40" y="36" width="350" height="44" class="s-acs" stroke-width="1"/>
+  <text x="215" y="63" text-anchor="middle" class="s-tx" font-weight="700">학습 50,000</text>
+  <rect x="390" y="36" width="70" height="44" class="s-f2" stroke-width="1"/>
+  <text x="425" y="55" text-anchor="middle" class="s-tx" font-weight="700">검증</text>
+  <text x="425" y="71" text-anchor="middle" class="s-tx">10,000</text>
+  <rect x="515" y="36" width="70" height="44" class="s-f" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="550" y="55" text-anchor="middle" class="s-tx" font-weight="700">테스트</text>
+  <text x="550" y="71" text-anchor="middle" class="s-tx">10,000</text>
+  <text x="215" y="102" text-anchor="middle" class="s-txm">가중치를 학습한다</text>
+  <text x="425" y="102" text-anchor="middle" class="s-txm">설정을</text>
+  <text x="425" y="118" text-anchor="middle" class="s-txm">고른다</text>
+  <text x="550" y="102" text-anchor="middle" class="s-txm">7단계에서</text>
+  <text x="550" y="118" text-anchor="middle" class="s-txm">한 번만 쓴다</text>
+  </g>
+</svg>
+<figcaption>학습 파일 6만 장을 무작위로 섞어 5만 장(학습)과 1만 장(검증)으로 나눈다. 테스트 1만 장은 모든 결정을 마친 뒤 한 번만 평가한다(12일차).</figcaption>
+</figure>
+<h3>정규화와 자료형</h3>
+<p>픽셀을 255로 나눠 0~1로 만든 뒤 학습 세트의 평균 0.1307과 표준편차 0.3081로 표준화한다. 평균과 표준편차는 픽셀마다가 아니라 전체에 대해 값 하나씩이다. 학습 세트 5만 장 모두에서 값이 0인 테두리 픽셀이 68개나 있어서, 픽셀마다 표준화하면 그 픽셀들은 표준편차 0으로 나누게 된다.</p>
+<p>자료형은 <code>float32</code>를 쓴다. 학습 입력만 해도 50,000 × 784개의 수라 <code>float64</code>로는 314 MB, <code>float32</code>로는 157 MB다. 행렬곱도 약 2배 빠르다. 대신 유효숫자가 7자리 정도라 수치 미분에는 쓰지 않는다(3단계).</p>
+
+<h2 data-min="25" data-kind="project">2단계: 모델과 학습 코드</h2>
+<p>기준 모델은 은닉층 두 개의 다층 퍼셉트론이다.</p>
+<div class="flow"><div>입력<br>784</div><div>Linear 784 → 256<br>+ ReLU</div><div>Linear 256 → 128<br>+ ReLU</div><div>Linear 128 → 10<br>(로짓)</div><div>소프트맥스<br>교차 엔트로피</div></div>
+<table>
+  <thead><tr><th>층</th><th>가중치</th><th>편향</th><th>파라미터 수</th></tr></thead>
+  <tbody>
+    <tr><td>Linear 784 → 256</td><td>784 × 256</td><td>256</td><td>200,960</td></tr>
+    <tr><td>Linear 256 → 128</td><td>256 × 128</td><td>128</td><td>32,896</td></tr>
+    <tr><td>Linear 128 → 10</td><td>128 × 10</td><td>10</td><td>1,290</td></tr>
+    <tr><td><b>합계</b></td><td></td><td></td><td><b>235,146</b></td></tr>
+  </tbody>
+</table>
+<div class="box ex" data-title="한 에폭의 계산량"><p>표본 하나의 순전파 행렬곱은 $2 \times (784 \cdot 256 + 256 \cdot 128 + 128 \cdot 10) \approx 0.47$ MFLOP이다(17일차). 역전파는 행렬곱이 두 배라 순전파와 합치면 약 1.4 MFLOP, 5만 장이면 한 에폭에 약 70 GFLOP이다. CPU가 초당 수십 GFLOP을 처리하므로 한 에폭에 수 초 걸린다.</p></div>
+<p>학습 코드는 21일차 minidl의 구조(Module, Linear, ReLU, Sequential, 손실, 옵티마이저, fit)를 그대로 따르고 네 가지를 바꾼다.</p>
+<table>
+  <thead><tr><th>바뀐 점</th><th>내용</th><th>근거</th></tr></thead>
+  <tbody>
+    <tr><td>초기화</td><td>He 초기화, 표준편차 $\sqrt{2/n_{\text{in}}}$</td><td>24일차</td></tr>
+    <tr><td><code>params()</code></td><td>(파라미터, 기울기, 감쇠 여부) 세 값을 낸다. 가중치 감쇠는 가중치에만 적용한다.</td><td>26일차</td></tr>
+    <tr><td>드롭아웃 층</td><td><code>train()</code>/<code>eval()</code>로 동작이 바뀌는 역 드롭아웃</td><td>26일차</td></tr>
+    <tr><td>옵티마이저</td><td>AdamW + 1에폭 선형 워밍업 + 코사인 감소</td><td>22, 23일차</td></tr>
+  </tbody>
+</table>
+<pre><code class="language-python">def step(self):                                  # AdamW
+    self.t += 1
+    c1, c2 = 1 - self.b1 ** self.t, 1 - self.b2 ** self.t      # 편향 보정
+    for (p, g, decay), m, v in zip(self.params, self.m, self.v):
+        m *= self.b1; m += (1 - self.b1) * g
+        v *= self.b2; v += (1 - self.b2) * g * g
+        if decay and self.wd &gt; 0:
+            p -= self.lr * self.wd * p                          # 분리된 가중치 감쇠
+        p -= self.lr * (m / c1) / (np.sqrt(v / c2) + self.eps)
+</code></pre>
+<p>배치 크기 128이면 한 에폭이 $\lceil 50000/128 \rceil = 391$스텝이다. 10에폭 학습이면 전체 3,910스텝 중 처음 391스텝 동안 학습률을 0에서 최댓값까지 올리고, 나머지 동안 코사인 곡선으로 0까지 내린다.</p>
+<h3>이동 증강</h3>
+<p>학습 배치의 각 이미지를 가로, 세로로 −2~+2픽셀 무작위로 옮긴다(26일차). 빈 곳은 배경값으로 채운다. 숫자를 조금 옮겨도 레이블은 같다. 그런데 다층 퍼셉트론은 픽셀 784개를 서로 무관한 입력으로 받으므로, 같은 숫자를 2픽셀 옮기면 입력 벡터가 크게 달라진다. 증강은 "위치가 조금 달라도 같은 숫자"라는 사실을 데이터로 가르친다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 112" width="640" role="img" aria-label="이미지를 상하좌우로 옮긴 증강 예">
+  <g font-size="12">
+  <rect x="35" y="3" width="72" height="72" class="s-bg" stroke-width="0.6"/>
+  <path d="M66 24h2.5v2.5h-2.5zM53.5 29h2.5v2.5h-2.5zM71 29h2.5v2.5h-2.5zM76 29h5v2.5h-5zM68.5 31.5h2.5v2.5h-2.5zM51 34h2.5v2.5h-2.5zM63.5 34h2.5v2.5h-2.5zM61 36.5h2.5v2.5h-2.5zM76 36.5h2.5v2.5h-2.5zM86 36.5h2.5v2.5h-2.5zM51 39h2.5v2.5h-2.5zM71 41.5h2.5v2.5h-2.5zM78.5 46.5h2.5v2.5h-2.5zM61 56.5h2.5v2.5h-2.5zM58.5 59h2.5v2.5h-2.5zM68.5 59h2.5v2.5h-2.5zM56 64h2.5v2.5h-2.5zM66 64h2.5v2.5h-2.5zM63.5 66.5h2.5v2.5h-2.5zM56 69h2.5v2.5h-2.5zM61 69h2.5v2.5h-2.5z" class="s-tx" opacity="0.22"/><path d="M73.5 21.5h7.5v2.5h-7.5zM68.5 24h2.5v2.5h-2.5zM66 31.5h2.5v2.5h-2.5zM78.5 31.5h2.5v2.5h-2.5zM86 34h2.5v2.5h-2.5zM73.5 39h2.5v2.5h-2.5zM81 41.5h2.5v2.5h-2.5zM78.5 44h2.5v2.5h-2.5zM68.5 46.5h2.5v2.5h-2.5zM76 49h2.5v2.5h-2.5zM66 51.5h2.5v2.5h-2.5zM73.5 51.5h2.5v2.5h-2.5zM71 54h2.5v2.5h-2.5zM61 59h2.5v2.5h-2.5zM58.5 61.5h2.5v2.5h-2.5zM66 61.5h2.5v2.5h-2.5zM63.5 64h2.5v2.5h-2.5zM56 66.5h2.5v2.5h-2.5z" class="s-tx" opacity="0.5"/><path d="M86 21.5h2.5v2.5h-2.5zM71 24h2.5v2.5h-2.5zM88.5 24h2.5v2.5h-2.5zM58.5 26.5h2.5v2.5h-2.5zM73.5 26.5h2.5v2.5h-2.5zM56 29h2.5v2.5h-2.5zM81 29h2.5v2.5h-2.5zM88.5 29h2.5v2.5h-2.5zM53.5 31.5h2.5v2.5h-2.5zM86 31.5h2.5v2.5h-2.5zM61 34h2.5v2.5h-2.5zM78.5 34h2.5v2.5h-2.5zM51 36.5h2.5v2.5h-2.5zM58.5 36.5h2.5v2.5h-2.5zM83.5 36.5h2.5v2.5h-2.5zM53.5 39h5v2.5h-5zM81 39h2.5v2.5h-2.5zM68.5 49h2.5v2.5h-2.5zM63.5 54h2.5v2.5h-2.5zM68.5 56.5h2.5v2.5h-2.5zM66 59h2.5v2.5h-2.5zM58.5 64h2.5v2.5h-2.5zM61 66.5h2.5v2.5h-2.5z" class="s-tx" opacity="0.78"/><path d="M81 21.5h5v2.5h-5zM73.5 24h15v2.5h-15zM61 26.5h12.5v2.5h-12.5zM76 26.5h15v2.5h-15zM58.5 29h12.5v2.5h-12.5zM83.5 29h5v2.5h-5zM56 31.5h10v2.5h-10zM81 31.5h5v2.5h-5zM53.5 34h7.5v2.5h-7.5zM81 34h5v2.5h-5zM53.5 36.5h5v2.5h-5zM78.5 36.5h5v2.5h-5zM76 39h5v2.5h-5zM73.5 41.5h7.5v2.5h-7.5zM71 44h7.5v2.5h-7.5zM71 46.5h7.5v2.5h-7.5zM71 49h5v2.5h-5zM68.5 51.5h5v2.5h-5zM66 54h5v2.5h-5zM63.5 56.5h5v2.5h-5zM63.5 59h2.5v2.5h-2.5zM61 61.5h5v2.5h-5zM61 64h2.5v2.5h-2.5zM58.5 66.5h2.5v2.5h-2.5zM58.5 69h2.5v2.5h-2.5z" class="s-tx" opacity="1"/>
+  <g class="s-red" stroke-width="0.8" opacity=".7"><line x1="36" y1="39" x2="106" y2="39"/><line x1="71" y1="4" x2="71" y2="74"/></g>
+  <text x="71" y="96" text-anchor="middle" class="s-tx">원본</text>
+  <rect x="155" y="3" width="72" height="72" class="s-bg" stroke-width="0.6"/>
+  <path d="M191 24h2.5v2.5h-2.5zM178.5 29h2.5v2.5h-2.5zM196 29h2.5v2.5h-2.5zM201 29h5v2.5h-5zM193.5 31.5h2.5v2.5h-2.5zM176 34h2.5v2.5h-2.5zM188.5 34h2.5v2.5h-2.5zM186 36.5h2.5v2.5h-2.5zM201 36.5h2.5v2.5h-2.5zM211 36.5h2.5v2.5h-2.5zM176 39h2.5v2.5h-2.5zM196 41.5h2.5v2.5h-2.5zM203.5 46.5h2.5v2.5h-2.5zM186 56.5h2.5v2.5h-2.5zM183.5 59h2.5v2.5h-2.5zM193.5 59h2.5v2.5h-2.5zM181 64h2.5v2.5h-2.5zM191 64h2.5v2.5h-2.5zM188.5 66.5h2.5v2.5h-2.5zM181 69h2.5v2.5h-2.5zM186 69h2.5v2.5h-2.5z" class="s-tx" opacity="0.22"/><path d="M198.5 21.5h7.5v2.5h-7.5zM193.5 24h2.5v2.5h-2.5zM191 31.5h2.5v2.5h-2.5zM203.5 31.5h2.5v2.5h-2.5zM211 34h2.5v2.5h-2.5zM198.5 39h2.5v2.5h-2.5zM206 41.5h2.5v2.5h-2.5zM203.5 44h2.5v2.5h-2.5zM193.5 46.5h2.5v2.5h-2.5zM201 49h2.5v2.5h-2.5zM191 51.5h2.5v2.5h-2.5zM198.5 51.5h2.5v2.5h-2.5zM196 54h2.5v2.5h-2.5zM186 59h2.5v2.5h-2.5zM183.5 61.5h2.5v2.5h-2.5zM191 61.5h2.5v2.5h-2.5zM188.5 64h2.5v2.5h-2.5zM181 66.5h2.5v2.5h-2.5z" class="s-tx" opacity="0.5"/><path d="M211 21.5h2.5v2.5h-2.5zM196 24h2.5v2.5h-2.5zM213.5 24h2.5v2.5h-2.5zM183.5 26.5h2.5v2.5h-2.5zM198.5 26.5h2.5v2.5h-2.5zM181 29h2.5v2.5h-2.5zM206 29h2.5v2.5h-2.5zM213.5 29h2.5v2.5h-2.5zM178.5 31.5h2.5v2.5h-2.5zM211 31.5h2.5v2.5h-2.5zM186 34h2.5v2.5h-2.5zM203.5 34h2.5v2.5h-2.5zM176 36.5h2.5v2.5h-2.5zM183.5 36.5h2.5v2.5h-2.5zM208.5 36.5h2.5v2.5h-2.5zM178.5 39h5v2.5h-5zM206 39h2.5v2.5h-2.5zM193.5 49h2.5v2.5h-2.5zM188.5 54h2.5v2.5h-2.5zM193.5 56.5h2.5v2.5h-2.5zM191 59h2.5v2.5h-2.5zM183.5 64h2.5v2.5h-2.5zM186 66.5h2.5v2.5h-2.5z" class="s-tx" opacity="0.78"/><path d="M206 21.5h5v2.5h-5zM198.5 24h15v2.5h-15zM186 26.5h12.5v2.5h-12.5zM201 26.5h15v2.5h-15zM183.5 29h12.5v2.5h-12.5zM208.5 29h5v2.5h-5zM181 31.5h10v2.5h-10zM206 31.5h5v2.5h-5zM178.5 34h7.5v2.5h-7.5zM206 34h5v2.5h-5zM178.5 36.5h5v2.5h-5zM203.5 36.5h5v2.5h-5zM201 39h5v2.5h-5zM198.5 41.5h7.5v2.5h-7.5zM196 44h7.5v2.5h-7.5zM196 46.5h7.5v2.5h-7.5zM196 49h5v2.5h-5zM193.5 51.5h5v2.5h-5zM191 54h5v2.5h-5zM188.5 56.5h5v2.5h-5zM188.5 59h2.5v2.5h-2.5zM186 61.5h5v2.5h-5zM186 64h2.5v2.5h-2.5zM183.5 66.5h2.5v2.5h-2.5zM183.5 69h2.5v2.5h-2.5z" class="s-tx" opacity="1"/>
+  <g class="s-red" stroke-width="0.8" opacity=".7"><line x1="156" y1="39" x2="226" y2="39"/><line x1="191" y1="4" x2="191" y2="74"/></g>
+  <text x="191" y="96" text-anchor="middle" class="s-txm">가로 +2, 세로 +0</text>
+  <rect x="275" y="3" width="72" height="72" class="s-bg" stroke-width="0.6"/>
+  <path d="M301 26.5h2.5v2.5h-2.5zM288.5 31.5h2.5v2.5h-2.5zM306 31.5h2.5v2.5h-2.5zM311 31.5h5v2.5h-5zM303.5 34h2.5v2.5h-2.5zM286 36.5h2.5v2.5h-2.5zM298.5 36.5h2.5v2.5h-2.5zM296 39h2.5v2.5h-2.5zM311 39h2.5v2.5h-2.5zM321 39h2.5v2.5h-2.5zM286 41.5h2.5v2.5h-2.5zM306 44h2.5v2.5h-2.5zM313.5 49h2.5v2.5h-2.5zM296 59h2.5v2.5h-2.5zM293.5 61.5h2.5v2.5h-2.5zM303.5 61.5h2.5v2.5h-2.5zM291 66.5h2.5v2.5h-2.5zM301 66.5h2.5v2.5h-2.5zM298.5 69h2.5v2.5h-2.5zM291 71.5h2.5v2.5h-2.5zM296 71.5h2.5v2.5h-2.5z" class="s-tx" opacity="0.22"/><path d="M308.5 24h7.5v2.5h-7.5zM303.5 26.5h2.5v2.5h-2.5zM301 34h2.5v2.5h-2.5zM313.5 34h2.5v2.5h-2.5zM321 36.5h2.5v2.5h-2.5zM308.5 41.5h2.5v2.5h-2.5zM316 44h2.5v2.5h-2.5zM313.5 46.5h2.5v2.5h-2.5zM303.5 49h2.5v2.5h-2.5zM311 51.5h2.5v2.5h-2.5zM301 54h2.5v2.5h-2.5zM308.5 54h2.5v2.5h-2.5zM306 56.5h2.5v2.5h-2.5zM296 61.5h2.5v2.5h-2.5zM293.5 64h2.5v2.5h-2.5zM301 64h2.5v2.5h-2.5zM298.5 66.5h2.5v2.5h-2.5zM291 69h2.5v2.5h-2.5z" class="s-tx" opacity="0.5"/><path d="M321 24h2.5v2.5h-2.5zM306 26.5h2.5v2.5h-2.5zM323.5 26.5h2.5v2.5h-2.5zM293.5 29h2.5v2.5h-2.5zM308.5 29h2.5v2.5h-2.5zM291 31.5h2.5v2.5h-2.5zM316 31.5h2.5v2.5h-2.5zM323.5 31.5h2.5v2.5h-2.5zM288.5 34h2.5v2.5h-2.5zM321 34h2.5v2.5h-2.5zM296 36.5h2.5v2.5h-2.5zM313.5 36.5h2.5v2.5h-2.5zM286 39h2.5v2.5h-2.5zM293.5 39h2.5v2.5h-2.5zM318.5 39h2.5v2.5h-2.5zM288.5 41.5h5v2.5h-5zM316 41.5h2.5v2.5h-2.5zM303.5 51.5h2.5v2.5h-2.5zM298.5 56.5h2.5v2.5h-2.5zM303.5 59h2.5v2.5h-2.5zM301 61.5h2.5v2.5h-2.5zM293.5 66.5h2.5v2.5h-2.5zM296 69h2.5v2.5h-2.5z" class="s-tx" opacity="0.78"/><path d="M316 24h5v2.5h-5zM308.5 26.5h15v2.5h-15zM296 29h12.5v2.5h-12.5zM311 29h15v2.5h-15zM293.5 31.5h12.5v2.5h-12.5zM318.5 31.5h5v2.5h-5zM291 34h10v2.5h-10zM316 34h5v2.5h-5zM288.5 36.5h7.5v2.5h-7.5zM316 36.5h5v2.5h-5zM288.5 39h5v2.5h-5zM313.5 39h5v2.5h-5zM311 41.5h5v2.5h-5zM308.5 44h7.5v2.5h-7.5zM306 46.5h7.5v2.5h-7.5zM306 49h7.5v2.5h-7.5zM306 51.5h5v2.5h-5zM303.5 54h5v2.5h-5zM301 56.5h5v2.5h-5zM298.5 59h5v2.5h-5zM298.5 61.5h2.5v2.5h-2.5zM296 64h5v2.5h-5zM296 66.5h2.5v2.5h-2.5zM293.5 69h2.5v2.5h-2.5zM293.5 71.5h2.5v2.5h-2.5z" class="s-tx" opacity="1"/>
+  <g class="s-red" stroke-width="0.8" opacity=".7"><line x1="276" y1="39" x2="346" y2="39"/><line x1="311" y1="4" x2="311" y2="74"/></g>
+  <text x="311" y="96" text-anchor="middle" class="s-txm">가로 -2, 세로 +1</text>
+  <rect x="395" y="3" width="72" height="72" class="s-bg" stroke-width="0.6"/>
+  <path d="M428.5 19h2.5v2.5h-2.5zM416 24h2.5v2.5h-2.5zM433.5 24h2.5v2.5h-2.5zM438.5 24h5v2.5h-5zM431 26.5h2.5v2.5h-2.5zM413.5 29h2.5v2.5h-2.5zM426 29h2.5v2.5h-2.5zM423.5 31.5h2.5v2.5h-2.5zM438.5 31.5h2.5v2.5h-2.5zM448.5 31.5h2.5v2.5h-2.5zM413.5 34h2.5v2.5h-2.5zM433.5 36.5h2.5v2.5h-2.5zM441 41.5h2.5v2.5h-2.5zM423.5 51.5h2.5v2.5h-2.5zM421 54h2.5v2.5h-2.5zM431 54h2.5v2.5h-2.5zM418.5 59h2.5v2.5h-2.5zM428.5 59h2.5v2.5h-2.5zM426 61.5h2.5v2.5h-2.5zM418.5 64h2.5v2.5h-2.5zM423.5 64h2.5v2.5h-2.5z" class="s-tx" opacity="0.22"/><path d="M436 16.5h7.5v2.5h-7.5zM431 19h2.5v2.5h-2.5zM428.5 26.5h2.5v2.5h-2.5zM441 26.5h2.5v2.5h-2.5zM448.5 29h2.5v2.5h-2.5zM436 34h2.5v2.5h-2.5zM443.5 36.5h2.5v2.5h-2.5zM441 39h2.5v2.5h-2.5zM431 41.5h2.5v2.5h-2.5zM438.5 44h2.5v2.5h-2.5zM428.5 46.5h2.5v2.5h-2.5zM436 46.5h2.5v2.5h-2.5zM433.5 49h2.5v2.5h-2.5zM423.5 54h2.5v2.5h-2.5zM421 56.5h2.5v2.5h-2.5zM428.5 56.5h2.5v2.5h-2.5zM426 59h2.5v2.5h-2.5zM418.5 61.5h2.5v2.5h-2.5z" class="s-tx" opacity="0.5"/><path d="M448.5 16.5h2.5v2.5h-2.5zM433.5 19h2.5v2.5h-2.5zM451 19h2.5v2.5h-2.5zM421 21.5h2.5v2.5h-2.5zM436 21.5h2.5v2.5h-2.5zM418.5 24h2.5v2.5h-2.5zM443.5 24h2.5v2.5h-2.5zM451 24h2.5v2.5h-2.5zM416 26.5h2.5v2.5h-2.5zM448.5 26.5h2.5v2.5h-2.5zM423.5 29h2.5v2.5h-2.5zM441 29h2.5v2.5h-2.5zM413.5 31.5h2.5v2.5h-2.5zM421 31.5h2.5v2.5h-2.5zM446 31.5h2.5v2.5h-2.5zM416 34h5v2.5h-5zM443.5 34h2.5v2.5h-2.5zM431 44h2.5v2.5h-2.5zM426 49h2.5v2.5h-2.5zM431 51.5h2.5v2.5h-2.5zM428.5 54h2.5v2.5h-2.5zM421 59h2.5v2.5h-2.5zM423.5 61.5h2.5v2.5h-2.5z" class="s-tx" opacity="0.78"/><path d="M443.5 16.5h5v2.5h-5zM436 19h15v2.5h-15zM423.5 21.5h12.5v2.5h-12.5zM438.5 21.5h15v2.5h-15zM421 24h12.5v2.5h-12.5zM446 24h5v2.5h-5zM418.5 26.5h10v2.5h-10zM443.5 26.5h5v2.5h-5zM416 29h7.5v2.5h-7.5zM443.5 29h5v2.5h-5zM416 31.5h5v2.5h-5zM441 31.5h5v2.5h-5zM438.5 34h5v2.5h-5zM436 36.5h7.5v2.5h-7.5zM433.5 39h7.5v2.5h-7.5zM433.5 41.5h7.5v2.5h-7.5zM433.5 44h5v2.5h-5zM431 46.5h5v2.5h-5zM428.5 49h5v2.5h-5zM426 51.5h5v2.5h-5zM426 54h2.5v2.5h-2.5zM423.5 56.5h5v2.5h-5zM423.5 59h2.5v2.5h-2.5zM421 61.5h2.5v2.5h-2.5zM421 64h2.5v2.5h-2.5z" class="s-tx" opacity="1"/>
+  <g class="s-red" stroke-width="0.8" opacity=".7"><line x1="396" y1="39" x2="466" y2="39"/><line x1="431" y1="4" x2="431" y2="74"/></g>
+  <text x="431" y="96" text-anchor="middle" class="s-txm">가로 +1, 세로 -2</text>
+  <rect x="515" y="3" width="72" height="72" class="s-bg" stroke-width="0.6"/>
+  <path d="M543.5 21.5h2.5v2.5h-2.5zM531 26.5h2.5v2.5h-2.5zM548.5 26.5h2.5v2.5h-2.5zM553.5 26.5h5v2.5h-5zM546 29h2.5v2.5h-2.5zM528.5 31.5h2.5v2.5h-2.5zM541 31.5h2.5v2.5h-2.5zM538.5 34h2.5v2.5h-2.5zM553.5 34h2.5v2.5h-2.5zM563.5 34h2.5v2.5h-2.5zM528.5 36.5h2.5v2.5h-2.5zM548.5 39h2.5v2.5h-2.5zM556 44h2.5v2.5h-2.5zM538.5 54h2.5v2.5h-2.5zM536 56.5h2.5v2.5h-2.5zM546 56.5h2.5v2.5h-2.5zM533.5 61.5h2.5v2.5h-2.5zM543.5 61.5h2.5v2.5h-2.5zM541 64h2.5v2.5h-2.5zM533.5 66.5h2.5v2.5h-2.5zM538.5 66.5h2.5v2.5h-2.5z" class="s-tx" opacity="0.22"/><path d="M551 19h7.5v2.5h-7.5zM546 21.5h2.5v2.5h-2.5zM543.5 29h2.5v2.5h-2.5zM556 29h2.5v2.5h-2.5zM563.5 31.5h2.5v2.5h-2.5zM551 36.5h2.5v2.5h-2.5zM558.5 39h2.5v2.5h-2.5zM556 41.5h2.5v2.5h-2.5zM546 44h2.5v2.5h-2.5zM553.5 46.5h2.5v2.5h-2.5zM543.5 49h2.5v2.5h-2.5zM551 49h2.5v2.5h-2.5zM548.5 51.5h2.5v2.5h-2.5zM538.5 56.5h2.5v2.5h-2.5zM536 59h2.5v2.5h-2.5zM543.5 59h2.5v2.5h-2.5zM541 61.5h2.5v2.5h-2.5zM533.5 64h2.5v2.5h-2.5z" class="s-tx" opacity="0.5"/><path d="M563.5 19h2.5v2.5h-2.5zM548.5 21.5h2.5v2.5h-2.5zM566 21.5h2.5v2.5h-2.5zM536 24h2.5v2.5h-2.5zM551 24h2.5v2.5h-2.5zM533.5 26.5h2.5v2.5h-2.5zM558.5 26.5h2.5v2.5h-2.5zM566 26.5h2.5v2.5h-2.5zM531 29h2.5v2.5h-2.5zM563.5 29h2.5v2.5h-2.5zM538.5 31.5h2.5v2.5h-2.5zM556 31.5h2.5v2.5h-2.5zM528.5 34h2.5v2.5h-2.5zM536 34h2.5v2.5h-2.5zM561 34h2.5v2.5h-2.5zM531 36.5h5v2.5h-5zM558.5 36.5h2.5v2.5h-2.5zM546 46.5h2.5v2.5h-2.5zM541 51.5h2.5v2.5h-2.5zM546 54h2.5v2.5h-2.5zM543.5 56.5h2.5v2.5h-2.5zM536 61.5h2.5v2.5h-2.5zM538.5 64h2.5v2.5h-2.5z" class="s-tx" opacity="0.78"/><path d="M558.5 19h5v2.5h-5zM551 21.5h15v2.5h-15zM538.5 24h12.5v2.5h-12.5zM553.5 24h15v2.5h-15zM536 26.5h12.5v2.5h-12.5zM561 26.5h5v2.5h-5zM533.5 29h10v2.5h-10zM558.5 29h5v2.5h-5zM531 31.5h7.5v2.5h-7.5zM558.5 31.5h5v2.5h-5zM531 34h5v2.5h-5zM556 34h5v2.5h-5zM553.5 36.5h5v2.5h-5zM551 39h7.5v2.5h-7.5zM548.5 41.5h7.5v2.5h-7.5zM548.5 44h7.5v2.5h-7.5zM548.5 46.5h5v2.5h-5zM546 49h5v2.5h-5zM543.5 51.5h5v2.5h-5zM541 54h5v2.5h-5zM541 56.5h2.5v2.5h-2.5zM538.5 59h5v2.5h-5zM538.5 61.5h2.5v2.5h-2.5zM536 64h2.5v2.5h-2.5zM536 66.5h2.5v2.5h-2.5z" class="s-tx" opacity="1"/>
+  <g class="s-red" stroke-width="0.8" opacity=".7"><line x1="516" y1="39" x2="586" y2="39"/><line x1="551" y1="4" x2="551" y2="74"/></g>
+  <text x="551" y="96" text-anchor="middle" class="s-txm">가로 -1, 세로 -1</text>
+  </g>
+</svg>
+<figcaption>같은 이미지를 옮긴 다섯 가지 변형. 빨간 선은 이미지의 중심이다. 증강은 매 배치마다 새로 무작위로 적용하므로 모델은 같은 이미지를 에폭마다 다른 위치로 본다.</figcaption>
+</figure>
+
+<h2 data-min="20" data-kind="project">3단계: 점검</h2>
+<p>27일차의 디버깅 절차를 전체 학습 전에 적용한다. 노트북의 실행 결과는 다음과 같다.</p>
+<table>
+  <thead><tr><th>점검</th><th>결과</th><th>판정</th></tr></thead>
+  <tbody>
+    <tr><td>첫 손실 (표본 1,000장)</td><td>2.887 (모든 로짓이 같을 때 $\ln 10 = 2.303$)</td><td>정상: 같은 자릿수</td></tr>
+    <tr><td>기울기 검증 (784-32-16-10, <code>float64</code>)</td><td>상대 오차 $1.8 \times 10^{-10}$</td><td>통과: $10^{-6}$ 이하</td></tr>
+    <tr><td>64장 외우기 (AdamW, 학습률 $10^{-3}$)</td><td>손실 3.30 → 50스텝 뒤 0.0003</td><td>통과</td></tr>
+  </tbody>
+</table>
+<p>첫 손실이 $\ln 10$보다 조금 큰 것은 초기화 직후의 로짓이 이미 클래스마다 다르기 때문이다. 한 표본 안에서 로짓 10개의 표준편차가 약 1.5다. 로짓이 모두 같으면 확률이 모두 0.1이 되어 손실이 정확히 $\ln 10$이다. 27일차의 버그 코드에서 본 17.9나 <code>inf</code>와 달리 같은 자릿수이므로 정상이다. 마지막 층의 가중치를 0.1배로 줄이면 첫 손실이 $\ln 10$에 가까워지는 것도 노트북에서 확인할 수 있다.</p>
+<div class="box warn" data-title="기울기 검증을 노름으로 하는 이유"><p>20일차에는 원소 하나씩의 상대 오차를 봤다. MNIST에서는 테두리 픽셀에 연결된 가중치처럼 기울기가 아주 작은($10^{-5}$ 이하) 원소가 많다. 이런 원소에서는 수치 미분 자체의 반올림 오차만으로 원소별 상대 오차가 $10^{-6}$을 넘는다(실제로 $2.4\times10^{-6}$이 나왔다). 그래서 파라미터마다 고른 원소들을 벡터로 묶어 비교한다.</p>
+<p>$$\text{상대 오차} = \frac{\lVert g_{\text{역전파}} - g_{\text{수치}}\rVert}{\lVert g_{\text{역전파}}\rVert + \lVert g_{\text{수치}}\rVert}$$</p>
+<p>이 기준으로 올바른 코드는 $1.8\times10^{-10}$, ReLU 역전파에서 마스크를 빼먹은 코드는 0.80이 나와 둘이 확실히 갈린다.</p></div>
+
+<h2 data-min="15" data-kind="project">4단계: 학습률 범위 테스트</h2>
+<p>학습률을 $10^{-5}$부터 스텝마다 지수적으로 키우며 한 번 학습하고, 손실의 지수 이동 평균을 학습률에 대해 그린다(23일차). 손실이 최저점의 4배를 넘으면 발산으로 보고 멈춘다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 260" width="640" role="img" aria-label="학습률 범위 테스트 결과">
+  <g font-size="12">
+  <line x1="62" y1="214.0" x2="624" y2="214.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="218.0" text-anchor="end" class="s-txm" font-size="11">0</text>
+  <line x1="62" y1="183.7" x2="624" y2="183.7" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="187.7" text-anchor="end" class="s-txm" font-size="11">0.5</text>
+  <line x1="62" y1="153.4" x2="624" y2="153.4" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="157.4" text-anchor="end" class="s-txm" font-size="11">1</text>
+  <line x1="62" y1="123.1" x2="624" y2="123.1" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="127.1" text-anchor="end" class="s-txm" font-size="11">1.5</text>
+  <line x1="62" y1="92.8" x2="624" y2="92.8" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="96.8" text-anchor="end" class="s-txm" font-size="11">2</text>
+  <line x1="62" y1="62.5" x2="624" y2="62.5" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="66.5" text-anchor="end" class="s-txm" font-size="11">2.5</text>
+  <line x1="62" y1="32.2" x2="624" y2="32.2" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="36.2" text-anchor="end" class="s-txm" font-size="11">3</text>
+  <line x1="62.0" y1="14" x2="62.0" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="62.0" y="230" text-anchor="middle" class="s-txm" font-size="11">10<tspan dy="-5" font-size="9">-5</tspan></text>
+  <line x1="202.5" y1="14" x2="202.5" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="202.5" y="230" text-anchor="middle" class="s-txm" font-size="11">10<tspan dy="-5" font-size="9">-4</tspan></text>
+  <line x1="343.0" y1="14" x2="343.0" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="343.0" y="230" text-anchor="middle" class="s-txm" font-size="11">10<tspan dy="-5" font-size="9">-3</tspan></text>
+  <line x1="483.5" y1="14" x2="483.5" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="483.5" y="230" text-anchor="middle" class="s-txm" font-size="11">10<tspan dy="-5" font-size="9">-2</tspan></text>
+  <line x1="624.0" y1="14" x2="624.0" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="624.0" y="230" text-anchor="middle" class="s-txm" font-size="11">10<tspan dy="-5" font-size="9">-1</tspan></text>
+  <rect x="62" y="14" width="562" height="200" fill="none" class="s-mu" stroke-width="1"/>
+  <line x1="343.0" y1="14" x2="343.0" y2="214" class="s-grn" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="347.0" y="27" class="s-txm" font-size="11">선택 10⁻³</text>
+  <line x1="492.0" y1="14" x2="492.0" y2="214" class="s-org" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="496.0" y="27" class="s-txm" font-size="11">최소 1.1×10⁻²</text>
+  <polyline points="62.0,23.8 64.3,25.3 66.7,27.1 69.0,28.7 71.4,28.1 73.7,28.8 76.1,29.5 78.4,30.0 80.8,29.9 83.1,31.0 85.5,31.4 87.8,32.1 90.2,32.8 92.5,33.4 94.9,34.3 97.2,35.4 99.6,35.7 101.9,36.8 104.3,37.6 106.6,39.3 109.0,40.5 111.3,41.7 113.7,42.3 116.0,42.9 118.4,44.1 120.7,45.7 123.1,47.0 125.4,47.8 127.8,49.1 130.1,50.2 132.5,51.4 134.8,52.2 137.2,53.0 139.5,54.6 141.9,55.2 144.2,57.3 146.6,59.2 148.9,59.7 151.3,60.7 153.6,61.2 156.0,62.3 158.3,63.2 160.7,64.5 163.0,65.7 165.4,67.7 167.7,69.2 170.1,70.9 172.4,72.7 174.8,74.4 177.1,76.8 179.5,78.6 181.8,81.0 184.2,82.9 186.5,84.7 188.9,86.1 191.2,87.7 193.6,89.7 195.9,91.1 198.3,92.2 200.6,94.1 203.0,95.5 205.3,96.5 207.7,97.8 210.0,99.9 212.4,102.6 214.7,104.4 217.1,106.3 219.4,108.5 221.8,110.8 224.1,112.4 226.5,114.2 228.8,115.7 231.2,117.9 233.5,120.0 235.9,122.3 238.2,123.5 240.6,125.4 242.9,128.1 245.3,130.5 247.6,131.9 250.0,134.4 252.3,136.1 254.7,138.2 257.0,140.7 259.4,143.2 261.7,145.5 264.1,147.6 266.4,149.9 268.8,151.0 271.1,152.5 273.5,154.4 275.8,156.4 278.2,157.5 280.5,159.3 282.9,160.8 285.2,162.6 287.6,163.9 289.9,165.6 292.3,166.3 294.6,168.2 296.9,169.7 299.3,171.4 301.6,171.8 304.0,172.8 306.3,174.3 308.7,174.4 311.0,175.4 313.4,176.1 315.7,176.7 318.1,177.2 320.4,178.7 322.8,179.3 325.1,179.4 327.5,180.7 329.8,181.9 332.2,182.5 334.5,183.4 336.9,183.8 339.2,184.4 341.6,185.1 343.9,185.6 346.3,186.0 348.6,187.5 351.0,188.3 353.3,189.2 355.7,189.9 358.0,190.0 360.4,189.6 362.7,188.6 365.1,189.0 367.4,187.5 369.8,187.8 372.1,187.8 374.5,188.4 376.8,188.5 379.2,188.3 381.5,189.1 383.9,189.1 386.2,188.6 388.6,189.5 390.9,189.4 393.3,189.4 395.6,190.2 398.0,190.8 400.3,191.1 402.7,190.5 405.0,190.8 407.4,189.8 409.7,190.8 412.1,190.8 414.4,191.1 416.8,191.1 419.1,191.6 421.5,191.9 423.8,192.7 426.2,192.4 428.5,192.4 430.9,193.0 433.2,192.6 435.6,192.6 437.9,192.9 440.3,193.4 442.6,193.2 445.0,193.9 447.3,194.3 449.7,194.4 452.0,194.8 454.4,195.2 456.7,194.9 459.1,195.1 461.4,193.8 463.8,194.0 466.1,194.4 468.5,193.9 470.8,194.5 473.2,193.9 475.5,193.9 477.9,194.3 480.2,194.1 482.6,194.6 484.9,193.9 487.3,194.2 489.6,194.5 492.0,195.5 494.3,195.1 496.7,194.3 499.0,194.7 501.4,194.8 503.7,192.7 506.1,193.1 508.4,191.9 510.8,190.0 513.1,189.9 515.5,187.5 517.8,188.0 520.2,187.7 522.5,187.6 524.9,183.3 527.2,180.0 529.6,178.4 531.9,178.7 534.2,177.5 536.6,178.0 538.9,177.6 541.3,177.9 543.6,178.4 546.0,178.9 548.3,179.7 550.7,179.6 553.0,180.1 555.4,179.5 557.7,178.5 560.1,178.4 562.4,179.1 564.8,180.3 567.1,179.7 569.5,180.3 571.8,180.2 574.2,180.3 576.5,180.3 578.9,179.2 581.2,177.1 583.6,177.6 585.9,175.8 588.3,174.0 590.6,172.4 593.0,172.7 595.3,170.9 597.7,168.5 600.0,166.8 602.4,159.8 604.7,154.5 607.1,151.7 609.4,144.8 611.8,139.8" class="s-ac" stroke-width="2.2" fill="none"/>
+  <text x="343" y="252" text-anchor="middle" class="s-txm">학습률 (로그 눈금)</text>
+  <text x="14" y="114" text-anchor="middle" class="s-txm" transform="rotate(-90 14 114)">손실 (지수 이동 평균)</text>
+  </g>
+</svg>
+<figcaption>784-256-128-10 모델, AdamW, 배치 128. 손실은 $10^{-4}$ 근처부터 빠르게 줄고, $1.1\times10^{-2}$에서 가장 낮으며, $8.2\times10^{-2}$에서 발산 기준을 넘어 멈췄다.</figcaption>
+</figure>
+<p>23일차의 기준대로 최저점의 1/10~1/3 범위($1.1\times10^{-3}$~$3.7\times10^{-3}$)에서 고른다. 여기서는 그 아래 끝에 가까운 $10^{-3}$을 쓴다. 범위 테스트는 학습률이 매 스텝 바뀌는 짧은 학습이라, 최저점 근처의 학습률은 긴 학습에서는 이미 불안정할 수 있다. 여러 설정을 비교할 6단계에서는 안전한 값을 쓰는 편이 비교를 공정하게 만든다.</p>
+
+<h2 data-min="20" data-kind="project">5단계: 기준 모델</h2>
+<p>784-256-128-10 모델을 규제 없이 10에폭 학습한다. 최대 학습률 $10^{-3}$, 배치 128, 워밍업 1에폭 뒤 코사인 감소.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 260" width="640" role="img" aria-label="기준 모델의 학습 손실과 검증 손실">
+  <g font-size="12">
+  <line x1="62" y1="201.0" x2="624" y2="201.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="205.0" text-anchor="end" class="s-txm" font-size="11">0.003</text>
+  <line x1="62" y1="162.2" x2="624" y2="162.2" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="166.2" text-anchor="end" class="s-txm" font-size="11">0.01</text>
+  <line x1="62" y1="126.8" x2="624" y2="126.8" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="130.8" text-anchor="end" class="s-txm" font-size="11">0.03</text>
+  <line x1="62" y1="88.1" x2="624" y2="88.1" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="92.1" text-anchor="end" class="s-txm" font-size="11">0.1</text>
+  <line x1="62" y1="52.7" x2="624" y2="52.7" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="56.7" text-anchor="end" class="s-txm" font-size="11">0.3</text>
+  <line x1="62" y1="14.0" x2="624" y2="14.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="18.0" text-anchor="end" class="s-txm" font-size="11">1</text>
+  <line x1="62.0" y1="14" x2="62.0" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="62.0" y="230" text-anchor="middle" class="s-txm" font-size="11">1</text>
+  <line x1="124.4" y1="14" x2="124.4" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="124.4" y="230" text-anchor="middle" class="s-txm" font-size="11">2</text>
+  <line x1="186.9" y1="14" x2="186.9" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="186.9" y="230" text-anchor="middle" class="s-txm" font-size="11">3</text>
+  <line x1="249.3" y1="14" x2="249.3" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="249.3" y="230" text-anchor="middle" class="s-txm" font-size="11">4</text>
+  <line x1="311.8" y1="14" x2="311.8" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="311.8" y="230" text-anchor="middle" class="s-txm" font-size="11">5</text>
+  <line x1="374.2" y1="14" x2="374.2" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="374.2" y="230" text-anchor="middle" class="s-txm" font-size="11">6</text>
+  <line x1="436.7" y1="14" x2="436.7" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="436.7" y="230" text-anchor="middle" class="s-txm" font-size="11">7</text>
+  <line x1="499.1" y1="14" x2="499.1" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="499.1" y="230" text-anchor="middle" class="s-txm" font-size="11">8</text>
+  <line x1="561.6" y1="14" x2="561.6" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="561.6" y="230" text-anchor="middle" class="s-txm" font-size="11">9</text>
+  <line x1="624.0" y1="14" x2="624.0" y2="214" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="624.0" y="230" text-anchor="middle" class="s-txm" font-size="11">10</text>
+  <rect x="62" y="14" width="562" height="200" fill="none" class="s-mu" stroke-width="1"/>
+  <polyline points="62.0,31.1 124.4,79.7 186.9,96.5 249.3,111.3 311.8,126.6 374.2,144.8 436.7,164.8 499.1,182.4 561.6,193.1 624.0,197.2" class="s-ac" stroke-width="2" fill="none" stroke-dasharray="5 4"/>
+  <g class="s-acf"><circle cx="62.0" cy="31.1" r="2.6"/><circle cx="124.4" cy="79.7" r="2.6"/><circle cx="186.9" cy="96.5" r="2.6"/><circle cx="249.3" cy="111.3" r="2.6"/><circle cx="311.8" cy="126.6" r="2.6"/><circle cx="374.2" cy="144.8" r="2.6"/><circle cx="436.7" cy="164.8" r="2.6"/><circle cx="499.1" cy="182.4" r="2.6"/><circle cx="561.6" cy="193.1" r="2.6"/><circle cx="624.0" cy="197.2" r="2.6"/></g>
+  <polyline points="62.0,71.2 124.4,87.1 186.9,88.7 249.3,94.8 311.8,96.1 374.2,96.4 436.7,98.7 499.1,99.7 561.6,99.8 624.0,99.8" class="s-red" stroke-width="2" fill="none"/>
+  <g class="s-redf"><circle cx="62.0" cy="71.2" r="2.6"/><circle cx="124.4" cy="87.1" r="2.6"/><circle cx="186.9" cy="88.7" r="2.6"/><circle cx="249.3" cy="94.8" r="2.6"/><circle cx="311.8" cy="96.1" r="2.6"/><circle cx="374.2" cy="96.4" r="2.6"/><circle cx="436.7" cy="98.7" r="2.6"/><circle cx="499.1" cy="99.7" r="2.6"/><circle cx="561.6" cy="99.8" r="2.6"/><circle cx="624.0" cy="99.8" r="2.6"/></g>
+  <rect x="535" y="18" width="75" height="42" class="s-bg" stroke-width="0.8" opacity=".92"/>
+  <line x1="541" y1="30" x2="565" y2="30" class="s-ac" stroke-width="2" stroke-dasharray="5 4"/>
+  <text x="571" y="34" class="s-tx" font-size="11">학습 손실</text>
+  <line x1="541" y1="48" x2="565" y2="48" class="s-red" stroke-width="2"/>
+  <text x="571" y="52" class="s-tx" font-size="11">검증 손실</text>
+  <text x="343" y="252" text-anchor="middle" class="s-txm">에폭</text>
+  <text x="14" y="114" text-anchor="middle" class="s-txm" transform="rotate(-90 14 114)">교차 엔트로피 (로그 눈금)</text>
+  </g>
+</svg>
+<figcaption>기준 모델의 에폭별 손실(로그 눈금). 학습 손실은 0.59에서 0.0034까지 계속 줄지만, 검증 손실은 4에폭 이후 0.081에서 0.070으로 조금씩만 줄다가 8에폭부터 멈춘다.</figcaption>
+</figure>
+<p>검증 정확도는 1에폭 뒤 95.0%, 10에폭 뒤 98.14%다. 목표에 거의 닿았지만 학습 손실(0.0034)이 검증 손실(0.0696)의 약 20분의 1이다. 모델이 학습 데이터를 외우고 있다는 신호다. 이 간격을 줄이면 검증 성능이 더 오를 여지가 있다. 6단계의 실험은 이 간격을 줄이는 방법들을 차례로 시험한다.</p>
+
+<h2 data-min="30" data-kind="project">6단계: 개선 실험</h2>
+<p>한 번에 하나씩 바꾸고, 모두 같은 시드와 같은 에폭 수(15)로 학습해 <b>검증 정확도</b>로 비교한다. 다섯 실험을 모두 돌리는 데 Colab에서 수 분에서 10분 정도 걸린다.</p>
+<table>
+  <thead><tr><th>설정</th><th>바꾼 것</th><th>학습 손실</th><th>검증 손실</th><th>검증 정확도</th></tr></thead>
+  <tbody>
+    <tr><td>기준</td><td>은닉 256-128, 규제 없음</td><td>0.0008</td><td>0.0737</td><td>98.09%</td></tr>
+    <tr><td>드롭아웃</td><td>+ 드롭아웃 0.2</td><td>0.0200</td><td>0.0626</td><td>98.19%</td></tr>
+    <tr><td>이동 증강</td><td>+ 이동 ±2픽셀</td><td>0.0448</td><td>0.0468</td><td>98.41%</td></tr>
+    <tr><td>드롭아웃 + 증강</td><td>+ 드롭아웃 0.2, 이동 ±2픽셀</td><td>0.1049</td><td>0.0519</td><td>98.35%</td></tr>
+    <tr><td><b>넓게 + 모두</b></td><td>은닉 512-256, 드롭아웃 0.2, 이동 ±2픽셀, 감쇠 0.01</td><td>0.0685</td><td>0.0442</td><td><b>98.67%</b></td></tr>
+  </tbody>
+</table>
+<figure class="fig">
+<svg viewBox="0 0 640 290" width="640" role="img" aria-label="개선 실험별 검증 정확도">
+  <g font-size="12">
+  <line x1="62" y1="244.0" x2="624" y2="244.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="248.0" text-anchor="end" class="s-txm" font-size="11">96.5</text>
+  <line x1="62" y1="198.0" x2="624" y2="198.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="202.0" text-anchor="end" class="s-txm" font-size="11">97</text>
+  <line x1="62" y1="152.0" x2="624" y2="152.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="156.0" text-anchor="end" class="s-txm" font-size="11">97.5</text>
+  <line x1="62" y1="106.0" x2="624" y2="106.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="110.0" text-anchor="end" class="s-txm" font-size="11">98</text>
+  <line x1="62" y1="60.0" x2="624" y2="60.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="64.0" text-anchor="end" class="s-txm" font-size="11">98.5</text>
+  <line x1="62" y1="14.0" x2="624" y2="14.0" class="s-mu" stroke-width="1" opacity=".45"/>
+  <text x="56" y="18.0" text-anchor="end" class="s-txm" font-size="11">99</text>
+  <line x1="62.0" y1="14" x2="62.0" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="62.0" y="260" text-anchor="middle" class="s-txm" font-size="11">3</text>
+  <line x1="108.8" y1="14" x2="108.8" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="108.8" y="260" text-anchor="middle" class="s-txm" font-size="11">4</text>
+  <line x1="155.7" y1="14" x2="155.7" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="155.7" y="260" text-anchor="middle" class="s-txm" font-size="11">5</text>
+  <line x1="202.5" y1="14" x2="202.5" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="202.5" y="260" text-anchor="middle" class="s-txm" font-size="11">6</text>
+  <line x1="249.3" y1="14" x2="249.3" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="249.3" y="260" text-anchor="middle" class="s-txm" font-size="11">7</text>
+  <line x1="296.2" y1="14" x2="296.2" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="296.2" y="260" text-anchor="middle" class="s-txm" font-size="11">8</text>
+  <line x1="343.0" y1="14" x2="343.0" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="343.0" y="260" text-anchor="middle" class="s-txm" font-size="11">9</text>
+  <line x1="389.8" y1="14" x2="389.8" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="389.8" y="260" text-anchor="middle" class="s-txm" font-size="11">10</text>
+  <line x1="436.7" y1="14" x2="436.7" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="436.7" y="260" text-anchor="middle" class="s-txm" font-size="11">11</text>
+  <line x1="483.5" y1="14" x2="483.5" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="483.5" y="260" text-anchor="middle" class="s-txm" font-size="11">12</text>
+  <line x1="530.3" y1="14" x2="530.3" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="530.3" y="260" text-anchor="middle" class="s-txm" font-size="11">13</text>
+  <line x1="577.2" y1="14" x2="577.2" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="577.2" y="260" text-anchor="middle" class="s-txm" font-size="11">14</text>
+  <line x1="624.0" y1="14" x2="624.0" y2="244" class="s-mu" stroke-width="1" opacity=".3"/>
+  <text x="624.0" y="260" text-anchor="middle" class="s-txm" font-size="11">15</text>
+  <rect x="62" y="14" width="562" height="230" fill="none" class="s-mu" stroke-width="1"/>
+  <polyline points="62.0,228.4 108.8,147.4 155.7,128.1 202.5,157.5 249.3,139.1 296.2,107.8 343.0,112.4 389.8,90.4 436.7,100.5 483.5,95.0 530.3,97.7 577.2,96.8 624.0,97.7" class="s-ln" stroke-width="1.8" fill="none" stroke-dasharray="4 3"/>
+  <polyline points="62.0,211.8 108.8,174.1 155.7,158.4 202.5,143.7 249.3,122.6 296.2,107.8 343.0,111.5 389.8,97.7 436.7,96.8 483.5,89.4 530.3,87.6 577.2,90.4 624.0,88.5" class="s-org" stroke-width="1.8" fill="none"/>
+  <polyline points="62.0,221.9 108.8,198.0 155.7,174.1 202.5,162.1 249.3,124.4 296.2,106.0 343.0,83.0 389.8,96.8 436.7,74.7 483.5,71.0 530.3,69.2 577.2,69.2 624.0,68.3" class="s-grn" stroke-width="1.8" fill="none"/>
+  <polyline points="62.0,237.6 108.8,213.6 155.7,165.8 202.5,171.3 249.3,123.5 296.2,122.6 343.0,100.5 389.8,112.4 436.7,73.8 483.5,81.2 530.3,70.1 577.2,73.8 624.0,73.8" class="s-red" stroke-width="1.8" fill="none"/>
+  <polyline points="62.0,209.0 108.8,156.6 155.7,137.3 202.5,129.9 249.3,116.1 296.2,86.7 343.0,90.4 389.8,65.5 436.7,58.2 483.5,57.2 530.3,47.1 577.2,44.4 624.0,44.4" class="s-ac" stroke-width="2.6" fill="none"/>
+  <rect x="507" y="144" width="103" height="96" class="s-bg" stroke-width="0.8" opacity=".92"/>
+  <line x1="513" y1="156" x2="537" y2="156" class="s-ln" stroke-width="1.8" stroke-dasharray="4 3"/>
+  <text x="543" y="160" class="s-tx" font-size="11">기준</text>
+  <line x1="513" y1="174" x2="537" y2="174" class="s-org" stroke-width="1.8"/>
+  <text x="543" y="178" class="s-tx" font-size="11">드롭아웃</text>
+  <line x1="513" y1="192" x2="537" y2="192" class="s-grn" stroke-width="1.8"/>
+  <text x="543" y="196" class="s-tx" font-size="11">이동 증강</text>
+  <line x1="513" y1="210" x2="537" y2="210" class="s-red" stroke-width="1.8"/>
+  <text x="543" y="214" class="s-tx" font-size="11">드롭아웃 + 증강</text>
+  <line x1="513" y1="228" x2="537" y2="228" class="s-ac" stroke-width="2.6"/>
+  <text x="543" y="232" class="s-tx" font-size="11">넓게 + 모두</text>
+  <text x="343" y="282" text-anchor="middle" class="s-txm">에폭 (3에폭부터 표시)</text>
+  <text x="14" y="129" text-anchor="middle" class="s-txm" transform="rotate(-90 14 129)">검증 정확도 (%)</text>
+  </g>
+</svg>
+<figcaption>설정별 검증 정확도. 넓은 모델에 규제를 모두 쓴 설정이 10에폭 이후 계속 가장 높다.</figcaption>
+</figure>
+<ol class="steps">
+<li><b>기준.</b> 15에폭으로 늘리자 학습 손실은 0.0008까지 줄었지만 검증 손실은 10에폭 때(0.0696)보다 오히려 커졌다(0.0737). 과적합이 진행되고 있다.</li>
+<li><b>드롭아웃.</b> 검증 손실은 0.0737에서 0.0626으로 줄었지만 정확도 차이(+0.10%p)는 시드에 따른 흔들림 수준이다. 같은 설정도 시드만 바꾸면 검증 정확도가 0.1%p 넘게 달라진다(확장 과제 2). 이것만으로는 낫다고 결론 내리기 어렵다(27일차).</li>
+<li><b>이동 증강.</b> 정확도 +0.32%p, 검증 손실 0.0468로 가장 큰 단일 효과다. 학습 손실(0.0448)과 검증 손실이 거의 같아져 과적합의 간격이 사라졌다.</li>
+<li><b>드롭아웃 + 증강.</b> 증강만 쓴 것보다 나아지지 않았다(98.35%). 학습 손실이 0.1049로 검증 손실보다 크다. 23만 개 파라미터의 모델에 규제를 둘 다 걸자 학습 데이터조차 충분히 맞히지 못하는 과소적합 쪽으로 넘어간 것이다. 규제를 더하는 것이 늘 이득은 아니다.</li>
+<li><b>넓게 + 모두.</b> 은닉층을 512-256(파라미터 535,818개)으로 키워 모델의 용량을 늘리고 규제를 모두 쓰자 98.67%로 기준보다 0.58%p 올랐다. 큰 모델 + 강한 규제가 작은 모델 + 약한 규제보다 나은 경우가 많다.</li>
+</ol>
+<div class="box warn" data-title="학습 손실을 비교할 때"><p>표의 학습 손실은 학습 중에 잰 값이라 드롭아웃과 증강이 켜진 상태다. 그래서 규제를 쓴 설정의 학습 손실은 실제 학습 데이터에 대한 손실보다 크게 나온다. 검증 손실이 학습 손실보다 작게 나오는 것도 이 때문이다(27일차 확인 문제 7).</p></div>
+<p>노트북의 <code>EPOCHS</code>를 20으로 바꾸면 "넓게 + 모두"의 검증 정확도가 98.87%까지 오른다. 학습 시간과 맞바꾸는 선택이다.</p>
+
+<h2 data-min="20" data-kind="project">7단계: 최종 평가와 오류 분석</h2>
+<p>검증 정확도가 가장 높은 "넓게 + 모두"를 고르고, 이 모델로 테스트 세트를 한 번 평가한다.</p>
+<div class="box key" data-title="최종 결과"><p>테스트 정확도 <b>98.76%</b> (10,000장 중 124장 틀림), 테스트 손실 0.0383. 목표 98%를 넘었다. 테스트 정확도가 검증 정확도(98.67%)와 비슷하다. 다섯 설정 중 하나를 고르는 정도로는 검증 세트에 맞춘 효과(낙관적 편향)가 크지 않았다는 뜻이다.</p></div>
+<figure class="fig">
+<svg viewBox="0 0 640 350" width="640" role="img" aria-label="최종 모델의 혼동 행렬">
+  <g font-size="11">
+  <text x="182" y="53" text-anchor="end" class="s-txm">0</text>
+  <text x="205" y="26" text-anchor="middle" class="s-txm">0</text>
+  <rect x="190" y="34" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="205" y="53" text-anchor="middle" class="s-txm" font-size="8">978</text>
+  <rect x="220" y="34" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250" y="34" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="280" y="34" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310" y="34" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="340" y="34" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="370" y="34" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400" y="34" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400.5" y="34.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="415" y="53" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="430" y="34" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="430.5" y="34.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="445" y="53" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="460" y="34" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <text x="182" y="83" text-anchor="end" class="s-txm">1</text>
+  <text x="235" y="26" text-anchor="middle" class="s-txm">1</text>
+  <rect x="190" y="64" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="220" y="64" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="235" y="83" text-anchor="middle" class="s-txm" font-size="8">1133</text>
+  <rect x="250" y="64" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250.5" y="64.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="265" y="83" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="280" y="64" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310" y="64" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="340" y="64" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="370" y="64" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="370.5" y="64.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="385" y="83" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="400" y="64" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="430" y="64" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="460" y="64" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <text x="182" y="113" text-anchor="end" class="s-txm">2</text>
+  <text x="265" y="26" text-anchor="middle" class="s-txm">2</text>
+  <rect x="190" y="94" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="220" y="94" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250" y="94" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="265" y="113" text-anchor="middle" class="s-txm" font-size="8">1022</text>
+  <rect x="280" y="94" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310" y="94" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310.5" y="94.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="325" y="113" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="340" y="94" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="370" y="94" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400" y="94" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400.5" y="94.5" width="29" height="29" class="s-redf" opacity="0.46"/>
+  <text x="415" y="113" text-anchor="middle" class="s-tx" font-weight="700">5</text>
+  <rect x="430" y="94" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="430.5" y="94.5" width="29" height="29" class="s-redf" opacity="0.32"/>
+  <text x="445" y="113" text-anchor="middle" class="s-tx" font-weight="400">3</text>
+  <rect x="460" y="94" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <text x="182" y="143" text-anchor="end" class="s-txm">3</text>
+  <text x="295" y="26" text-anchor="middle" class="s-txm">3</text>
+  <rect x="190" y="124" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="220" y="124" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250" y="124" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250.5" y="124.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="265" y="143" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="280" y="124" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="295" y="143" text-anchor="middle" class="s-txm" font-size="8">999</text>
+  <rect x="310" y="124" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="340" y="124" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="340.5" y="124.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="355" y="143" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="370" y="124" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400" y="124" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400.5" y="124.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="415" y="143" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="430" y="124" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="430.5" y="124.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="445" y="143" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="460" y="124" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="460.5" y="124.5" width="29" height="29" class="s-redf" opacity="0.32"/>
+  <text x="475" y="143" text-anchor="middle" class="s-tx" font-weight="400">3</text>
+  <text x="182" y="173" text-anchor="end" class="s-txm">4</text>
+  <text x="325" y="26" text-anchor="middle" class="s-txm">4</text>
+  <rect x="190" y="154" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="220" y="154" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250" y="154" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250.5" y="154.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="265" y="173" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="280" y="154" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310" y="154" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="325" y="173" text-anchor="middle" class="s-txm" font-size="8">969</text>
+  <rect x="340" y="154" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="370" y="154" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="370.5" y="154.5" width="29" height="29" class="s-redf" opacity="0.46"/>
+  <text x="385" y="173" text-anchor="middle" class="s-tx" font-weight="700">5</text>
+  <rect x="400" y="154" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400.5" y="154.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="415" y="173" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="430" y="154" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="430.5" y="154.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="445" y="173" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="460" y="154" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="460.5" y="154.5" width="29" height="29" class="s-redf" opacity="0.39"/>
+  <text x="475" y="173" text-anchor="middle" class="s-tx" font-weight="400">4</text>
+  <text x="182" y="203" text-anchor="end" class="s-txm">5</text>
+  <text x="355" y="26" text-anchor="middle" class="s-txm">5</text>
+  <rect x="190" y="184" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="190.5" y="184.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="205" y="203" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="220" y="184" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250" y="184" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="280" y="184" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="280.5" y="184.5" width="29" height="29" class="s-redf" opacity="1.00"/>
+  <text x="295" y="203" text-anchor="middle" class="s-tx" font-weight="700">13</text>
+  <rect x="310" y="184" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310.5" y="184.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="325" y="203" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="340" y="184" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="355" y="203" text-anchor="middle" class="s-txm" font-size="8">872</text>
+  <rect x="370" y="184" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="370.5" y="184.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="385" y="203" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="400" y="184" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400.5" y="184.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="415" y="203" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="430" y="184" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="460" y="184" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="460.5" y="184.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="475" y="203" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <text x="182" y="233" text-anchor="end" class="s-txm">6</text>
+  <text x="385" y="26" text-anchor="middle" class="s-txm">6</text>
+  <rect x="190" y="214" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="190.5" y="214.5" width="29" height="29" class="s-redf" opacity="0.39"/>
+  <text x="205" y="233" text-anchor="middle" class="s-tx" font-weight="400">4</text>
+  <rect x="220" y="214" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="220.5" y="214.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="235" y="233" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="250" y="214" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="280" y="214" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310" y="214" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310.5" y="214.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="325" y="233" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="340" y="214" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="340.5" y="214.5" width="29" height="29" class="s-redf" opacity="0.32"/>
+  <text x="355" y="233" text-anchor="middle" class="s-tx" font-weight="400">3</text>
+  <rect x="370" y="214" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="385" y="233" text-anchor="middle" class="s-txm" font-size="8">945</text>
+  <rect x="400" y="214" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="430" y="214" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="430.5" y="214.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="445" y="233" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="460" y="214" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="460.5" y="214.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="475" y="233" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <text x="182" y="263" text-anchor="end" class="s-txm">7</text>
+  <text x="415" y="26" text-anchor="middle" class="s-txm">7</text>
+  <rect x="190" y="244" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="220" y="244" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="220.5" y="244.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="235" y="263" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="250" y="244" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250.5" y="244.5" width="29" height="29" class="s-redf" opacity="0.86"/>
+  <text x="265" y="263" text-anchor="middle" class="s-tx" font-weight="700">11</text>
+  <rect x="280" y="244" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="280.5" y="244.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="295" y="263" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="310" y="244" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="340" y="244" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="370" y="244" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400" y="244" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="415" y="263" text-anchor="middle" class="s-txm" font-size="8">1012</text>
+  <rect x="430" y="244" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="430.5" y="244.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="445" y="263" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="460" y="244" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="460.5" y="244.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="475" y="263" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <text x="182" y="293" text-anchor="end" class="s-txm">8</text>
+  <text x="445" y="26" text-anchor="middle" class="s-txm">8</text>
+  <rect x="190" y="274" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="190.5" y="274.5" width="29" height="29" class="s-redf" opacity="0.32"/>
+  <text x="205" y="293" text-anchor="middle" class="s-tx" font-weight="400">3</text>
+  <rect x="220" y="274" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250" y="274" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="250.5" y="274.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="265" y="293" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="280" y="274" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="280.5" y="274.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="295" y="293" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="310" y="274" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310.5" y="274.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="325" y="293" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="340" y="274" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="340.5" y="274.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="355" y="293" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="370" y="274" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="370.5" y="274.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="385" y="293" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="400" y="274" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400.5" y="274.5" width="29" height="29" class="s-redf" opacity="0.46"/>
+  <text x="415" y="293" text-anchor="middle" class="s-tx" font-weight="700">5</text>
+  <rect x="430" y="274" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="445" y="293" text-anchor="middle" class="s-txm" font-size="8">955</text>
+  <rect x="460" y="274" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="460.5" y="274.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="475" y="293" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <text x="182" y="323" text-anchor="end" class="s-txm">9</text>
+  <text x="475" y="26" text-anchor="middle" class="s-txm">9</text>
+  <rect x="190" y="304" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="220" y="304" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="220.5" y="304.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="235" y="323" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="250" y="304" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="280" y="304" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="280.5" y="304.5" width="29" height="29" class="s-redf" opacity="0.32"/>
+  <text x="295" y="323" text-anchor="middle" class="s-tx" font-weight="400">3</text>
+  <rect x="310" y="304" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="310.5" y="304.5" width="29" height="29" class="s-redf" opacity="0.59"/>
+  <text x="325" y="323" text-anchor="middle" class="s-tx" font-weight="700">7</text>
+  <rect x="340" y="304" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="340.5" y="304.5" width="29" height="29" class="s-redf" opacity="0.26"/>
+  <text x="355" y="323" text-anchor="middle" class="s-tx" font-weight="400">2</text>
+  <rect x="370" y="304" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400" y="304" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="400.5" y="304.5" width="29" height="29" class="s-redf" opacity="0.39"/>
+  <text x="415" y="323" text-anchor="middle" class="s-tx" font-weight="400">4</text>
+  <rect x="430" y="304" width="30" height="30" class="s-bg" stroke-width="0.5"/>
+  <rect x="430.5" y="304.5" width="29" height="29" class="s-redf" opacity="0.19"/>
+  <text x="445" y="323" text-anchor="middle" class="s-tx" font-weight="400">1</text>
+  <rect x="460" y="304" width="30" height="30" class="s-f" stroke-width="0.5"/>
+  <text x="475" y="323" text-anchor="middle" class="s-txm" font-size="8">991</text>
+  <text x="340" y="10" text-anchor="middle" class="s-tx" font-size="12">예측한 숫자</text>
+  <text x="156" y="184" text-anchor="middle" class="s-tx" font-size="12" transform="rotate(-90 156 184)">정답 숫자</text>
+  <text x="510" y="44" class="s-txm" font-size="11">틀린 개수</text>
+  <rect x="510" y="56" width="20" height="20" class="s-redf" opacity="0.19"/>
+  <text x="538" y="70" class="s-txm">1</text>
+  <rect x="510" y="82" width="20" height="20" class="s-redf" opacity="0.32"/>
+  <text x="538" y="96" class="s-txm">3</text>
+  <rect x="510" y="108" width="20" height="20" class="s-redf" opacity="0.59"/>
+  <text x="538" y="122" class="s-txm">7</text>
+  <rect x="510" y="134" width="20" height="20" class="s-redf" opacity="1.00"/>
+  <text x="538" y="148" class="s-txm">13</text>
+  <rect x="510" y="168" width="20" height="20" class="s-f" stroke-width="0.5"/>
+  <text x="538" y="182" class="s-txm">맞힌 개수(대각선)</text>
+  </g>
+</svg>
+<figcaption>최종 모델의 혼동 행렬. 행은 정답, 열은 예측이다. 대각선(맞힌 개수)은 회색, 틀린 칸은 개수에 비례해 진하게 칠했다.</figcaption>
+</figure>
+<p>가장 많이 헷갈린 쌍은 5 → 3(13장), 7 → 2(11장), 9 → 4(7장), 8 → 7과 4 → 6(각 5장)이다. 모양이 비슷한 숫자끼리다. 5와 3은 아래쪽 곡선이 같고 위쪽 획만 다르다. 7과 2는 아래쪽 가로획이 있는지, 9와 4는 위쪽 고리가 닫혔는지로 구별된다.</p>
+<figure class="fig">
+<svg viewBox="0 0 640 250" width="640" role="img" aria-label="최종 모델이 가장 자신 있게 틀린 테스트 이미지 12개">
+  <g font-size="11">
+  <rect x="35" y="5" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M68 12h2v2h-2zM68 18h2v2h-2zM58 20h2v2h-2zM58 22h2v2h-2zM58 24h2v2h-2zM56 26h2v2h-2zM64 26h2v2h-2zM74 28h2v2h-2zM54 30h2v2h-2zM72 30h2v2h-2zM60 32h2v2h-2zM52 34h2v2h-2zM60 34h2v2h-2zM86 34h2v2h-2zM50 36h2v2h-2zM50 38h2v2h-2zM80 40h2v2h-2zM48 42h2v2h-2zM56 44h2v2h-2zM68 46h2v2h-2zM54 48h2v2h-2zM70 48h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M62 14h2v2h-2zM60 16h2v2h-2zM68 16h2v2h-2zM66 22h2v2h-2zM56 28h2v2h-2zM62 28h2v2h-2zM76 28h2v2h-2zM78 30h2v2h-2zM78 32h2v2h-2zM70 34h2v2h-2zM80 34h6v2h-6zM50 40h2v2h-2zM78 40h2v2h-2zM58 42h2v2h-2zM76 44h2v2h-2zM54 46h2v2h-2zM74 48h2v2h-2zM50 50h4v2h-4z" class="s-tx" opacity="0.5"/><path d="M64 12h2v2h-2zM68 14h2v2h-2zM62 16h2v2h-2zM60 18h2v2h-2zM66 20h2v2h-2zM64 24h2v2h-2zM72 32h2v2h-2zM64 36h2v2h-2zM82 38h4v2h-4zM66 40h4v2h-4zM56 42h2v2h-2zM76 42h2v2h-2zM48 44h2v2h-2zM74 46h2v2h-2zM48 48h2v2h-2zM72 48h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M66 12h2v2h-2zM64 14h4v2h-4zM64 16h4v2h-4zM62 18h6v2h-6zM60 20h6v2h-6zM60 22h6v2h-6zM60 24h4v2h-4zM58 26h6v2h-6zM58 28h4v2h-4zM56 30h6v2h-6zM74 30h4v2h-4zM54 32h6v2h-6zM74 32h4v2h-4zM54 34h6v2h-6zM72 34h8v2h-8zM52 36h12v2h-12zM66 36h22v2h-22zM52 38h30v2h-30zM52 40h14v2h-14zM70 40h8v2h-8zM50 42h6v2h-6zM70 42h6v2h-6zM50 44h6v2h-6zM70 44h6v2h-6zM48 46h6v2h-6zM70 46h4v2h-4zM50 48h4v2h-4z" class="s-tx" opacity="1"/>
+  <text x="64" y="80" text-anchor="middle" class="s-tx">정답 4 → 예측 6</text>
+  <text x="64" y="96" text-anchor="middle" class="s-txm">확률 0.99</text>
+  <rect x="139" y="5" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M162 14h2v2h-2zM176 14h2v2h-2zM156 16h2v2h-2zM162 16h2v2h-2zM162 18h2v2h-2zM178 18h2v2h-2zM176 20h2v2h-2zM174 22h2v2h-2zM178 22h2v2h-2zM176 24h2v2h-2zM170 30h2v2h-2zM174 32h2v2h-2zM168 34h2v2h-2zM172 36h2v2h-2zM168 38h2v2h-2zM166 40h2v2h-2zM170 40h2v2h-2zM164 42h4v2h-4zM164 44h4v2h-4zM164 46h2v2h-2zM168 46h2v2h-2zM162 48h2v2h-2zM162 50h2v2h-2zM160 52h2v2h-2zM166 52h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M160 14h2v2h-2zM176 18h2v2h-2zM174 30h2v2h-2zM172 34h2v2h-2zM170 38h2v2h-2zM160 50h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M158 16h4v2h-4zM172 24h4v2h-4zM172 26h4v2h-4zM174 28h2v2h-2zM170 32h2v2h-2zM170 34h2v2h-2zM168 44h2v2h-2zM164 48h4v2h-4zM166 50h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M158 14h2v2h-2zM176 22h2v2h-2zM172 28h2v2h-2zM172 30h2v2h-2zM172 32h2v2h-2zM170 36h2v2h-2zM168 40h2v2h-2zM168 42h2v2h-2zM166 46h2v2h-2zM164 50h2v2h-2zM162 52h4v2h-4z" class="s-tx" opacity="1"/>
+  <text x="168" y="80" text-anchor="middle" class="s-tx">정답 7 → 예측 1</text>
+  <text x="168" y="96" text-anchor="middle" class="s-txm">확률 0.99</text>
+  <rect x="243" y="5" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M274 16h4v2h-4zM286 20h2v2h-2zM278 22h2v2h-2zM286 22h2v2h-2zM268 24h4v2h-4zM276 26h2v2h-2zM284 26h2v2h-2zM274 28h2v2h-2zM268 36h2v2h-2zM266 38h2v2h-2zM290 38h2v2h-2zM254 40h2v2h-2zM252 42h2v2h-2zM284 42h2v2h-2zM258 46h4v2h-4zM268 46h2v2h-2zM254 48h2v2h-2zM258 50h2v2h-2zM264 52h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M266 16h2v2h-2zM278 16h6v2h-6zM264 22h2v2h-2zM276 22h2v2h-2zM280 30h2v2h-2zM270 34h2v2h-2zM276 36h2v2h-2zM276 38h14v2h-14zM290 40h2v2h-2zM282 42h2v2h-2zM270 44h2v2h-2zM260 48h2v2h-2zM266 48h2v2h-2zM264 50h2v2h-2zM262 52h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M264 18h2v2h-2zM284 18h2v2h-2zM264 20h2v2h-2zM266 22h2v2h-2zM272 22h4v2h-4zM278 24h2v2h-2zM284 24h2v2h-2zM282 28h2v2h-2zM274 30h2v2h-2zM272 32h2v2h-2zM278 32h2v2h-2zM270 36h2v2h-2zM256 40h2v2h-2zM268 44h2v2h-2zM252 46h6v2h-6zM264 48h2v2h-2zM258 52h2v2h-2zM258 54h4v2h-4z" class="s-tx" opacity="0.78"/><path d="M268 16h6v2h-6zM266 18h18v2h-18zM266 20h20v2h-20zM268 22h4v2h-4zM280 22h6v2h-6zM280 24h4v2h-4zM278 26h6v2h-6zM276 28h6v2h-6zM276 30h4v2h-4zM274 32h4v2h-4zM272 34h6v2h-6zM272 36h4v2h-4zM268 38h8v2h-8zM258 40h32v2h-32zM254 42h28v2h-28zM252 44h16v2h-16zM262 46h6v2h-6zM262 48h2v2h-2zM260 50h4v2h-4zM260 52h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="272" y="80" text-anchor="middle" class="s-tx">정답 7 → 예측 2</text>
+  <text x="272" y="96" text-anchor="middle" class="s-txm">확률 0.98</text>
+  <rect x="347" y="5" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M362 14h2v2h-2zM370 14h2v2h-2zM360 16h2v2h-2zM374 16h4v2h-4zM362 18h2v2h-2zM368 18h4v2h-4zM380 22h2v2h-2zM376 32h2v2h-2zM382 32h2v2h-2zM376 34h2v2h-2zM382 34h2v2h-2zM382 36h2v2h-2zM384 38h4v2h-4zM374 40h2v2h-2zM368 42h2v2h-2zM390 42h2v2h-2zM388 44h2v2h-2zM380 46h2v2h-2zM384 46h2v2h-2zM374 48h2v2h-2zM374 50h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M368 14h2v2h-2zM372 14h2v2h-2zM376 18h2v2h-2zM372 20h2v2h-2zM378 20h2v2h-2zM374 22h2v2h-2zM376 26h2v2h-2zM376 28h2v2h-2zM376 30h2v2h-2zM376 36h2v2h-2zM376 38h2v2h-2zM366 46h2v2h-2zM372 46h2v2h-2zM378 52h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M364 14h2v2h-2zM370 16h2v2h-2zM376 20h2v2h-2zM378 22h2v2h-2zM376 24h2v2h-2zM380 24h2v2h-2zM380 26h2v2h-2zM380 28h2v2h-2zM380 30h2v2h-2zM382 38h2v2h-2zM376 40h2v2h-2zM388 40h2v2h-2zM370 42h2v2h-2zM366 44h2v2h-2zM382 44h2v2h-2zM386 44h2v2h-2zM370 46h2v2h-2zM374 46h2v2h-2zM378 46h2v2h-2zM378 48h2v2h-2zM376 50h4v2h-4zM376 52h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M366 14h2v2h-2zM362 16h8v2h-8zM372 16h2v2h-2zM372 18h4v2h-4zM374 20h2v2h-2zM376 22h2v2h-2zM378 24h2v2h-2zM378 26h2v2h-2zM378 28h2v2h-2zM378 30h2v2h-2zM378 32h4v2h-4zM378 34h4v2h-4zM378 36h4v2h-4zM378 38h4v2h-4zM378 40h10v2h-10zM372 42h18v2h-18zM368 44h14v2h-14zM384 44h2v2h-2zM368 46h2v2h-2zM376 46h2v2h-2zM376 48h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="376" y="80" text-anchor="middle" class="s-tx">정답 7 → 예측 2</text>
+  <text x="376" y="96" text-anchor="middle" class="s-txm">확률 0.98</text>
+  <rect x="451" y="5" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M470 20h2v2h-2zM488 20h6v2h-6zM466 22h2v2h-2zM496 24h2v2h-2zM496 26h2v2h-2zM468 28h2v2h-2zM496 28h2v2h-2zM462 30h2v2h-2zM466 30h2v2h-2zM486 32h2v2h-2zM492 34h2v2h-2zM480 36h2v2h-2zM478 46h2v2h-2zM476 48h2v2h-2zM486 48h2v2h-2zM474 50h2v2h-2zM484 50h2v2h-2zM472 52h2v2h-2zM468 54h2v2h-2zM480 54h2v2h-2zM466 56h2v2h-2zM478 56h2v2h-2zM466 58h2v2h-2zM474 58h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M468 22h2v2h-2zM494 22h2v2h-2zM476 24h14v2h-14zM462 26h2v2h-2zM470 26h2v2h-2zM490 26h2v2h-2zM464 30h2v2h-2zM488 30h2v2h-2zM494 30h2v2h-2zM484 34h2v2h-2zM482 36h2v2h-2zM490 36h2v2h-2zM488 38h2v2h-2zM480 40h2v2h-2zM488 40h2v2h-2zM488 42h2v2h-2zM482 44h2v2h-2zM478 48h2v2h-2zM480 52h2v2h-2zM476 56h2v2h-2zM468 58h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M462 28h2v2h-2zM490 28h2v2h-2zM492 32h2v2h-2zM480 38h2v2h-2zM484 42h2v2h-2zM480 46h4v2h-4zM484 48h2v2h-2zM482 50h2v2h-2zM470 54h2v2h-2zM478 54h2v2h-2zM472 58h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M472 20h16v2h-16zM470 22h24v2h-24zM466 24h10v2h-10zM490 24h6v2h-6zM464 26h6v2h-6zM492 26h4v2h-4zM464 28h4v2h-4zM492 28h4v2h-4zM490 30h4v2h-4zM488 32h4v2h-4zM486 34h6v2h-6zM484 36h6v2h-6zM482 38h6v2h-6zM482 40h6v2h-6zM486 42h2v2h-2zM484 44h4v2h-4zM484 46h4v2h-4zM480 48h4v2h-4zM476 50h6v2h-6zM474 52h6v2h-6zM472 54h6v2h-6zM468 56h8v2h-8zM470 58h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="480" y="80" text-anchor="middle" class="s-tx">정답 3 → 예측 7</text>
+  <text x="480" y="96" text-anchor="middle" class="s-txm">확률 0.98</text>
+  <rect x="555" y="5" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M576 20h2v2h-2zM582 22h2v2h-2zM574 24h2v2h-2zM580 24h2v2h-2zM594 26h2v2h-2zM586 28h2v2h-2zM594 28h2v2h-2zM572 30h2v2h-2zM584 30h2v2h-2zM572 32h2v2h-2zM592 32h2v2h-2zM590 38h2v2h-2zM584 40h2v2h-2zM588 46h2v2h-2zM588 48h2v2h-2zM588 50h2v2h-2zM588 52h2v2h-2zM584 54h2v2h-2zM590 56h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M578 18h2v2h-2zM584 22h2v2h-2zM592 24h2v2h-2zM574 26h2v2h-2zM588 26h2v2h-2zM578 28h2v2h-2zM578 30h2v2h-2zM582 32h2v2h-2zM578 34h2v2h-2zM576 38h2v2h-2zM584 38h2v2h-2zM584 42h2v2h-2zM584 52h2v2h-2zM588 54h2v2h-2zM586 56h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M582 18h2v2h-2zM584 20h2v2h-2zM576 22h2v2h-2zM580 22h2v2h-2zM574 28h2v2h-2zM586 30h2v2h-2zM592 30h2v2h-2zM580 34h2v2h-2zM574 36h2v2h-2zM590 36h2v2h-2zM582 38h2v2h-2zM584 44h2v2h-2zM588 44h2v2h-2zM584 50h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M580 18h2v2h-2zM578 20h6v2h-6zM578 22h2v2h-2zM576 24h4v2h-4zM590 24h2v2h-2zM576 26h4v2h-4zM590 26h4v2h-4zM576 28h2v2h-2zM588 28h6v2h-6zM574 30h4v2h-4zM588 30h4v2h-4zM574 32h4v2h-4zM584 32h8v2h-8zM574 34h4v2h-4zM582 34h10v2h-10zM576 36h14v2h-14zM578 38h4v2h-4zM586 38h4v2h-4zM586 40h4v2h-4zM586 42h4v2h-4zM586 44h2v2h-2zM584 46h4v2h-4zM584 48h4v2h-4zM586 50h2v2h-2zM586 52h2v2h-2zM586 54h2v2h-2zM588 56h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="584" y="80" text-anchor="middle" class="s-tx">정답 9 → 예측 4</text>
+  <text x="584" y="96" text-anchor="middle" class="s-txm">확률 0.98</text>
+  <rect x="35" y="127" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M46 140h2v2h-2zM70 140h2v2h-2zM78 144h2v2h-2zM46 146h2v2h-2zM76 146h2v2h-2zM52 148h2v2h-2zM56 150h2v2h-2zM58 152h2v2h-2zM68 152h2v2h-2zM72 152h2v2h-2zM76 158h2v2h-2zM60 164h2v2h-2zM70 174h2v2h-2zM66 178h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M48 140h2v2h-2zM56 140h14v2h-14zM46 142h2v2h-2zM46 144h2v2h-2zM48 146h2v2h-2zM54 148h2v2h-2zM70 148h4v2h-4zM74 150h2v2h-2zM60 152h2v2h-2zM80 152h2v2h-2zM62 156h2v2h-2zM76 156h2v2h-2zM70 164h2v2h-2zM70 166h2v2h-2zM58 168h2v2h-2zM70 168h2v2h-2zM58 170h2v2h-2zM70 170h2v2h-2zM70 172h2v2h-2zM68 176h2v2h-2zM58 178h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M54 140h2v2h-2zM66 148h2v2h-2zM76 150h4v2h-4zM68 154h4v2h-4zM78 154h2v2h-2zM64 160h2v2h-2zM72 160h2v2h-2zM70 162h2v2h-2zM58 172h2v2h-2zM60 178h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M50 140h4v2h-4zM48 142h32v2h-32zM48 144h30v2h-30zM50 146h26v2h-26zM56 148h10v2h-10zM58 150h10v2h-10zM62 152h6v2h-6zM74 152h6v2h-6zM62 154h6v2h-6zM72 154h6v2h-6zM64 156h12v2h-12zM64 158h12v2h-12zM66 160h6v2h-6zM62 162h8v2h-8zM62 164h8v2h-8zM60 166h10v2h-10zM60 168h10v2h-10zM60 170h10v2h-10zM60 172h10v2h-10zM58 174h12v2h-12zM58 176h10v2h-10zM62 178h4v2h-4z" class="s-tx" opacity="1"/>
+  <text x="64" y="202" text-anchor="middle" class="s-tx">정답 8 → 예측 7</text>
+  <text x="64" y="218" text-anchor="middle" class="s-txm">확률 0.97</text>
+  <rect x="139" y="127" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M176 138h2v2h-2zM176 146h2v2h-2zM164 152h2v2h-2zM174 152h2v2h-2zM166 154h2v2h-2zM162 156h2v2h-2zM158 158h2v2h-2zM156 160h2v2h-2zM166 160h4v2h-4zM174 160h2v2h-2zM162 162h2v2h-2zM172 162h2v2h-2zM176 162h2v2h-2zM178 164h2v2h-2zM176 166h4v2h-4zM154 168h2v2h-2zM160 168h2v2h-2zM174 168h2v2h-2zM158 172h2v2h-2zM176 172h2v2h-2zM160 174h2v2h-2zM168 174h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M174 136h2v2h-2zM168 140h4v2h-4zM172 142h2v2h-2zM172 144h2v2h-2zM176 144h2v2h-2zM172 148h2v2h-2zM170 150h2v2h-2zM168 152h2v2h-2zM172 154h2v2h-2zM160 158h2v2h-2zM166 158h2v2h-2zM172 158h2v2h-2zM170 160h2v2h-2zM154 166h2v2h-2zM158 166h2v2h-2zM156 170h2v2h-2zM162 170h2v2h-2zM172 170h2v2h-2zM178 170h2v2h-2zM170 172h2v2h-2zM172 174h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M170 136h4v2h-4zM176 140h2v2h-2zM176 142h2v2h-2zM174 150h2v2h-2zM166 156h2v2h-2zM170 156h2v2h-2zM168 158h2v2h-2zM158 160h2v2h-2zM162 160h4v2h-4zM156 162h2v2h-2zM174 162h2v2h-2zM158 164h2v2h-2zM158 168h2v2h-2zM158 170h2v2h-2zM160 172h2v2h-2zM172 172h4v2h-4z" class="s-tx" opacity="0.78"/><path d="M168 136h2v2h-2zM168 138h8v2h-8zM172 140h4v2h-4zM174 142h2v2h-2zM174 144h2v2h-2zM172 146h4v2h-4zM174 148h2v2h-2zM172 150h2v2h-2zM170 152h4v2h-4zM164 154h2v2h-2zM168 154h4v2h-4zM164 156h2v2h-2zM168 156h2v2h-2zM162 158h4v2h-4zM170 158h2v2h-2zM160 160h2v2h-2zM172 160h2v2h-2zM158 162h4v2h-4zM156 164h2v2h-2zM176 164h2v2h-2zM156 166h2v2h-2zM156 168h2v2h-2zM176 168h4v2h-4zM160 170h2v2h-2zM174 170h4v2h-4zM170 174h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="168" y="202" text-anchor="middle" class="s-tx">정답 8 → 예측 2</text>
+  <text x="168" y="218" text-anchor="middle" class="s-txm">확률 0.97</text>
+  <rect x="243" y="127" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M266 138h2v2h-2zM264 140h2v2h-2zM272 140h2v2h-2zM268 142h2v2h-2zM262 146h2v2h-2zM262 148h2v2h-2zM262 150h2v2h-2zM268 152h2v2h-2zM280 152h2v2h-2zM278 154h2v2h-2zM276 156h2v2h-2zM282 156h2v2h-2zM266 158h2v2h-2zM272 166h2v2h-2zM276 170h2v2h-2zM272 174h2v2h-2zM278 176h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M264 142h2v2h-2zM270 142h2v2h-2zM266 146h2v2h-2zM266 148h2v2h-2zM268 154h2v2h-2zM270 156h2v2h-2zM280 158h2v2h-2zM268 160h2v2h-2zM278 160h2v2h-2zM278 162h2v2h-2zM276 166h2v2h-2zM272 168h2v2h-2zM276 168h2v2h-2zM272 170h2v2h-2zM272 172h2v2h-2zM276 172h2v2h-2zM274 176h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M270 138h2v2h-2zM266 144h2v2h-2zM266 150h2v2h-2zM264 152h2v2h-2zM282 152h2v2h-2zM280 154h4v2h-4zM278 156h2v2h-2zM272 158h4v2h-4zM274 162h2v2h-2zM274 164h4v2h-4zM276 174h2v2h-2zM276 176h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M268 138h2v2h-2zM266 140h6v2h-6zM266 142h2v2h-2zM264 144h2v2h-2zM264 146h2v2h-2zM264 148h2v2h-2zM264 150h2v2h-2zM266 152h2v2h-2zM266 154h2v2h-2zM266 156h4v2h-4zM280 156h2v2h-2zM268 158h4v2h-4zM276 158h4v2h-4zM270 160h8v2h-8zM276 162h2v2h-2zM274 166h2v2h-2zM274 168h2v2h-2zM274 170h2v2h-2zM274 172h2v2h-2zM274 174h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="272" y="202" text-anchor="middle" class="s-tx">정답 9 → 예측 4</text>
+  <text x="272" y="218" text-anchor="middle" class="s-txm">확률 0.97</text>
+  <rect x="347" y="127" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M390 142h2v2h-2zM394 142h2v2h-2zM376 144h2v2h-2zM370 146h2v2h-2zM382 146h2v2h-2zM394 146h2v2h-2zM366 148h2v2h-2zM374 148h2v2h-2zM370 150h2v2h-2zM392 150h2v2h-2zM366 152h2v2h-2zM390 152h2v2h-2zM358 156h2v2h-2zM372 156h2v2h-2zM376 158h2v2h-2zM358 162h2v2h-2zM378 162h2v2h-2zM384 162h2v2h-2zM368 164h2v2h-2zM370 168h6v2h-6zM378 168h6v2h-6z" class="s-tx" opacity="0.22"/><path d="M392 142h2v2h-2zM378 144h4v2h-4zM396 144h2v2h-2zM372 146h2v2h-2zM380 146h2v2h-2zM394 148h2v2h-2zM364 150h2v2h-2zM368 150h2v2h-2zM360 158h2v2h-2zM374 160h2v2h-2zM362 162h2v2h-2zM360 164h2v2h-2zM366 164h2v2h-2zM382 164h2v2h-2zM364 166h2v2h-2zM384 166h2v2h-2zM376 168h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M382 144h2v2h-2zM378 146h2v2h-2zM368 148h2v2h-2zM372 148h2v2h-2zM396 148h2v2h-2zM394 150h2v2h-2zM362 152h2v2h-2zM392 152h2v2h-2zM360 154h4v2h-4zM360 156h2v2h-2zM358 158h2v2h-2zM370 158h2v2h-2zM374 158h2v2h-2zM358 160h4v2h-4zM376 160h2v2h-2zM380 160h2v2h-2zM380 162h2v2h-2zM366 166h2v2h-2zM372 166h10v2h-10z" class="s-tx" opacity="0.78"/><path d="M384 144h12v2h-12zM374 146h4v2h-4zM396 146h2v2h-2zM370 148h2v2h-2zM366 150h2v2h-2zM364 152h2v2h-2zM372 158h2v2h-2zM378 160h2v2h-2zM360 162h2v2h-2zM382 162h2v2h-2zM362 164h4v2h-4zM384 164h2v2h-2zM368 166h4v2h-4zM382 166h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="376" y="202" text-anchor="middle" class="s-tx">정답 6 → 예측 5</text>
+  <text x="376" y="218" text-anchor="middle" class="s-txm">확률 0.97</text>
+  <rect x="451" y="127" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M506 148h2v2h-2zM474 150h4v2h-4zM494 150h4v2h-4zM470 152h2v2h-2zM500 152h4v2h-4zM480 154h2v2h-2zM490 154h4v2h-4zM474 156h2v2h-2zM484 156h2v2h-2zM474 160h2v2h-2zM472 162h2v2h-2zM476 162h2v2h-2zM480 166h2v2h-2zM478 168h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M478 150h2v2h-2zM484 150h2v2h-2zM498 150h2v2h-2zM506 150h2v2h-2zM478 152h6v2h-6zM488 152h2v2h-2zM496 152h4v2h-4zM488 154h2v2h-2zM470 156h2v2h-2zM476 156h2v2h-2zM482 156h2v2h-2zM478 158h2v2h-2zM468 162h2v2h-2zM470 164h2v2h-2zM472 166h4v2h-4zM470 168h2v2h-2zM476 168h2v2h-2z" class="s-tx" opacity="0.5"/><path d="M480 150h4v2h-4zM500 150h4v2h-4zM472 152h2v2h-2zM476 152h2v2h-2zM484 152h4v2h-4zM490 152h2v2h-2zM470 154h4v2h-4zM482 154h2v2h-2zM486 154h2v2h-2zM478 156h2v2h-2zM472 158h2v2h-2zM470 160h4v2h-4zM478 160h2v2h-2zM480 162h2v2h-2zM478 164h4v2h-4zM470 166h2v2h-2zM476 166h2v2h-2zM472 168h4v2h-4z" class="s-tx" opacity="0.78"/><path d="M504 150h2v2h-2zM474 152h2v2h-2zM492 152h4v2h-4zM484 154h2v2h-2zM472 156h2v2h-2zM480 156h2v2h-2zM474 158h4v2h-4zM476 160h2v2h-2zM470 162h2v2h-2zM478 162h2v2h-2zM468 164h2v2h-2zM468 166h2v2h-2zM478 166h2v2h-2z" class="s-tx" opacity="1"/>
+  <text x="480" y="202" text-anchor="middle" class="s-tx">정답 8 → 예측 5</text>
+  <text x="480" y="218" text-anchor="middle" class="s-txm">확률 0.96</text>
+  <rect x="555" y="127" width="58" height="58" class="s-bg" stroke-width="0.6"/>
+  <path d="M596 134h2v2h-2zM602 134h2v2h-2zM590 138h2v2h-2zM604 138h4v2h-4zM588 140h2v2h-2zM596 140h2v2h-2zM586 142h2v2h-2zM582 148h2v2h-2zM588 148h2v2h-2zM580 150h2v2h-2zM576 154h2v2h-2zM590 154h2v2h-2zM582 156h2v2h-2zM596 158h2v2h-2zM588 162h2v2h-2zM594 162h2v2h-2zM572 164h4v2h-4zM592 164h2v2h-2zM580 166h4v2h-4zM590 166h2v2h-2zM568 168h2v2h-2zM588 168h2v2h-2zM570 170h2v2h-2zM586 170h2v2h-2z" class="s-tx" opacity="0.22"/><path d="M598 134h4v2h-4zM594 136h2v2h-2zM602 138h2v2h-2zM588 142h2v2h-2zM592 142h2v2h-2zM588 146h2v2h-2zM586 154h2v2h-2zM596 154h2v2h-2zM574 156h2v2h-2zM596 156h2v2h-2zM570 158h2v2h-2zM578 158h2v2h-2zM568 160h2v2h-2zM590 160h2v2h-2zM568 162h2v2h-2zM572 162h2v2h-2zM578 162h2v2h-2zM568 164h2v2h-2zM572 166h2v2h-2zM574 168h2v2h-2zM584 170h2v2h-2zM574 172h8v2h-8z" class="s-tx" opacity="0.5"/><path d="M606 136h2v2h-2zM592 138h2v2h-2zM598 138h4v2h-4zM594 140h2v2h-2zM586 144h2v2h-2zM590 144h2v2h-2zM584 146h2v2h-2zM592 150h2v2h-2zM578 152h2v2h-2zM594 152h2v2h-2zM584 154h2v2h-2zM592 154h2v2h-2zM580 156h2v2h-2zM592 156h2v2h-2zM576 160h2v2h-2zM594 160h2v2h-2zM574 162h2v2h-2zM586 164h2v2h-2zM568 166h2v2h-2zM576 166h2v2h-2zM584 166h2v2h-2zM570 168h2v2h-2zM576 168h2v2h-2zM586 168h2v2h-2z" class="s-tx" opacity="0.78"/><path d="M596 136h10v2h-10zM594 138h4v2h-4zM590 140h4v2h-4zM590 142h2v2h-2zM588 144h2v2h-2zM586 146h2v2h-2zM584 148h4v2h-4zM582 150h10v2h-10zM580 152h14v2h-14zM578 154h6v2h-6zM594 154h2v2h-2zM576 156h4v2h-4zM594 156h2v2h-2zM572 158h6v2h-6zM592 158h4v2h-4zM570 160h6v2h-6zM592 160h2v2h-2zM570 162h2v2h-2zM576 162h2v2h-2zM590 162h4v2h-4zM570 164h2v2h-2zM576 164h4v2h-4zM588 164h4v2h-4zM570 166h2v2h-2zM578 166h2v2h-2zM586 166h4v2h-4zM572 168h2v2h-2zM578 168h8v2h-8zM572 170h12v2h-12z" class="s-tx" opacity="1"/>
+  <text x="584" y="202" text-anchor="middle" class="s-tx">정답 5 → 예측 6</text>
+  <text x="584" y="218" text-anchor="middle" class="s-txm">확률 0.96</text>
+  </g>
+</svg>
+<figcaption>최종 모델이 가장 높은 확률로 틀린 테스트 이미지 12장. 확률은 모델이 틀린 답에 준 값이다.</figcaption>
+</figure>
+<p>틀린 이미지에는 사람이 봐도 헷갈리는 것(획이 끊기거나 기울어진 숫자)과 레이블 자체가 의심스러운 것이 섞여 있다. 모델은 이런 이미지에도 0.95 이상의 확률을 준다. 틀릴 때도 자신 있게 틀리는 것이다. 남은 오류를 줄이는 방향은 두 가지다. 회전이나 두께 변화 같은 증강을 더하거나, 이웃 픽셀의 관계를 직접 이용하는 모델을 쓴다. 다층 퍼셉트론은 픽셀의 위치 관계를 모르기 때문이다. 5주차의 합성곱 신경망은 같은 데이터에서 99%를 넘는다.</p>
+
+<h2 data-min="10" data-kind="project">8단계: 저장과 보고서</h2>
+<p>21일차와 같이 파라미터만 <code>np.savez</code>로 저장하고, 같은 구조의 새 모델에 불러와 테스트 정확도가 같은지(98.76%) 확인한다. 파라미터 535,818개 × 4바이트(<code>float32</code>)라 파일은 2.14 MB다. Colab의 파일은 런타임이 끝나면 지워지므로 필요하면 내려받아 둔다.</p>
+<p>아래 질문에 답하는 다섯 문장 이내의 보고서를 학습 노트에 쓴다.</p>
+<ol class="steps">
+  <li>데이터는 어떻게 나누고 전처리했는가?</li>
+  <li>학습 전에 어떤 점검을 했고 결과는 어떠했는가?</li>
+  <li>어떤 설정을 비교했고, 가장 효과가 큰 것과 효과가 없던 것은 무엇이며 왜 그렇다고 보는가?</li>
+  <li>최종 테스트 정확도와 대표적인 오류 유형은 무엇인가?</li>
+  <li>다음에 시도할 것은 무엇인가?</li>
+</ol>
+<details class="sol"><summary>참고 보고서</summary>
+<p>MNIST 학습 데이터 6만 장을 학습 5만, 검증 1만으로 나누고, 픽셀을 0~1로 바꾼 뒤 학습 세트의 평균 0.1307, 표준편차 0.3081로 표준화했다. 학습 전 첫 손실 2.89, 기울기 검증 상대 오차 $1.8\times10^{-10}$, 64장 외우기(50스텝에 손실 0.0003)로 코드를 점검했고, 학습률 범위 테스트의 최저점($1.1\times10^{-2}$)의 약 1/10인 $10^{-3}$을 최대 학습률로 정했다. 15에폭 기준 모델(98.09%)은 학습 손실이 검증 손실의 100분의 1 수준으로 과적합했고, 이동 증강이 단일 기법 중 가장 효과가 컸으며(+0.32%p) 드롭아웃은 시드 흔들림 수준이었고 둘을 함께 쓰면 작은 모델이 과소적합했다. 은닉층을 512-256으로 넓히고 드롭아웃, 증강, 가중치 감쇠를 모두 쓴 설정이 검증 98.67%로 가장 좋았고, 테스트 정확도는 98.76%(124장 틀림)였으며 5 → 3, 7 → 2, 9 → 4처럼 모양이 비슷한 숫자를 주로 헷갈렸다. 다음에는 가중치 이동 평균과 앙상블을 시험하고, 5주차의 합성곱 신경망으로 같은 문제를 풀어 비교한다.</p></details>
+
+<h2 data-min="10" data-kind="project">확장 과제</h2>
+<ol class="exercises">
+  <li><b>가중치의 지수 이동 평균(EMA).</b> 매 스텝 각 파라미터의 이동 평균 $\bar\theta \leftarrow 0.999\,\bar\theta + 0.001\,\theta$를 따로 저장하고, 학습이 끝난 뒤 이동 평균으로 평가하라(22일차).
+    <details class="sol"><summary>풀이</summary><pre><code class="language-python">def fit_ema(model, epochs=15, lr=1e-3, wd=0.01, bs=128, aug=2, decay=0.999, seed=1):
+    """fit과 같은 학습에 파라미터의 지수 이동 평균(EMA)을 더한다."""
+    r, loss_fn = np.random.default_rng(seed), SoftmaxCE()
+    opt = AdamW(model.params(), lr, weight_decay=wd)
+    ema = [p.copy() for p, _, _ in model.params()]
+    steps_per_epoch = math.ceil(len(Xtr) / bs)
+    total, warmup, step = epochs * steps_per_epoch, steps_per_epoch, 0
+    for ep in range(epochs):
+        order = r.permutation(len(Xtr))
+        for s in range(0, len(Xtr), bs):
+            idx = order[s:s + bs]
+            xb = shift_batch(Xtr[idx], r, aug) if aug else Xtr[idx]
+            opt.lr = lr_at(step, total, lr, warmup)
+            loss_fn.forward(model(xb), ytr[idx])
+            model.backward(loss_fn.backward())
+            opt.step()
+            step += 1
+            for e, (p, _, _) in zip(ema, model.params()):
+                e *= decay
+                e += (1 - decay) * p
+    print(f"마지막 가중치: 검증 정확도 {evaluate(model, Xva, yva)[1]:.4f}")
+    for e, (p, _, _) in zip(ema, model.params()):
+        p[...] = e
+    print(f"EMA 가중치:   검증 정확도 {evaluate(model, Xva, yva)[1]:.4f}")
+
+
+fit_ema(make_mlp([784, 512, 256, 10], 0.2, seed=0))
+</code></pre><p>실행 결과: 마지막 가중치 98.67%, EMA 가중치 98.64%로 차이가 없다. 코사인 스케줄이 끝에서 학습률을 0까지 줄여 마지막 가중치가 이미 거의 움직이지 않기 때문이다. EMA는 학습률을 끝까지 크게 유지하는 학습(상수 학습률, 아주 긴 학습)에서 효과가 크다. 같은 기법도 함께 쓰는 기법에 따라 효과가 달라진다.</p></details></li>
+  <li><b>앙상블.</b> 시드만 다른 "넓게 + 모두" 모델 3개의 소프트맥스 확률을 평균해 예측하고, 개별 모델과 검증 정확도를 비교하라(26일차).
+    <details class="sol"><summary>풀이</summary><pre><code class="language-python">probs = []
+for seed in range(3):
+    m = make_mlp([784, 512, 256, 10], 0.2, seed=seed)
+    fit(m, epochs=15, lr=1e-3, wd=0.01, aug=2, seed=seed + 1, verbose=False)
+    m.eval()
+    Z = m(Xva)
+    m.train()
+    P = np.exp(Z - Z.max(1, keepdims=True))
+    probs.append(P / P.sum(1, keepdims=True))
+    print(f"모델 {seed}: 검증 정확도 {(probs[-1].argmax(1) == yva).mean():.4f}")
+print(f"앙상블 3개: 검증 정확도 {(np.mean(probs, 0).argmax(1) == yva).mean():.4f}")
+</code></pre><p>실행 결과: 개별 모델 98.67%, 98.54%, 98.60%(평균 98.60%), 앙상블 98.77%. 개별 모델의 평균보다 0.17%p, 가장 좋은 개별 모델보다 0.10%p 높다. 대신 학습과 추론의 계산이 3배다. 시드만 다른 세 모델의 정확도가 0.13%p나 차이 나는 것도 함께 봐 둔다. 설정을 비교할 때 여러 시드로 보고해야 하는 이유다(27일차).</p></details></li>
+  <li><b>전체 데이터로 다시 학습.</b> 설정을 정한 뒤에는 검증용 1만 장까지 합친 6만 장으로 같은 설정을 다시 학습하는 경우가 많다. 이때 에폭 수를 미리 정해 두어야 하는 이유를 설명하라.
+    <details class="sol"><summary>풀이</summary><p>검증 세트가 남지 않으므로 조기 종료처럼 "검증 성능을 보며 멈출 시점을 고르는 일"을 할 수 없다. 그래서 검증 세트가 있을 때 정한 에폭 수(와 스케줄)를 그대로 쓴다. 데이터가 20% 늘었으므로 같은 에폭 수면 스텝 수도 20% 늘어난다는 점을 감안한다. 이렇게 학습한 모델은 테스트 세트로만 평가한다.</p></details></li>
+  <li><b>배치 정규화.</b> 25일차의 <code>BatchNorm</code> 층을 각 <code>Linear</code>와 <code>ReLU</code> 사이에 넣고, 최대 학습률 $3\times10^{-3}$으로 학습해 기준 모델과 비교하라. 주의할 점은 무엇인가?
+    <details class="sol"><summary>풀이</summary><p><code>BatchNorm</code>의 <code>params()</code>를 이 노트북 형식(파라미터, 기울기, 감쇠 여부)에 맞춰 γ, β를 감쇠 없이 반환하도록 고친다. 평가 전에는 반드시 <code>eval()</code>로 이동 평균 통계를 쓰게 한다. <code>evaluate</code> 함수는 이미 <code>model.eval()</code>을 호출하므로 <code>Sequential.eval()</code>이 모든 층에 전달되는지만 확인하면 된다. 배치 정규화는 더 큰 학습률을 허용하므로 범위 테스트를 다시 해 학습률을 정한다.</p></details></li>
+</ol>

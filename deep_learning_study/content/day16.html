@@ -125,7 +125,8 @@ for x in [np.array([2., 5.]), np.array([-2., 1.])]:
     two_linear = (x @ W1) @ W2
     one_linear = x @ (W1 @ W2)
     with_relu = relu(x @ W1) @ W2
-    print(f"x = {x}: 선형 두 층 {two_linear}, 합친 한 층 {one_linear}, ReLU 사이에 {with_relu}")
+    print(f"x = {x}: 선형 두 층 {two_linear}, 합친 한 층 {one_linear}, ReLU 사이에 "
+          f"{with_relu}")
 </code></pre>
 <p>보편 근사를 숫자로 확인한다. $[0, 2\pi]$에 꺾는 점 $N$개를 고르게 두고 $\mathrm{ReLU}(x - c_k)$를 은닉 뉴런으로 삼은 뒤, 출력 가중치만 8일차의 최소제곱으로 구한다.</p>
 <pre class="run"><code>x = np.linspace(0, 2 * np.pi, 400); y = np.sin(x)
@@ -231,7 +232,8 @@ xs = np.linspace(-2, 2, 801)
 for step in [1.0, 0.5, 0.25]:
     w, b, v, c = square_net(step)
     err = np.abs(mlp1d(xs, w, b, v, c) - xs ** 2).max()
-    print(f"간격 {step}: 은닉 뉴런 {len(w)}개, 최대 오차 {err:.4f}, 출력 가중치 {np.round(v, 2)[:5]}")
+    print(f"간격 {step}: 은닉 뉴런 {len(w)}개, 최대 오차 {err:.4f}, 출력 가중치 "
+          f"{np.round(v, 2)[:5]}")
 </code></pre></li>
 <li><b>원 모양 데이터 분류기.</b> 놀이터의 "원" 데이터처럼, 안쪽 원(클래스 1)과 바깥 고리(클래스 0)를 가르는 신경망을 설계한다. 은닉 뉴런 4개 $\mathrm{ReLU}(x_1), \mathrm{ReLU}(-x_1), \mathrm{ReLU}(x_2), \mathrm{ReLU}(-x_2)$의 합은 $|x_1| + |x_2|$(마름모 모양의 거리)다. 출력 $\mathrm{step}(r - \sum_j h_j)$는 마름모 안쪽을 1로 판정한다. $r$을 바꿔 가며 정확도를 구하라.
 <pre class="run"><code>r = np.random.default_rng(5); pts = []

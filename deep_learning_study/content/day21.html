@@ -144,7 +144,8 @@ class DataLoader:
         self.X, self.y, self.B, self.shuffle = X, y, batch_size, shuffle
         self.rng = np.random.default_rng(seed)
     def __iter__(self):
-        idx = self.rng.permutation(len(self.X)) if self.shuffle else np.arange(len(self.X))
+        n = len(self.X)
+        idx = self.rng.permutation(n) if self.shuffle else np.arange(n)
         for s in range(0, len(idx), self.B):
             i = idx[s:s + self.B]; yield self.X[i], self.y[i]
     def __len__(self): return -(-len(self.X) // self.B)    # 올림 나눗셈
@@ -226,7 +227,8 @@ net = Sequential(Linear(64, 64, np.random.default_rng(1)), ReLU(),
                  Linear(64, 10, np.random.default_rng(2)))
 h = fit(net, SoftmaxCrossEntropy(), SGD(net.params(), lr=0.5),
         DataLoader(Xd[tr], yd[tr], 32), val=(Xd[te], yd[te]), epochs=20, metric=acc)
-print(f"손글씨: 테스트 정확도 {h['val_metric'][-1]:.3f} (11일차 소프트맥스 회귀 0.970)")
+print(f"손글씨: 테스트 정확도 {h['val_metric'][-1]:.3f} (11일차 소프트맥스 회귀 "
+      f"0.970)")
 </code></pre>
 <h3>이진 분류: 유방암</h3>
 <pre class="run"><code>d = load_data("breast_cancer"); Xc, yc = d["X"].astype(float), d["y"]
@@ -242,7 +244,8 @@ net_c = Sequential(Linear(30, 16, np.random.default_rng(1)), ReLU(),
 h = fit(net_c, BCEWithLogits(), SGD(net_c.params(), lr=0.1, weight_decay=1e-3),
         DataLoader(Zc[tr], yc[tr], 32),
         val=(Zc[te], yc[te]), epochs=100, metric=bacc)
-print(f"유방암: 테스트 정확도 {h['val_metric'][-1]:.3f}, 테스트 BCE {h['val_loss'][-1]:.4f} (14일차 로지스틱 회귀 BCE 0.106)")
+print(f"유방암: 테스트 정확도 {h['val_metric'][-1]:.3f}, 테스트 BCE "
+      f"{h['val_loss'][-1]:.4f} (14일차 로지스틱 회귀 BCE 0.106)")
 </code></pre>
 <h3>회귀: 와인 플라보노이드</h3>
 <pre class="run"><code>d = load_data("wine")
@@ -267,7 +270,8 @@ for name, make, wd in configs:
     h = fit(net_w, MSE(), opt, DataLoader(Zw[tr], yw[tr], 16),
             val=(Zw[te], yw[te]), epochs=200, metric=r2)
     results[name] = net_w
-    print(f"{name:18s} 학습 MSE {h['train_loss'][-1]:.4f},  테스트 R² {h['val_metric'][-1]:.3f}")
+    print(f"{name:18s} 학습 MSE {h['train_loss'][-1]:.4f},  테스트 R² "
+          f"{h['val_metric'][-1]:.3f}")
 print("(8일차 정규방정식 선형회귀의 테스트 R² 0.644)")
 </code></pre>
 

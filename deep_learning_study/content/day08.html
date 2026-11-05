@@ -154,7 +154,8 @@ b = y.mean() - w * x.mean()
 pred = w * x + b
 res = y - pred
 print(f"w = {w:.4f}, b = {b:.4f}")
-print(f"MSE = {(res ** 2).mean():.4f}, MAE = {np.abs(res).mean():.4f}, 잔차의 합 = {res.sum():.1e}")
+print(f"MSE = {(res ** 2).mean():.4f}, MAE = {np.abs(res).mean():.4f}, 잔차의 합 = "
+      f"{res.sum():.1e}")
 print(f"R² = {1 - (res ** 2).sum() / ((y - y.mean()) ** 2).sum():.3f}")
 plt.figure(figsize=(5.4, 3.6))
 plt.scatter(x, y, s=14, alpha=.6, label="붓꽃 150송이")
@@ -186,7 +187,8 @@ for deg in [1, 2]:
     th = np.linalg.solve(A.T @ A, A.T @ area)
     res = area - A @ th
     r2 = 1 - (res ** 2).sum() / ((area - area.mean()) ** 2).sum()
-    print(f"{deg}차: θ = {th.round(3)}  RMSE = {np.sqrt((res ** 2).mean()):.1f}  R² = {r2:.4f}")
+    print(f"{deg}차: θ = {th.round(3)}  RMSE = {np.sqrt((res ** 2).mean()):.1f}  R² "
+          f"= {r2:.4f}")
     plt.plot(rs, poly(rs, deg) @ th, lw=2, label=f"{deg}차 다항식")
 plt.xlabel("평균 반지름")
 plt.ylabel("평균 넓이")
@@ -278,9 +280,11 @@ r2_base = 1 - ((y[te] - base) ** 2).sum() / ((y[te] - y[te].mean()) ** 2).sum()
 print(f"(a) 기준선        테스트 R² = {r2_base:.3f}")
 j = feat.index("총 페놀")
 m1 = LinReg().fit(X[tr][:, [j]], y[tr])
-print(f"(b) 총 페놀 하나  학습 R² = {m1.r2(X[tr][:, [j]], y[tr]):.3f}  테스트 R² = {m1.r2(X[te][:, [j]], y[te]):.3f}")
+print(f"(b) 총 페놀 하나  학습 R² = {m1.r2(X[tr][:, [j]], y[tr]):.3f}  테스트 R² = "
+      f"{m1.r2(X[te][:, [j]], y[te]):.3f}")
 m12 = LinReg().fit(X[tr], y[tr])
-print(f"(c) 12개 전체     학습 R² = {m12.r2(X[tr], y[tr]):.3f}  테스트 R² = {m12.r2(X[te], y[te]):.3f}")
+print(f"(c) 12개 전체     학습 R² = {m12.r2(X[tr], y[tr]):.3f}  테스트 R² = "
+      f"{m12.r2(X[te], y[te]):.3f}")
 </code></pre></li>
 <li><b>잔차 분석.</b> 테스트 세트에서 예측 대 정답을 그리고, 잔차가 가장 큰 표본을 찾는다. 그 표본 하나를 뺐을 때 테스트 MSE가 어떻게 변하는지 계산하라.
 <pre class="run"><code>p = m12.predict(X[te]); e = y[te] - p
@@ -288,16 +292,20 @@ plt.figure(figsize=(4.6, 4.2))
 plt.scatter(y[te], p, s=22)
 plt.plot([0, 5.5], [0, 5.5], "k--", lw=1, label="완벽한 예측")
 k = np.argmax(np.abs(e))
-plt.annotate(f"정답 {y[te][k]:.2f}\n예측 {p[k]:.2f}", (y[te][k], p[k]), xytext=(-90, 10), textcoords="offset points", arrowprops=dict(arrowstyle="-&gt;"))
+plt.annotate(f"정답 {y[te][k]:.2f}\n예측 {p[k]:.2f}", (y[te][k], p[k]),
+             xytext=(-90, 10), textcoords="offset points",
+             arrowprops=dict(arrowstyle="-&gt;"))
 plt.xlabel("실제 플라보노이드")
 plt.ylabel("예측")
 plt.legend()
 plt.grid(alpha=.3)
 plt.show()
 print(f"테스트 MSE = {(e ** 2).mean():.3f},  MAE = {np.abs(e).mean():.3f}")
-print(f"가장 큰 잔차 = {e[k]:.2f}  → MSE 중 차지하는 몫 = {e[k] ** 2 / (e ** 2).sum():.0%}")
+print(f"가장 큰 잔차 = {e[k]:.2f}  → MSE 중 차지하는 몫 = "
+      f"{e[k] ** 2 / (e ** 2).sum():.0%}")
 mask = np.arange(len(e)) != k
-print(f"그 한 병을 뺀 MSE = {(e[mask] ** 2).mean():.3f},  MAE = {np.abs(e[mask]).mean():.3f}")
+print(f"그 한 병을 뺀 MSE = {(e[mask] ** 2).mean():.3f},  MAE = "
+      f"{np.abs(e[mask]).mean():.3f}")
 </code></pre></li>
 <li><b>특징 중요도.</b> 원래 단위의 가중치는 비교할 수 없다(연습 문제 2). 학습 세트의 평균과 표준편차로 모든 특징을 표준화한 뒤 다시 학습해 가중치를 막대그래프로 그린다. 표준화해도 예측은 그대로임을 확인하라.
 <pre class="run"><code>mu, sd = X[tr].mean(axis=0), X[tr].std(axis=0)       # 학습 세트의 통계만 사용
@@ -313,7 +321,9 @@ plt.xlabel("표준화 가중치 (특징 1 표준편차당 플라보노이드 변
 plt.grid(alpha=.3, axis="x")
 plt.tight_layout()
 plt.show()
-print("원래 단위 가중치 예: 프롤린 %.5f (프롤린의 표준편차 %.0f)" % (m12.theta[1 + feat.index("프롤린")], sd[feat.index("프롤린")]))
+j_pro = feat.index("프롤린")
+print("원래 단위 가중치 예: 프롤린 %.5f (프롤린의 표준편차 %.0f)"
+      % (m12.theta[1 + j_pro], sd[j_pro]))
 </code></pre></li>
 </ol>
 <details class="sol"><summary>참고 답안과 해설</summary>

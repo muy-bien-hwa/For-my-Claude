@@ -239,7 +239,8 @@ print(C.round(3))
 <pre class="run"><code>import numpy as np
 import matplotlib.pyplot as plt
 rng = np.random.default_rng(7)
-movies = ["액션1", "액션2", "액션3", "액션4", "로맨스1", "로맨스2", "로맨스3", "로맨스4", "공포1", "공포2", "공포3", "액션로맨스"]
+movies = ["액션1", "액션2", "액션3", "액션4", "로맨스1", "로맨스2", "로맨스3",
+          "로맨스4", "공포1", "공포2", "공포3", "액션로맨스"]
 # (12, 3) 영화의 장르
 G = np.array([[1, 0, 0]] * 4 + [[0, 1, 0]] * 4 + [[0, 0, 1]] * 3 + [[.7, .7, 0]],
              float)
@@ -294,7 +295,8 @@ print("추천:", [(movies[j], round(float(pred[u, j]), 2)) for j in top])
 mae = np.abs(pred[hidden] - R[hidden]).mean()
 base_all = np.abs(R_obs[seen].mean() - R[hidden]).mean()
 base_user = np.abs(np.broadcast_to(mu, R.shape)[hidden] - R[hidden]).mean()
-print(f"유사도 추천 MAE {mae:.3f}   전체 평균 기준선 {base_all:.3f}   사용자 평균 기준선 {base_user:.3f}")
+print(f"유사도 추천 MAE {mae:.3f}   전체 평균 기준선 {base_all:.3f}   사용자 평균 "
+      f"기준선 {base_user:.3f}")
 </code></pre></li>
 </ol>
 <details class="sol"><summary>참고 답안과 해설</summary>

@@ -256,8 +256,10 @@ fpr, tpr = roc_curve(p_te, y[te])
 # 사다리꼴 넓이의 합
 auc_trap = ((fpr[1:] - fpr[:-1]) * (tpr[1:] + tpr[:-1]) / 2).sum()
 pos, neg = p_te[y[te] == 1], p_te[y[te] == 0]
-auc_rank = (pos[:, None] &gt; neg[None, :]).mean() + 0.5 * (pos[:, None] == neg[None, :]).mean()
-print(f"AUC (사다리꼴) = {auc_trap:.4f},  AUC (양성이 음성보다 높을 확률) = {auc_rank:.4f}")
+auc_rank = ((pos[:, None] &gt; neg[None, :]).mean()
+            + 0.5 * (pos[:, None] == neg[None, :]).mean())
+print(f"AUC (사다리꼴) = {auc_trap:.4f},  AUC (양성이 음성보다 높을 확률) = "
+      f"{auc_rank:.4f}")
 plt.figure(figsize=(4.4, 4.2))
 plt.plot(fpr, tpr, lw=2, label=f"로지스틱 회귀 (AUC {auc_rank:.3f})")
 plt.plot([0, 1], [0, 1], "k--", lw=1, label="무작위 (AUC 0.5)")
@@ -354,14 +356,16 @@ cands = np.sort(np.unique(oof))[::-1]
 thr = next(t_ for t_ in cands if metrics(confusion(oof, ytr, t_))["recall"] &gt;= 0.98)
 for t_ in [0.5, thr]:
     m_ = metrics(confusion(oof, ytr, t_))
-    print(f"겹 밖 예측, 임계값 {t_:.3f}: 정밀도 {m_['precision']:.3f}, 재현율 {m_['recall']:.3f}")
+    print(f"겹 밖 예측, 임계값 {t_:.3f}: 정밀도 {m_['precision']:.3f}, 재현율 "
+          f"{m_['recall']:.3f}")
 </code></pre></li>
 <li><b>최종 평가 (한 번만).</b> 고른 $\lambda$로 학습 세트 전체에서 다시 학습하고, 테스트 세트에서 임계값 0.5와 위에서 정한 임계값의 결과를 보고한다.
 <pre class="run"><code>final = fit_logreg(Xtr, ytr, best)
 p_test = predict_proba(final, X[te])
 for t_ in [0.5, thr]:
     c = confusion(p_test, y[te], t_); m_ = metrics(c)
-    print(f"테스트, 임계값 {t_:.3f}: {c}  정밀도 {m_['precision']:.3f} 재현율 {m_['recall']:.3f} F1 {m_['f1']:.3f}")
+    print(f"테스트, 임계값 {t_:.3f}: {c}  정밀도 {m_['precision']:.3f} 재현율 "
+          f"{m_['recall']:.3f} F1 {m_['f1']:.3f}")
 pos, neg = p_test[y[te] == 1], p_test[y[te] == 0]
 print("테스트 AUC = %.4f,  테스트 BCE = %.4f" % ((pos[:, None] &gt; neg[None, :]).mean(),
                                                  bce(p_test, y[te])))

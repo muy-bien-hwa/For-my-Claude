@@ -179,7 +179,8 @@ $$b \le 0,\qquad w_2 + b &gt; 0,\qquad w_1 + b &gt; 0,\qquad w_1 + w_2 + b \le 0
 <pre class="run"><code>import numpy as np
 import matplotlib.pyplot as plt
 X4 = np.array([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=float)
-gates = {"AND": np.array([0, 0, 0, 1]), "OR": np.array([0, 1, 1, 1]), "XOR": np.array([0, 1, 1, 0])}
+gates = {"AND": np.array([0, 0, 0, 1]), "OR": np.array([0, 1, 1, 1]),
+         "XOR": np.array([0, 1, 1, 0])}
 
 def train_perceptron(X, y, eta=1.0, epochs=20):
     w, b = np.zeros(X.shape[1]), 0.0
@@ -201,7 +202,8 @@ def train_perceptron(X, y, eta=1.0, epochs=20):
 for name, y in gates.items():
     w, b, errors = train_perceptron(X4, y)
     pred = (X4 @ w + b &gt; 0).astype(int)
-    print(f"{name:3s}: w = {w}, b = {b:4.1f}, 에폭별 틀린 수 {errors[:8]}, 예측 {pred}, 정답 {y}")
+    print(f"{name:3s}: w = {w}, b = {b:4.1f}, 에폭별 틀린 수 {errors[:8]}, 예측 "
+          f"{pred}, 정답 {y}")
 </code></pre>
 <p>AND는 위 예제와 같이 $\mathbf w = (2, 1)$, $b = -2$로 끝난다. XOR은 20에폭 동안 매번 틀리며 끝나지 않는다. 마지막으로 두 층 퍼셉트론으로 XOR을 계산한다.</p>
 <pre class="run"><code>step = lambda z: (z &gt; 0).astype(int)
@@ -323,9 +325,11 @@ plt.show()
     R = np.linalg.norm(A, axis=1).max()
     gamma = (t * (A @ v)).min() / np.linalg.norm(v)
     return R, gamma, (R / gamma) ** 2
-for name, Xs, w, b, sn in [("원래", X, w_raw, b_raw, snaps_raw), ("중심화", Xc, w_c, b_c, snaps_c)]:
+for name, Xs, w, b, sn in [("원래", X, w_raw, b_raw, snaps_raw),
+                           ("중심화", Xc, w_c, b_c, snaps_c)]:
     R, g, B = bound(Xs, w, b)
-    print(f"{name}: R = {R:.3f}, γ_w = {g:.4f}, 상한 (R/γ)² = {B:,.0f}, 실제 갱신 {len(sn) - 1}")
+    print(f"{name}: R = {R:.3f}, γ_w = {g:.4f}, 상한 (R/γ)² = {B:,.0f}, 실제 갱신 "
+          f"{len(sn) - 1}")
 </code></pre></li>
 <li><b>분리 불가능한 경우: 포켓 알고리즘.</b> versicolor와 virginica는 꽃받침 특징으로 선형 분리가 되지 않는다. 퍼셉트론은 끝나지 않으므로, 학습하는 동안 "학습 데이터 정확도가 가장 높았던 가중치"를 주머니(pocket)에 넣어 두었다가 마지막에 꺼낸다.
 <pre class="run"><code>m2 = d["y"] &gt;= 1
@@ -343,7 +347,8 @@ def pocket(X, y, epochs=200, eta=1.0):
                     best = (acc, w.copy(), b)      # TODO 확인: 더 나은 해를 주머니에
     return best, ((X @ w + b &gt; 0).astype(int) == y).mean()
 (best_acc, wb, bb), last_acc = pocket(X2, y2)
-print(f"마지막 가중치의 정확도 {last_acc:.3f},  주머니 속 가중치의 정확도 {best_acc:.3f}")
+print(f"마지막 가중치의 정확도 {last_acc:.3f},  주머니 속 가중치의 정확도 "
+      f"{best_acc:.3f}")
 </code></pre></li>
 </ol>
 <details class="sol"><summary>참고 답안과 해설</summary>
