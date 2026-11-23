@@ -4,27 +4,30 @@
 
     cp -r works/_template works/07-새이름
 
-  그다음 할 일은 네 가지다.
-    1) 아래 TODO 를 전부 채운다 (제목·번호·설명).
+  할 일
+    1) 아래 TODO 를 채운다 (제목·번호).
     2) <main> 안에 작품을 만든다. 조판도 기법도 자유다.
-    3) assets/works.js 에 항목을 한 줄 추가한다. slug 는 폴더 이름과 같아야 한다.
-    4) assets/previews.js 에 썸네일 스케치를 하나 등록하고 works.js 의 preview 에 그 키를 쓴다.
+    3) assets/works.js 에 항목을 추가한다. slug 는 폴더 이름과 같아야 한다.
+    4) assets/previews.js 에 썸네일 스케치를 등록하고 works.js 의 preview 에 그 키를 쓴다.
 
   공통 껍데기(chrome.css / chrome.js)가 주는 것
-    · 색·서체 토큰, 그레인, 상단 바, 설명 패널
-    · ESC → 목록으로, I → 설명 패널
+    · 색·서체 토큰, 그레인, 상단 바, 정보 패널
+    · ESC → 목록으로, I → 정보 패널
   그 아래로는 이 파일에서 뭐든 덮어써도 된다. 작품마다 달라 보이는 게 목적이다.
+
+  화면에 쓰는 글은 전부 한글로. 사용법 안내는 넣지 않는다.
+  정보 패널도 산문 없이 기법·연도 정도만 둔다.
 -->
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TODO 제목 — Selected Interactive Work</title>
-<meta name="description" content="TODO 한 줄 설명">
+<title>TODO 제목</title>
+<meta name="description" content="TODO 제목 — 인터랙티브 웹 디자인 작업.">
 <meta name="color-scheme" content="dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Azeret+Mono:wght@300;400;500&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500&family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../_shared/chrome.css">
 <style>
   /* ── 이 작품만의 조판 ──────────────────────────────────────────── */
@@ -37,12 +40,10 @@
 <body>
 
 <header class="work-bar">
-  <a class="work-bar__back" href="../../"><span>&#8592;</span><span>Index</span></a>
+  <a class="work-bar__back" href="../../"><span>&#8592;</span><span>목록</span></a>
   <span class="work-bar__no">00</span><!-- TODO 번호 -->
-  <span class="work-bar__title">
-    <b>TODO 제목</b><i>Todo</i>
-  </span>
-  <button class="work-toggle" type="button" aria-expanded="false">Info</button>
+  <span class="work-bar__title"><b>TODO 제목</b></span>
+  <button class="work-toggle" type="button" aria-expanded="false">정보</button>
 </header>
 
 <main>
@@ -51,9 +52,7 @@
 
 <aside class="work-info" data-open="false">
   <h2>TODO 제목</h2>
-  <p>TODO 무엇을 어떻게 다루는 작업인지 두세 문장.</p>
   <dl class="wlabel">
-    <dt>조작</dt><dd>TODO</dd>
     <dt>기법</dt><dd>TODO</dd>
     <dt>연도</dt><dd>2026</dd>
   </dl>

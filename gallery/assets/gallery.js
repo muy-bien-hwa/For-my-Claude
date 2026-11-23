@@ -33,8 +33,8 @@
     el.dataset.no = work.no;
     if (live) {
       el.href = 'works/' + work.slug + '/';
-      el.setAttribute('aria-label', work.title + ' ' + work.latin + ' — 작품 열기');
-      el.dataset.cursor = 'view';
+      el.setAttribute('aria-label', work.title + ' — 작품 열기');
+      el.dataset.cursor = '보기';
     } else {
       el.setAttribute('aria-disabled', 'true');
     }
@@ -72,10 +72,9 @@
       '<span class="card__no">' + work.no + '</span>' +
       '<span class="card__name">' +
         '<span class="card__ko">' + work.title + '</span>' +
-        '<span class="card__latin">' + work.latin + '</span>' +
       '</span>' +
       '<span class="card__year">' + work.year + '</span>' +
-      '<span class="card__tags">' + (work.tags || []).join(' / ') + '</span>';
+      '<span class="card__tags">' + (work.tags || []).join(' · ') + '</span>';
 
     el.appendChild(frame);
     el.appendChild(meta);
@@ -94,10 +93,10 @@
     el.style.setProperty('--delay', Math.min(i, 6) * 55 + 'ms');
     el.dataset.tags = (work.tags || []).join(' ');
     el.dataset.preview = work.preview || '';
-    el.dataset.caption = work.latin + ' — ' + work.year;
+    el.dataset.caption = work.no;
     if (live) {
       el.href = 'works/' + work.slug + '/';
-      el.dataset.cursor = 'view';
+      el.dataset.cursor = '보기';
     } else {
       el.setAttribute('aria-disabled', 'true');
     }
@@ -106,9 +105,8 @@
       '<span class="row__no">' + work.no + '</span>' +
       '<span class="row__name">' +
         '<span class="row__ko">' + work.title + '</span>' +
-        '<span class="row__latin">' + work.latin + '</span>' +
       '</span>' +
-      '<span class="row__tags">' + (work.tags || []).join(' / ') + '</span>' +
+      '<span class="row__tags">' + (work.tags || []).join(' · ') + '</span>' +
       '<span class="row__year">' + work.year + '</span>' +
       '<span class="row__go">' + (live ? '&#8599;' : '&#8212;') + '</span>';
 
@@ -130,7 +128,7 @@
       b.type = 'button';
       b.dataset.tag = tag;
       b.setAttribute('aria-pressed', tag === 'all' ? 'true' : 'false');
-      b.innerHTML = (tag === 'all' ? 'ALL' : tag) + '<sup>' + counts[tag] + '</sup>';
+      b.innerHTML = (tag === 'all' ? '전체' : tag) + '<sup>' + counts[tag] + '</sup>';
       b.addEventListener('click', function () {
         host.querySelectorAll('button').forEach(function (other) {
           other.setAttribute('aria-pressed', other === b ? 'true' : 'false');
@@ -240,7 +238,7 @@
     document.addEventListener('pointerover', function (ev) {
       var host = ev.target.closest ? ev.target.closest('[data-cursor]') : null;
       if (host) {
-        txt.textContent = host.dataset.cursor === 'view' ? 'VIEW' : host.dataset.cursor;
+        txt.textContent = host.dataset.cursor;
         dot.classList.add('is-hot');
       } else {
         dot.classList.remove('is-hot');
@@ -287,11 +285,9 @@
     var counter = $('#count');
     if (counter) {
       counter.textContent =
-        String(WORKS.length).padStart(2, '0') + ' WORKS — ' +
-        String(liveCount).padStart(2, '0') + ' LIVE';
+        String(WORKS.length).padStart(2, '0') + ' · 공개 ' +
+        String(liveCount).padStart(2, '0');
     }
-    var total = $('#total');
-    if (total) total.textContent = String(WORKS.length).padStart(2, '0');
 
     buildFilters($('#filters'), applyFilter);
 

@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>분절 / Slice — Selected Interactive Work</title>
-<meta name="description" content="디스플레이 타이포를 가로로 자르고, 스크롤 속도만큼 어긋내는 실험.">
+<title>분절</title>
+<meta name="description" content="분절 — 인터랙티브 웹 디자인 작업.">
 <meta name="color-scheme" content="dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Azeret+Mono:wght@300;400;500&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500&family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../_shared/chrome.css">
 <style>
   body { overflow-x: hidden; }
@@ -55,30 +55,6 @@
   }
   .band[data-accent='1'] > span { color: var(--sig); }
 
-  .caption {
-    position: fixed;
-    left: var(--edge);
-    bottom: var(--edge);
-    z-index: 20;
-    display: grid;
-    gap: 6px;
-    max-width: 30ch;
-    pointer-events: none;
-  }
-  .caption__latin {
-    font-family: var(--f-display);
-    font-style: italic;
-    font-size: clamp(1.4rem, 3vw, 2.2rem);
-    color: var(--ink);
-  }
-  .caption__body {
-    margin: 0;
-    font-family: var(--f-body);
-    font-size: 14px;
-    line-height: 1.7;
-    color: var(--dim);
-  }
-
   .ticks {
     position: fixed;
     right: var(--edge);
@@ -99,29 +75,18 @@
   }
   .ticks span[data-on='1'] { width: 48px; background: var(--sig); }
 
-  .scroll-cue {
-    position: fixed;
-    left: 50%;
-    bottom: var(--edge);
-    transform: translateX(-50%);
-    z-index: 20;
-    pointer-events: none;
-    transition: opacity .5s var(--ease);
-  }
-
   @media (max-width: 600px) {
     .ticks { display: none; }
-    .caption { max-width: none; right: var(--edge); }
   }
 </style>
 </head>
 <body>
 
 <header class="work-bar">
-  <a class="work-bar__back" href="../../"><span>&#8592;</span><span>Index</span></a>
+  <a class="work-bar__back" href="../../"><span>&#8592;</span><span>목록</span></a>
   <span class="work-bar__no">02</span>
-  <span class="work-bar__title"><b>분절</b><i>Slice</i></span>
-  <button class="work-toggle" type="button" aria-expanded="false">Info</button>
+  <span class="work-bar__title"><b>분절</b></span>
+  <button class="work-toggle" type="button" aria-expanded="false">정보</button>
 </header>
 <div class="progress" id="progress"></div>
 
@@ -131,20 +96,12 @@
   </section>
 </main>
 
-<div class="caption">
-  <span class="caption__latin" id="cap-latin">Slice</span>
-  <p class="caption__body" id="cap-body">—</p>
-</div>
-
 <div class="ticks" id="ticks" aria-hidden="true"></div>
-<p class="scroll-cue wlabel" id="cue">Scroll &#8595;</p>
 
 <aside class="work-info" data-open="false">
-  <h2>분절 <i style="font-family:var(--f-display)">Slice</i></h2>
-  <p>한 글자를 열네 겹으로 쌓고, 겹마다 다른 가로 구간만 남겼다. 스크롤 속도가 각 겹을 반대 방향으로 밀어낸다. 멈추면 겹이 제자리로 모여 다시 한 글자가 된다.</p>
+  <h2>분절</h2>
   <dl class="wlabel">
-    <dt>조작</dt><dd>스크롤 속도</dd>
-    <dt>기법</dt><dd>clip-path 적층 · 속도 감쇠</dd>
+    <dt>기법</dt><dd>겹 적층 · 속도 감쇠</dd>
     <dt>연도</dt><dd>2026</dd>
   </dl>
 </aside>
@@ -157,18 +114,11 @@
   var BANDS = 14;
   var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  var CHAPTERS = [
-    { ko: '분절', latin: 'Slice',  body: '한 덩어리였던 글자를 가로로 끊는다. 끊긴 자리는 아직 보이지 않는다.' },
-    { ko: '어긋남', latin: 'Offset', body: '스크롤이 빨라질수록 겹이 서로 반대로 밀린다. 글자는 읽히기를 멈추고 무늬가 된다.' },
-    { ko: '봉합', latin: 'Suture', body: '손을 떼면 겹은 제자리로 수렴한다. 글자는 돌아오지만 잘린 선은 기억에 남는다.' },
-  ];
+  var CHAPTERS = ['분절', '어긋남', '봉합'];
 
   var wordEl = document.getElementById('word');
-  var capLatin = document.getElementById('cap-latin');
-  var capBody = document.getElementById('cap-body');
   var progress = document.getElementById('progress');
   var ticksEl = document.getElementById('ticks');
-  var cue = document.getElementById('cue');
 
   // 띠 만들기 — 각 띠는 전체 글자를 담고 자기 구간만 남긴다
   var bands = [];
@@ -195,10 +145,8 @@
     if (idx === current) return;
     current = idx;
     var c = CHAPTERS[idx];
-    bands.forEach(function (b) { b.inner.textContent = c.ko; });
-    wordEl.setAttribute('aria-label', c.ko);
-    capLatin.textContent = c.latin;
-    capBody.textContent = c.body;
+    bands.forEach(function (b) { b.inner.textContent = c; });
+    wordEl.setAttribute('aria-label', c);
     Array.prototype.forEach.call(ticksEl.children, function (t, i) {
       t.dataset.on = i === idx ? '1' : '0';
     });
@@ -215,7 +163,6 @@
     var p = Math.min(1, Math.max(0, scrollY / max));
 
     progress.style.transform = 'scaleX(' + p + ')';
-    cue.style.opacity = p > 0.03 ? '0' : '1';
     setChapter(Math.min(CHAPTERS.length - 1, Math.floor(p * CHAPTERS.length)));
 
     var raw = scrollY - lastY;

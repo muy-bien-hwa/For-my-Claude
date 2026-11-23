@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>표류 / Drift — Selected Interactive Work</title>
-<meta name="description" content="커서가 지나간 자리마다 벡터장이 휘고, 흐름은 느리게 원래 각도로 되돌아간다.">
+<title>표류</title>
+<meta name="description" content="표류 — 인터랙티브 웹 디자인 작업.">
 <meta name="color-scheme" content="dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Azeret+Mono:wght@300;400;500&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500&family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../_shared/chrome.css">
 <style>
   html, body { height: 100%; overflow: hidden; }
@@ -30,20 +30,10 @@
     font-family: var(--f-display);
     font-weight: 400;
     font-size: clamp(4.2rem, 17vw, 16rem);
-    line-height: .78;
-    letter-spacing: -.03em;
-    text-indent: -.05em;
+    line-height: 1;
+    letter-spacing: -.02em;
     color: #fff;
   }
-  .plate__latin {
-    display: block;
-    margin-top: .1em;
-    font-style: italic;
-    font-size: .26em;
-    letter-spacing: 0;
-    color: #fff;
-  }
-
   .readout {
     position: fixed;
     right: var(--edge);
@@ -57,14 +47,6 @@
   }
   .readout b { font-weight: 400; color: var(--sig); }
 
-  .hint {
-    position: fixed;
-    left: var(--edge);
-    top: calc(var(--bar) + 20px);
-    z-index: 10;
-    pointer-events: none;
-  }
-
   @media (max-width: 600px) {
     .readout { display: none; }
   }
@@ -73,33 +55,29 @@
 <body>
 
 <header class="work-bar">
-  <a class="work-bar__back" href="../../"><span>&#8592;</span><span>Index</span></a>
+  <a class="work-bar__back" href="../../"><span>&#8592;</span><span>목록</span></a>
   <span class="work-bar__no">01</span>
-  <span class="work-bar__title"><b>표류</b><i>Drift</i></span>
-  <button class="work-toggle" type="button" aria-expanded="false">Info</button>
+  <span class="work-bar__title"><b>표류</b></span>
+  <button class="work-toggle" type="button" aria-expanded="false">정보</button>
 </header>
 
 <main class="stage">
   <canvas id="field" role="img" aria-label="커서를 따라 휘는 벡터장 위를 흐르는 입자들"></canvas>
 </main>
 
-<p class="hint wlabel">커서를 움직여 흐름을 휘게 한다 · 클릭하면 다시 뿌린다</p>
-
 <div class="plate">
-  <h1 class="plate__ko">표류<em class="plate__latin">Drift</em></h1>
+  <h1 class="plate__ko">표류</h1>
 </div>
 
 <div class="readout wlabel">
-  <span>Particles <b id="r-n">—</b></span>
-  <span>Field bend <b id="r-bend">0.00</b></span>
+  <span>입자 <b id="r-n">—</b></span>
+  <span>휨 <b id="r-bend">0.00</b></span>
 </div>
 
 <aside class="work-info" data-open="false">
-  <h2>표류 <i style="font-family:var(--f-display)">Drift</i></h2>
-  <p>화면 전체가 하나의 벡터장이다. 입자는 자기 자리의 각도를 따라 흐르고, 지나간 자취만 남긴다. 커서는 주변 각도를 끌어당기지만 손을 떼면 흐름은 느리게 원래 모양으로 되돌아간다.</p>
+  <h2>표류</h2>
   <dl class="wlabel">
-    <dt>조작</dt><dd>커서 이동 · 클릭으로 재배치</dd>
-    <dt>기법</dt><dd>Canvas 2D · 흐름장 적분</dd>
+    <dt>기법</dt><dd>흐름장 적분</dd>
     <dt>연도</dt><dd>2026</dd>
   </dl>
 </aside>
@@ -228,6 +206,11 @@
     ctx.globalAlpha = 1;
   }
 
+  // 상단 바·정보 패널을 누른 것은 작품 조작으로 치지 않는다
+  function onStage(ev) {
+    return !(ev.target.closest && ev.target.closest('.work-bar, .work-info'));
+  }
+
   window.addEventListener('pointermove', function (ev) {
     if (pointer.live) {
       var dx = ev.clientX - pointer.x;
@@ -240,7 +223,7 @@
   }, { passive: true });
 
   window.addEventListener('pointerleave', function () { pointer.live = false; });
-  window.addEventListener('pointerdown', seed);
+  window.addEventListener('pointerdown', function (ev) { if (onStage(ev)) seed(); });
   window.addEventListener('resize', resize);
 
   resize();

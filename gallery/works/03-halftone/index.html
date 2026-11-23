@@ -3,26 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>망점 / Halftone — Selected Interactive Work</title>
-<meta name="description" content="화면 전체를 망점으로 환원한다. 커서 주변에서만 점이 커지고 격자가 어긋난다.">
+<title>망점</title>
+<meta name="description" content="망점 — 인터랙티브 웹 디자인 작업.">
 <meta name="color-scheme" content="dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Azeret+Mono:wght@300;400;500&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;500&family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../_shared/chrome.css">
 <style>
   html, body { height: 100%; overflow: hidden; }
 
   .stage { position: fixed; inset: 0; }
   .stage canvas { display: block; width: 100%; height: 100%; }
-
-  .hint {
-    position: fixed;
-    left: var(--edge);
-    top: calc(var(--bar) + 20px);
-    z-index: 10;
-    pointer-events: none;
-  }
 
   /* 좌하단 색인표 — 현재 글자와 다음 글자를 괘선으로 묶어 보여준다 */
   .slate {
@@ -71,35 +63,31 @@
 <body>
 
 <header class="work-bar">
-  <a class="work-bar__back" href="../../"><span>&#8592;</span><span>Index</span></a>
+  <a class="work-bar__back" href="../../"><span>&#8592;</span><span>목록</span></a>
   <span class="work-bar__no">03</span>
-  <span class="work-bar__title"><b>망점</b><i>Halftone</i></span>
-  <button class="work-toggle" type="button" aria-expanded="false">Info</button>
+  <span class="work-bar__title"><b>망점</b></span>
+  <button class="work-toggle" type="button" aria-expanded="false">정보</button>
 </header>
 
 <main class="stage">
   <canvas id="dots" role="img" aria-label="글자를 망점으로 환원한 화면"></canvas>
 </main>
 
-<p class="hint wlabel">커서로 망점을 키운다 · 클릭하면 다음 글자</p>
-
 <div class="slate wlabel">
-  <span class="slate__row"><span>Now</span><b id="s-now">—</b></span>
-  <span class="slate__row is-next"><span>Next</span><b id="s-next">—</b></span>
-  <span class="slate__row"><span>Pitch</span><b id="s-pitch">—</b></span>
+  <span class="slate__row"><span>현재</span><b id="s-now">—</b></span>
+  <span class="slate__row is-next"><span>다음</span><b id="s-next">—</b></span>
+  <span class="slate__row"><span>간격</span><b id="s-pitch">—</b></span>
 </div>
 
 <div class="meter wlabel">
-  <span>Density</span>
+  <span>밀도</span>
   <span class="meter__bar"><i id="m-fill" style="transform:scaleX(0)"></i></span>
 </div>
 
 <aside class="work-info" data-open="false">
-  <h2>망점 <i style="font-family:var(--f-display)">Halftone</i></h2>
-  <p>글자를 한 번 그려 픽셀로 읽고, 격자마다 밝기를 점의 지름으로 바꾼다. 원본은 지워지고 점만 남는다. 커서 주변에서는 격자가 흔들리며 점이 서로를 삼킨다.</p>
+  <h2>망점</h2>
   <dl class="wlabel">
-    <dt>조작</dt><dd>커서 이동 · 클릭으로 글자 교체</dd>
-    <dt>기법</dt><dd>오프스크린 샘플링 · 밝기→지름 사상</dd>
+    <dt>기법</dt><dd>밝기→지름 사상</dd>
     <dt>연도</dt><dd>2026</dd>
   </dl>
 </aside>
@@ -109,12 +97,9 @@
 (function () {
   'use strict';
 
-  var WORDS = [
-    { text: '망점', font: '700 ##px "Gowun Batang", serif' },
-    { text: 'HALFTONE', font: '400 ##px "Instrument Serif", Georgia, serif' },
-    { text: '환원', font: '700 ##px "Gowun Batang", serif' },
-    { text: 'DOT', font: 'italic 400 ##px "Instrument Serif", Georgia, serif' },
-  ];
+  // 화면에 굽는 글자. 전부 한글 두 글자로 맞춰 크기가 들쭉날쭉하지 않게 한다.
+  var WORDS = ['망점', '환원', '겹침', '소실'];
+  var WORD_FONT = '700 ##px "Gowun Batang", serif';
 
   var canvas = document.getElementById('dots');
   var ctx = canvas.getContext('2d', { alpha: false });
@@ -141,12 +126,12 @@
     offCtx.fillStyle = '#000';
     offCtx.fillRect(0, 0, W, H);
 
-    var size = Math.min(W * 0.86 / Math.max(2, word.text.length * 0.62), H * 0.52);
+    var size = Math.min(W * 0.86 / Math.max(2, word.length * 0.62), H * 0.52);
     offCtx.fillStyle = '#fff';
     offCtx.textAlign = 'center';
     offCtx.textBaseline = 'middle';
-    offCtx.font = word.font.replace('##', Math.round(size));
-    offCtx.fillText(word.text, W / 2, H * 0.5);
+    offCtx.font = WORD_FONT.replace('##', Math.round(size));
+    offCtx.fillText(word, W / 2, H * 0.5);
 
     var cols = Math.ceil(W / step);
     var rows = Math.ceil(H / step);
@@ -165,9 +150,9 @@
     }
     density = filled / (cols * rows);
 
-    el('s-now').textContent = word.text;
-    el('s-next').textContent = WORDS[(idx + 1) % WORDS.length].text;
-    el('s-pitch').textContent = step.toFixed(0) + 'px';
+    el('s-now').textContent = word;
+    el('s-next').textContent = WORDS[(idx + 1) % WORDS.length];
+    el('s-pitch').textContent = step.toFixed(0);
     el('m-fill').style.transform = 'scaleX(' + Math.min(1, density * 3.2).toFixed(3) + ')';
   }
 
@@ -236,6 +221,11 @@
     requestAnimationFrame(loop);
   }
 
+  // 상단 바·정보 패널을 누른 것은 작품 조작으로 치지 않는다
+  function onStage(ev) {
+    return !(ev.target.closest && ev.target.closest('.work-bar, .work-info'));
+  }
+
   window.addEventListener('pointermove', function (ev) {
     pointer.x = ev.clientX;
     pointer.y = ev.clientY;
@@ -248,7 +238,8 @@
     if (reduce) draw(0);
   });
 
-  window.addEventListener('pointerdown', function () {
+  window.addEventListener('pointerdown', function (ev) {
+    if (!onStage(ev)) return;
     idx = (idx + 1) % WORDS.length;
     bake();
     if (reduce) draw(0);
