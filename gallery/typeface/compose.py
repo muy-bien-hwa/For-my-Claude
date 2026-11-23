@@ -8,7 +8,7 @@
 받침이 있으면 위 요소들이 눌려 올라가고 아래가 열린다.
 """
 
-import jamo
+import jamo, outline
 
 CHO = list('ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ')
 JUNG = list('ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ')
@@ -73,6 +73,24 @@ def _box(rel, frame):
             fx0 + rel[2] * fw, fy0 + rel[3] * fh)
 
 
+def _narrow(box, k):
+    """상자를 가운데를 축으로 가로로 좁힌다. 받침 폭을 줄일 때 쓴다."""
+    if k >= 1.0:
+        return box
+    x0, y0, x1, y1 = box
+    cx, half = (x0 + x1) / 2, (x1 - x0) / 2 * k
+    return (cx - half, y0, cx + half, y1)
+
+
+def _taller(box, k, limit):
+    """상자를 위아래로 늘인다. 기둥이 틀 밖으로 조금 넘치게 할 때 쓴다."""
+    if not k:
+        return box
+    x0, y0, x1, y1 = box
+    d = (y1 - y0) * k
+    return (x0, max(limit[0], y0 - d), x1, min(limit[1], y1 + d))
+
+
 def _jung_boxes(v, slot, frame, st):
     """중성 자리. 겹모음은 가로 낱자와 세로 낱자로 나눠 돌려준다."""
     out = []
@@ -104,76 +122,101 @@ def _jung_boxes(v, slot, frame, st):
 
 
 def syllable(ch, st):
-    """음절 하나를 다각형 목록으로 그린다."""
+    """음절 하나를 (다각형, 베지에) 로 조립한다. 윤곽 합치기는 glyph() 가 한다."""
     parts = decompose(ch)
     if not parts:
-        return []
+        return [], []
     cho, jung, jong = parts
     frame = st['frame']
-    polys = []
+    P, B = [], []
+
+    def put(key, box):
+        p, b = jamo.draw(key, box, st)
+        P.extend(p); B.extend(b)
 
     if st['layout'] == 'decon':
         slot = dict(DECON_BASE)
         cls = vclass(jung)
-        polys += jamo.draw(cho, _box(slot['cho'], frame), st)
+        put(cho, _box(slot['cho'], frame))
         if cls == 'V':
-            polys += [p for k, b in _jung_boxes(jung, {'jung': slot['jungV']}, frame, st)
-                      for p in jamo.draw(k, b, st)]
+            for k, b in _jung_boxes(jung, {'jung': slot['jungV']}, frame, st):
+                put(k, b)
         elif cls == 'H':
-            polys += [p for k, b in _jung_boxes(jung, {'jungH': slot['jungH']}, frame, st)
-                      for p in jamo.draw(k, b, st)]
+            for k, b in _jung_boxes(jung, {'jungH': slot['jungH']}, frame, st):
+                put(k, b)
         else:
-            polys += [p for k, b in _jung_boxes(jung, slot, frame, st)
-                      for p in jamo.draw(k, b, st)]
+            for k, b in _jung_boxes(jung, slot, frame, st):
+                put(k, b)
         if jong:
-            polys += jamo.draw(jong, _box(slot['jong'], frame), st)
-        return polys
+            put(jong, _box(slot['jong'], frame))
+        return P, B
 
     slot = SQUARE[(vclass(jung), 1 if jong else 0)]
-    polys += jamo.draw(cho, _box(slot['cho'], frame), st)
+    over = st.get('stem_over', 0.0)
+    limit = (st.get('ymin', -40), st.get('ymax', 800))
+    put(cho, _box(slot['cho'], frame))
     for k, b in _jung_boxes(jung, slot, frame, st):
-        polys += jamo.draw(k, b, st)
+        # 세로 기둥만 틀 위아래로 조금 넘긴다
+        put(k, _taller(b, over, limit) if k in 'ㅏㅑㅓㅕㅣ' else b)
     if jong:
-        polys += jamo.draw(jong, _box(slot['jong'], frame), st)
-    return polys
+        put(jong, _narrow(_box(slot['jong'], frame), st.get('jong_width', 1.0)))
+    return P, B
+
+
+def glyph(ch, st):
+    """한 글자의 최종 윤곽. 겹친 획을 합치고 모서리를 가공한다."""
+    P, B = syllable(ch, st)
+    if not P and not B:
+        P, B = jamo_letter(ch, st)
+    return outline.treat(outline.union(P), st), B
 
 
 def jamo_letter(ch, st):
     """낱자 자체(ㄱ, ㅏ …)를 한 글자로 그린다."""
-    frame = st['frame']
-    x0, y0, x1, y1 = frame
+    x0, y0, x1, y1 = st['frame']
     if ch in jamo.SHAPES or ch in jamo.PAIRS:
-        w = (x1 - x0) * (0.62 if ch in jamo.SHAPES else 0.86)
+        w = (x1 - x0) * (0.60 if ch in jamo.SHAPES else 0.86)
         cx = (x0 + x1) / 2
-        return jamo.draw(ch, (cx - w / 2, y0 + (y1 - y0) * 0.08, cx + w / 2, y1 * 0.94), st)
+        return jamo.draw(ch, (cx - w / 2, y0 + (y1 - y0) * 0.10, cx + w / 2, y1 * 0.92), st)
     if ch in jamo.COMPOUND_V:
         a, b = jamo.COMPOUND_V[ch]
-        return (jamo.draw(a, (x0, y0, (x0 + x1) / 2, y1), st)
-                + jamo.draw(b, ((x0 + x1) / 2, y0, x1, y1), st))
-    return []
+        pa, ba = jamo.draw(a, (x0, y0, (x0 + x1) / 2, y1), st)
+        pb, bb = jamo.draw(b, ((x0 + x1) / 2, y0, x1, y1), st)
+        return pa + pb, ba + bb
+    return [], []
 
 
-# ── 성격 네 가지 ───────────────────────────────────────────────────
-# frame 은 음절이 들어앉는 상자. em 1000, 기준선 0.
+# ── 성격 ───────────────────────────────────────────────────────────
+# 모노라인 한 줄기에서 갈라지는 셋. 굵기·비례·틀은 똑같이 두고
+# 모서리 가공만 다르게 해서 디테일만 견주어 보이게 한다.
+_MONO = {
+    'w': 34, 'hw': 0.94, 'overshoot': 0.028, 'layout': 'square',
+    'frame': (66, 8, 934, 756), 'advance': 1000,
+}
+
 STYLES = {
-    'modular': {
-        'name': '각진 모듈러', 'w': 92, 'sides': 8, 'layout': 'square',
-        'frame': (72, 8, 928, 748), 'advance': 1000,
-        'note': '기본 획을 직각으로 자르고 ㅇ·ㅎ의 원을 팔각형으로 깎았다.',
-    },
-    'decon': {
-        'name': '탈네모', 'w': 90, 'sides': 8, 'layout': 'decon',
-        'frame': (70, 8, 930, 748), 'advance': 980,
-        'note': '낱자의 자리와 크기가 고정이라 받침이 기준선 아래로 내려간다.',
-    },
-    'hairline': {
-        'name': '모노라인 헤어라인', 'w': 34, 'sides': 16, 'layout': 'square',
-        'frame': (64, 8, 936, 760), 'advance': 1000,
-        'note': '모든 획이 같은 가는 굵기. 1px 괘선과 한 몸이 된다.',
-    },
-    'heavy': {
-        'name': '초고중량 납작체', 'w': 150, 'sides': 8, 'layout': 'square',
-        'frame': (46, 4, 1104, 742), 'advance': 1150,
-        'note': '획이 두껍고 자폭이 넓다. 제목이 벽처럼 보인다.',
-    },
+    'trap': dict(_MONO, **{
+        'name': '정밀', 'detail': 'trap',
+        'trap_back': 15, 'trap_depth': 9,
+        'hw': 0.94, 'ring_inset': 0.14, 'jong_width': 0.78, 'siot_spread': -0.02,
+        'note': '안쪽 이음매마다 쐐기를 판다 (잉크 트랩). ㅇ은 상자에서 물러나 '
+                '또렷한 점이 되고 받침은 좁다. 계기판 글자 같은 인상.',
+    }),
+    'chamfer': dict(_MONO, **{
+        'name': '모서리', 'detail': 'chamfer', 'chamfer': 13,
+        'hw': 0.96, 'ring_inset': 0.0, 'jong_width': 0.97,
+        'stem_over': 0.035, 'siot_spread': 0.07,
+        'note': '바깥 모서리를 전부 같은 양으로 깎는다. ㅇ이 네모를 꽉 채우고 '
+                '기둥이 틀 밖으로 조금 넘쳐 글줄이 팽팽해진다.',
+    }),
+    'slant': dict(_MONO, **{
+        'name': '맺음', 'detail': 'slant', 'slant': 19,
+        'hw': 0.86, 'ring_inset': 0.05, 'jong_width': 0.86, 'siot_spread': -0.08,
+        'note': '자유로운 획 끝만 비스듬히 자른다. 가로획이 세로획보다 뚜렷이 '
+                '얇고 ㅅ 다리가 가팔라, 모노라인에 쓰기의 결이 남는다.',
+    }),
+    'plain': dict(_MONO, **{
+        'name': '민짜 (대조군)', 'detail': None,
+        'note': '가공도 구조 특징도 없다. 셋이 무엇을 더했는지 견주려고 둔다.',
+    }),
 }
