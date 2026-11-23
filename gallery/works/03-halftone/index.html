@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>망점 / Halftone — Selected Interactive Work</title>
+<meta name="description" content="화면 전체를 망점으로 환원한다. 커서 주변에서만 점이 커지고 격자가 어긋난다.">
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Azeret+Mono:wght@300;400;500&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+
+  .stage { position: fixed; inset: 0; }
+  .stage canvas { display: block; width: 100%; height: 100%; }
+
+  .hint {
+    position: fixed;
+    left: var(--edge);
+    top: calc(var(--bar) + 20px);
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  /* 좌하단 색인표 — 현재 글자와 다음 글자를 괘선으로 묶어 보여준다 */
+  .slate {
+    position: fixed;
+    left: var(--edge);
+    bottom: var(--edge);
+    z-index: 10;
+    border-top: 1px solid var(--rule);
+    padding-top: 10px;
+    display: grid;
+    gap: 4px;
+    min-width: 190px;
+    pointer-events: none;
+  }
+  .slate__row { display: flex; justify-content: space-between; gap: 18px; }
+  .slate__row b { font-weight: 400; color: var(--ink); }
+  .slate__row.is-next b { color: var(--faint); }
+
+  .meter {
+    position: fixed;
+    right: var(--edge);
+    bottom: var(--edge);
+    z-index: 10;
+    display: grid;
+    gap: 4px;
+    justify-items: end;
+    pointer-events: none;
+  }
+  .meter__bar {
+    width: 120px;
+    height: 1px;
+    background: var(--rule);
+    position: relative;
+  }
+  .meter__bar i {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: var(--sig);
+    transform-origin: 0 50%;
+  }
+
+  @media (max-width: 600px) { .meter { display: none; } }
+</style>
+</head>
+<body>
+
+<header class="work-bar">
+  <a class="work-bar__back" href="../../"><span>&#8592;</span><span>Index</span></a>
+  <span class="work-bar__no">03</span>
+  <span class="work-bar__title"><b>망점</b><i>Halftone</i></span>
+  <button class="work-toggle" type="button" aria-expanded="false">Info</button>
+</header>
+
+<main class="stage">
+  <canvas id="dots" role="img" aria-label="글자를 망점으로 환원한 화면"></canvas>
+</main>
+
+<p class="hint wlabel">커서로 망점을 키운다 · 클릭하면 다음 글자</p>
+
+<div class="slate wlabel">
+  <span class="slate__row"><span>Now</span><b id="s-now">—</b></span>
+  <span class="slate__row is-next"><span>Next</span><b id="s-next">—</b></span>
+  <span class="slate__row"><span>Pitch</span><b id="s-pitch">—</b></span>
+</div>
+
+<div class="meter wlabel">
+  <span>Density</span>
+  <span class="meter__bar"><i id="m-fill" style="transform:scaleX(0)"></i></span>
+</div>
+
+<aside class="work-info" data-open="false">
+  <h2>망점 <i style="font-family:var(--f-display)">Halftone</i></h2>
+  <p>글자를 한 번 그려 픽셀로 읽고, 격자마다 밝기를 점의 지름으로 바꾼다. 원본은 지워지고 점만 남는다. 커서 주변에서는 격자가 흔들리며 점이 서로를 삼킨다.</p>
+  <dl class="wlabel">
+    <dt>조작</dt><dd>커서 이동 · 클릭으로 글자 교체</dd>
+    <dt>기법</dt><dd>오프스크린 샘플링 · 밝기→지름 사상</dd>
+    <dt>연도</dt><dd>2026</dd>
+  </dl>
+</aside>
+
+<script src="../_shared/chrome.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var WORDS = [
+    { text: '망점', font: '700 ##px "Gowun Batang", serif' },
+    { text: 'HALFTONE', font: '400 ##px "Instrument Serif", Georgia, serif' },
+    { text: '환원', font: '700 ##px "Gowun Batang", serif' },
+    { text: 'DOT', font: 'italic 400 ##px "Instrument Serif", Georgia, serif' },
+  ];
+
+  var canvas = document.getElementById('dots');
+  var ctx = canvas.getContext('2d', { alpha: false });
+  var off = document.createElement('canvas');
+  var offCtx = off.getContext('2d', { willReadFrequently: true });
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var INK = '#e6e2d8';
+  var SIG = '#c33c1e';
+  var BG = '#141311';
+
+  var W = 0, H = 0, dpr = 1, step = 14, sample = null;
+  var idx = 0;
+  var pointer = { x: -9999, y: -9999, live: false };
+  var density = 0;
+
+  function el(id) { return document.getElementById(id); }
+
+  /* 글자를 오프스크린에 한 번 그리고 격자 위 밝기만 뽑아 둔다. */
+  function bake() {
+    var word = WORDS[idx];
+    off.width = Math.max(1, Math.round(W));
+    off.height = Math.max(1, Math.round(H));
+    offCtx.fillStyle = '#000';
+    offCtx.fillRect(0, 0, W, H);
+
+    var size = Math.min(W * 0.86 / Math.max(2, word.text.length * 0.62), H * 0.52);
+    offCtx.fillStyle = '#fff';
+    offCtx.textAlign = 'center';
+    offCtx.textBaseline = 'middle';
+    offCtx.font = word.font.replace('##', Math.round(size));
+    offCtx.fillText(word.text, W / 2, H * 0.5);
+
+    var cols = Math.ceil(W / step);
+    var rows = Math.ceil(H / step);
+    var data = offCtx.getImageData(0, 0, off.width, off.height).data;
+    sample = { cols: cols, rows: rows, lum: new Float32Array(cols * rows) };
+
+    var filled = 0;
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        var px = Math.min(off.width - 1, Math.round(c * step + step / 2));
+        var py = Math.min(off.height - 1, Math.round(r * step + step / 2));
+        var v = data[(py * off.width + px) * 4] / 255;
+        sample.lum[r * cols + c] = v;
+        if (v > 0.1) filled++;
+      }
+    }
+    density = filled / (cols * rows);
+
+    el('s-now').textContent = word.text;
+    el('s-next').textContent = WORDS[(idx + 1) % WORDS.length].text;
+    el('s-pitch').textContent = step.toFixed(0) + 'px';
+    el('m-fill').style.transform = 'scaleX(' + Math.min(1, density * 3.2).toFixed(3) + ')';
+  }
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    step = Math.max(11, Math.round(Math.min(W, H) / 46));
+    bake();
+  }
+
+  function draw(now) {
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, W, H);
+    if (!sample) return;
+
+    var t = reduce ? 0 : now * 0.001;
+    var maxR = step * 0.5;
+    var R = Math.min(W, H) * 0.3;
+
+    for (var r = 0; r < sample.rows; r++) {
+      for (var c = 0; c < sample.cols; c++) {
+        var x = c * step + step / 2;
+        var y = r * step + step / 2;
+
+        var f = 0;
+        if (pointer.live) {
+          var dx = x - pointer.x, dy = y - pointer.y;
+          var d = Math.sqrt(dx * dx + dy * dy);
+          if (d < R) { f = 1 - d / R; f *= f; }
+        }
+
+        var lum = sample.lum[r * sample.cols + c];
+
+        if (lum < 0.08 && f < 0.04) {
+          // 글자 밖 — 바탕 격자점만 아주 작게 찍는다
+          ctx.fillStyle = INK;
+          ctx.globalAlpha = 0.1;
+          ctx.fillRect(x - 0.5, y - 0.5, 1, 1);
+          continue;
+        }
+
+        var wave = reduce ? 1 : (Math.sin((x + y) * 0.02 - t * 1.4) * 0.14 + 0.86);
+        var rad = maxR * (lum * 0.95 * wave + f * 0.7);
+        if (rad < 0.3) continue;
+
+        // 커서 주변에서는 격자가 흔들린다
+        var jx = f > 0 ? (Math.sin(r * 2.1 + t * 2) * f * step * 0.3) : 0;
+        var jy = f > 0 ? (Math.cos(c * 1.7 + t * 2) * f * step * 0.3) : 0;
+
+        ctx.fillStyle = f > 0.42 ? SIG : INK;
+        ctx.globalAlpha = Math.min(1, 0.32 + lum * 0.7 + f * 0.4);
+        ctx.beginPath();
+        ctx.arc(x + jx, y + jy, Math.min(rad, maxR * 1.25), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function loop(now) {
+    draw(now);
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener('pointermove', function (ev) {
+    pointer.x = ev.clientX;
+    pointer.y = ev.clientY;
+    pointer.live = true;
+    if (reduce) draw(0);
+  }, { passive: true });
+
+  window.addEventListener('pointerleave', function () {
+    pointer.live = false;
+    if (reduce) draw(0);
+  });
+
+  window.addEventListener('pointerdown', function () {
+    idx = (idx + 1) % WORDS.length;
+    bake();
+    if (reduce) draw(0);
+  });
+
+  window.addEventListener('resize', function () { resize(); if (reduce) draw(0); });
+
+  resize();
+  if (reduce) { draw(0); } else { requestAnimationFrame(loop); }
+
+  // 웹폰트가 늦게 오면 글자 모양이 달라지므로 다시 굽는다
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function () { bake(); if (reduce) draw(0); });
+  }
+})();
+</script>
+</body>
+</html>

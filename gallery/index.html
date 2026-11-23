@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Selected Interactive Work — 인터랙티브 웹 디자인 모음집</title>
+<meta name="description" content="한 사이트에서 모아 보는 인터랙티브 웹 디자인 작업. 앨범 형태의 그리드와 번호가 매겨진 인덱스를 오가며 각 작업으로 들어간다.">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23141311'/%3E%3Crect x='10' y='10' width='44' height='44' fill='none' stroke='%23e6e2d8' stroke-width='3'/%3E%3Crect x='26' y='26' width='12' height='12' fill='%23c33c1e'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Azeret+Mono:wght@300;400;500&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<!-- 상단 고정 바 -->
+<header class="bar">
+  <span class="bar__mark"><b>HWA</b><span>*</span></span>
+  <span class="label bar__count" id="count">— WORKS</span>
+  <nav class="views" aria-label="보기 방식">
+    <button type="button" data-view="grid" data-cursor="grid" aria-pressed="true">Grid</button>
+    <button type="button" data-view="index" data-cursor="index" aria-pressed="false">Index</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- 머리글 -->
+  <section class="masthead shell g12">
+    <h1 class="masthead__title reveal">Selected<br>Interactive<br><em>Work</em></h1>
+
+    <div class="masthead__meta reveal" style="--delay:140ms">
+      <p>브라우저에서만 가능한 것들을 모은다. 각 작업은 독립된 페이지로, 저마다 다른 규칙과 다른 조판을 갖는다. 아래 목록에서 하나를 고르면 그 안으로 들어간다.</p>
+      <dl class="label">
+        <dt>분류</dt>
+        <dd>Generative · Typography · Scroll · Cursor</dd>
+      </dl>
+      <dl class="label">
+        <dt>수록</dt>
+        <dd><span id="total">—</span> 점 / 2026—</dd>
+      </dl>
+      <dl class="label">
+        <dt>조작</dt>
+        <dd>G · I 키로 보기 전환</dd>
+      </dl>
+    </div>
+  </section>
+
+  <!-- 갤러리 — 필터 줄은 이 섹션 안에 있어야 스크롤 내내 상단에 붙는다 -->
+  <section class="gallery shell" id="gallery" data-view="grid">
+    <div class="filters" id="filters" role="group" aria-label="분류 필터">
+      <span class="label filters__lead">Filter</span>
+    </div>
+
+    <noscript>
+      <p class="label" style="padding-block:40px">
+        이 목록은 자바스크립트로 그려진다. 브라우저에서 자바스크립트를 켜면 작업들이 보인다.
+      </p>
+    </noscript>
+
+    <!-- 앨범(그리드) 뷰 -->
+    <div class="g12 grid-view" id="grid-view"></div>
+
+    <!-- 인덱스 뷰 -->
+    <div class="index-view" id="index-view">
+      <div class="index-head label" aria-hidden="true">
+        <span>№</span>
+        <span>Title</span>
+        <span class="c-tags">Category</span>
+        <span class="c-year">Year</span>
+        <span></span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 꼬리말 -->
+<footer class="colophon shell g12">
+  <div class="colophon__row label">
+    <p><b>Set in</b> Instrument Serif · Azeret Mono · Gowun Batang</p>
+    <p><b>Built with</b> HTML · CSS · Canvas 2D</p>
+    <p><b>No</b> framework · No rounded corners</p>
+    <p>© 2026</p>
+  </div>
+</footer>
+
+<script src="assets/works.js"></script>
+<script src="assets/previews.js"></script>
+<script src="assets/gallery.js"></script>
+</body>
+</html>
