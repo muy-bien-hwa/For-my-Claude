@@ -127,7 +127,8 @@ def c_siot(box, st):
     apex = (X(0.5), Y(1))
     polys = [diag(apex, (X(0.03 - sp), Y(0)), w, ext=w * 0.9),
              diag(apex, (X(0.97 + sp), Y(0)), w, ext=w * 0.9)]
-    return _clip(polys, (X(0) - w * 2, Y(0) - w, X(1) + w * 2, Y(1))), []
+    # 자르는 선은 반드시 제 상자여야 한다. 밖에 두면 다리가 상자를 뚫고 나간다.
+    return _clip(polys, (X(0), Y(0), X(1), Y(1))), []
 
 
 def c_ieung(box, st):
