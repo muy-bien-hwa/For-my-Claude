@@ -3,20 +3,28 @@
 
 import hangul, jamo, outline
 
-FRAME = (70.0, 0.0, 930.0, 744.0)      # 글자틀 (em 1000, 기준선 0)
-ADVANCE = 1000
+# 자폭. Pretendard 의 한글은 em 의 0.864 를 쓴다 (1770/2048). 1em 을 꽉 채우면
+# 같은 글자 크기에서 글자가 더 크고 글줄이 더 벌어져 읽기 나쁘다.
+ADVANCE = 880
+SPACE = 300                            # 띄어쓰기 자폭
+
+# hangul.py 의 좌표는 모두 '자폭에 대한 비율' 이다. 가로도 세로도 같은 단위.
 
 
 def _fx(t):
-    return FRAME[0] + t * (FRAME[2] - FRAME[0])
+    return t * ADVANCE
 
 
 def _fy(t):
-    return FRAME[1] + t * (FRAME[3] - FRAME[1])
+    return t * ADVANCE
 
 
 def _box(rel):
     return (_fx(rel[0]), _fy(rel[1]), _fx(rel[2]), _fy(rel[3]))
+
+
+def advance(ch):
+    return SPACE if ch == ' ' else ADVANCE
 
 
 def syllable(ch, st):
